@@ -1,0 +1,56 @@
+{
+  "name": "@konstit/cli",
+  "version": "0.2.0",
+  "description": "A clap-inspired, type-safe command-line parser for Bun and TypeScript",
+  "type": "module",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./completion": {
+      "types": "./dist/completion.d.ts",
+      "import": "./dist/completion.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "bun run build:clean && bun run --parallel build:js build:types && bun run build:validate",
+    "build:clean": "bun ./scripts/clean-dist.ts",
+    "build:js": "bun build ./src/index.ts ./src/completion.ts --outdir ./dist --target=bun --format=esm --sourcemap=external --splitting --chunk-naming 'chunks/[name]-[hash].[ext]'",
+    "build:types": "tsc -p tsconfig.build.json",
+    "build:validate": "bun ./scripts/validate-package.ts",
+    "analyze:bundle": "bun ./scripts/analyze-bundle.ts",
+    "test": "bun test --parallel",
+    "coverage": "bun test --coverage",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "check": "bun run --parallel typecheck coverage build"
+  },
+  "keywords": [
+    "bun",
+    "cli",
+    "clap",
+    "typescript",
+    "type-safe"
+  ],
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "bun": ">=1.4.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.9.0"
+  },
+  "peerDependencies": {
+    "typescript": ">=5.5"
+  }
+}

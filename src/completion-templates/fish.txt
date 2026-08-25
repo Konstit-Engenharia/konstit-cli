@@ -1,0 +1,28 @@
+# fish completion for {{EXECUTABLE}}
+function {{NAME}}
+    set -l tokens (commandline -opc)
+    set -l context 0
+    set -l expect_value 0
+    set -l options_enabled 1
+    for word in $tokens[2..-1]
+        if test $expect_value -eq 1
+            set expect_value 0
+            continue
+        end
+        if test "$word" = --
+            set options_enabled 0
+            continue
+        end
+        test $options_enabled -eq 1; or continue
+        string match -qr '^--[^=]+=' -- "$word"; and continue
+        switch "$context:$word"
+{{TAKES_VALUE_CASES}}
+        end
+        switch "$context:$word"
+{{SUBCOMMAND_CASES}}
+        end
+    end
+    echo $context
+end
+
+{{REGISTRATIONS}}

@@ -1,0 +1,90 @@
+# bash completion for {{EXECUTABLE}}
+{{NAME}}_takes_value() {
+  case "$1:$2" in
+{{TAKES_VALUE_CASES}}
+    *) return 1 ;;
+  esac
+}
+
+{{NAME}}_subcommand() {
+  case "$1:$2" in
+{{SUBCOMMAND_CASES}}
+    *) return 1 ;;
+  esac
+}
+
+{{NAME}}_candidates() {
+  case "$1" in
+{{CANDIDATE_CASES}}
+  esac
+}
+
+{{NAME}}_complete_value() {
+  local key="$1:$2" current="$3" candidate handled=1
+  local -a candidates=()
+  case "$key" in
+{{STATIC_VALUE_CASES}}
+  esac
+  if (( handled == 0 )); then
+    for candidate in "${candidates[@]}"; do
+      [[ "$candidate" == "$current"* ]] && COMPREPLY+=("$candidate")
+    done
+    return 0
+  fi
+  case "$key" in
+{{VALUE_HINT_CASES}}
+    *) return 1 ;;
+  esac
+}
+
+{{NAME}}_allows_files() {
+  case "$1" in
+{{ALLOWS_FILES_CASES}}
+    *) return 1 ;;
+  esac
+}
+
+{{NAME}}() {
+  local context="0" word child current previous option suffix candidate
+  local index expect_value=0 options_enabled=1 positional_handled=1
+  COMPREPLY=()
+  for ((index = 1; index < COMP_CWORD; index++)); do
+    word="${COMP_WORDS[index]}"
+    if (( expect_value )); then expect_value=0; continue; fi
+    if [[ "$word" == "--" ]]; then options_enabled=0; continue; fi
+    (( options_enabled )) || continue
+    [[ "$word" == --*=* ]] && continue
+    if {{NAME}}_takes_value "$context" "$word"; then expect_value=1; continue; fi
+    child="$({{NAME}}_subcommand "$context" "$word")" && context="$child"
+  done
+  current="${COMP_WORDS[COMP_CWORD]}"
+  previous="${COMP_WORDS[COMP_CWORD-1]:-}"
+  if (( options_enabled )) && {{NAME}}_takes_value "$context" "$previous"; then
+    {{NAME}}_complete_value "$context" "$previous" "$current" || while IFS= read -r candidate; do COMPREPLY+=("$candidate"); done < <(compgen -f -- "$current")
+    return 0
+  fi
+  if (( options_enabled )) && [[ "$current" == --*=* ]]; then
+    option="${current%%=*}"
+    suffix="${current#*=}"
+    if {{NAME}}_takes_value "$context" "$option"; then
+      {{NAME}}_complete_value "$context" "$option" "$suffix" || return 0
+      local -a values=("${COMPREPLY[@]}")
+      COMPREPLY=()
+      for candidate in "${values[@]}"; do COMPREPLY+=("$option=$candidate"); done
+      return 0
+    fi
+  fi
+  if [[ "$current" != -* ]]; then
+    {{NAME}}_complete_value "$context" "@positional" "$current"
+    positional_handled=$?
+  fi
+  if (( options_enabled )); then
+    while IFS= read -r candidate; do
+      [[ "$candidate" == "$current"* ]] && COMPREPLY+=("$candidate")
+    done < <({{NAME}}_candidates "$context")
+  fi
+  if (( positional_handled != 0 )) && [[ "$current" != -* ]] && {{NAME}}_allows_files "$context"; then
+    while IFS= read -r candidate; do COMPREPLY+=("$candidate"); done < <(compgen -f -- "$current")
+  fi
+}
+complete -F {{NAME}} {{EXECUTABLE_QUOTED}}

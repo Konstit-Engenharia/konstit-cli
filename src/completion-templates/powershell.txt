@@ -1,0 +1,131 @@
+# PowerShell completion for {{EXECUTABLE}}
+Register-ArgumentCompleter -Native -CommandName {{EXECUTABLE_QUOTED}} -ScriptBlock {
+  param($wordToComplete, $commandAst, $cursorPosition)
+
+  $takesValue = {
+    param([string]$context, [string]$token)
+    switch ("$context`:$token") {
+{{TAKES_VALUE_CASES}}
+      default { return $false }
+    }
+  }
+
+  $getSubcommand = {
+    param([string]$context, [string]$token)
+    switch ("$context`:$token") {
+{{SUBCOMMAND_CASES}}
+      default { return $null }
+    }
+  }
+
+  $getValueMode = {
+    param([string]$context, [string]$token)
+    switch ("$context`:$token") {
+{{VALUE_MODE_CASES}}
+      default { return $null }
+    }
+  }
+
+  $getStaticValues = {
+    param([string]$context, [string]$token)
+    switch ("$context`:$token") {
+{{STATIC_VALUE_CASES}}
+      default { return @() }
+    }
+  }
+
+  $getCandidates = {
+    param([string]$context)
+    switch ($context) {
+{{CANDIDATE_CASES}}
+      default { @() }
+    }
+  }
+
+  $allowsFiles = {
+    param([string]$context)
+    switch ($context) {
+{{ALLOWS_FILES_CASES}}
+      default { return $false }
+    }
+  }
+
+  $context = '0'
+  $expectValue = $false
+  $optionsEnabled = $true
+  $tokens = @($commandAst.CommandElements | ForEach-Object { [string]$_.Value })
+  $currentIncluded = $wordToComplete.Length -gt 0 -and $tokens.Count -gt 0
+  $limit = $tokens.Count
+  if ($currentIncluded) { $limit-- }
+  for ($index = 1; $index -lt $limit; $index++) {
+    $word = $tokens[$index]
+    if ($expectValue) { $expectValue = $false; continue }
+    if ($word -eq '--') { $optionsEnabled = $false; continue }
+    if (-not $optionsEnabled) { continue }
+    if ($word -match '^--[^=]+=') { continue }
+    if (& $takesValue $context $word) { $expectValue = $true; continue }
+    $child = & $getSubcommand $context $word
+    if ($null -ne $child) { $context = $child }
+  }
+
+  $seen = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+  $emit = {
+    param([string]$value, [string]$description, [string]$prefix = '')
+    $completion = "$prefix$value"
+    if ($completion.StartsWith($wordToComplete, [System.StringComparison]::OrdinalIgnoreCase) -and $seen.Add($completion)) {
+      [System.Management.Automation.CompletionResult]::new($completion, $value, 'ParameterValue', $description)
+    }
+  }
+  $completeValue = {
+    param([string]$mode, [string]$token, [string]$partial, [string]$prefix = '')
+    if ($mode -eq 'static') {
+      foreach ($value in @(& $getStaticValues $context $token)) {
+        if ($value.StartsWith($partial, [System.StringComparison]::OrdinalIgnoreCase)) {
+          & $emit $value $value $prefix
+        }
+      }
+      return
+    }
+    if ([string]::IsNullOrEmpty($partial)) {
+      $parent = '.'
+      $leaf = ''
+    } else {
+      $parent = Split-Path -Path $partial -Parent
+      $leaf = Split-Path -Path $partial -Leaf
+      if ([string]::IsNullOrEmpty($parent)) { $parent = '.' }
+    }
+    Get-ChildItem -LiteralPath $parent -ErrorAction SilentlyContinue |
+      Where-Object { ($mode -ne 'directory' -or $_.PSIsContainer) -and $_.Name.StartsWith($leaf, [System.StringComparison]::OrdinalIgnoreCase) } |
+      ForEach-Object {
+        $value = if ($parent -eq '.') { $_.Name } else { Join-Path $parent $_.Name }
+        & $emit $value $value $prefix
+      }
+  }
+
+  $previousIndex = if ($currentIncluded) { $tokens.Count - 2 } else { $tokens.Count - 1 }
+  $previous = if ($previousIndex -ge 1) { $tokens[$previousIndex] } else { '' }
+  if ($optionsEnabled -and (& $takesValue $context $previous)) {
+    $mode = & $getValueMode $context $previous
+    if ($null -eq $mode) { $mode = 'file' }
+    & $completeValue $mode $previous $wordToComplete
+    return
+  }
+  if ($optionsEnabled -and $wordToComplete -match '^(--[^=]+)=(.*)$' -and (& $takesValue $context $Matches[1])) {
+    $option = $Matches[1]
+    $partial = $Matches[2]
+    $mode = & $getValueMode $context $option
+    if ($null -eq $mode) { $mode = 'file' }
+    & $completeValue $mode $option $partial "$option="
+    return
+  }
+  if (-not $wordToComplete.StartsWith('-')) {
+    $mode = & $getValueMode $context '@positional'
+    if ($null -ne $mode) { & $completeValue $mode '@positional' $wordToComplete }
+    elseif (& $allowsFiles $context) { & $completeValue 'file' '@positional' $wordToComplete }
+  }
+  if ($optionsEnabled) {
+    foreach ($candidate in @(& $getCandidates $context)) {
+      & $emit $candidate.Value $candidate.Description
+    }
+  }
+}
