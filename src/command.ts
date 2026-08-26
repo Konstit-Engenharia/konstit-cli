@@ -2413,6 +2413,24 @@ function renderHelp(
     pushAligned(lines, entries);
   }
 
+  const subcommands = definition.subcommands.filter(({ hidden }) => !hidden);
+  if (subcommands.length > 0) {
+    lines.push('', 'Commands:');
+    const commandEntries: Array<readonly [string, string]> = subcommands.map((child) => {
+      const aliases = child.aliases
+        .filter(({ visible }) => visible)
+        .map(({ name }) => name);
+      const label = aliases.length === 0
+        ? child.name
+        : `${child.name} (aliases: ${aliases.join(', ')})`;
+      return [`  ${label}`, child.about ?? ''] as const;
+    });
+    if (subcommands.length > 0 && !definition.disableHelpSubcommand) {
+      commandEntries.push(['  help', 'Print help for a subcommand']);
+    }
+    pushAligned(lines, commandEntries);
+  }
+
   const options = [...definition.arguments, ...inheritedArguments].filter(
     (argument) => argument.kind !== 'positional' && !argument.hidden,
   );
@@ -2437,24 +2455,6 @@ function renderHelp(
   if (entries.length > 0) {
     lines.push('', 'Options:');
     pushAligned(lines, entries);
-  }
-
-  const subcommands = definition.subcommands.filter(({ hidden }) => !hidden);
-  if (subcommands.length > 0) {
-    lines.push('', 'Commands:');
-    const commandEntries: Array<readonly [string, string]> = subcommands.map((child) => {
-      const aliases = child.aliases
-        .filter(({ visible }) => visible)
-        .map(({ name }) => name);
-      const label = aliases.length === 0
-        ? child.name
-        : `${child.name} (aliases: ${aliases.join(', ')})`;
-      return [`  ${label}`, child.about ?? ''] as const;
-    });
-    if (subcommands.length > 0 && !definition.disableHelpSubcommand) {
-      commandEntries.push(['  help', 'Print help for a subcommand']);
-    }
-    pushAligned(lines, commandEntries);
   }
   if (includeLongAbout && definition.longAbout !== undefined) {
     lines.push('', definition.longAbout);
@@ -2583,9 +2583,14 @@ function pushAligned(lines: string[], entries: readonly (readonly [string, strin
 }
 
 export interface RunOptions {
+  /** Arguments to parse. Defaults to Bun.argv without the executable. */
   readonly argv?: readonly string[];
+  /** Receives help, version, and completion output. */
   readonly stdout?: (output: string) => void;
+  /** Receives user-facing parse errors. */
   readonly stderr?: (output: string) => void;
+  /** Controls ANSI styling for help. The default detects an interactive terminal. */
+  readonly color?: boolean;
 }
 
 interface SelectedCommand {
@@ -2647,9 +2652,87 @@ function writeParseFailure(error: CliError, options: RunOptions): number {
   return error.exitCode;
 }
 
-function writeDisplay(display: ParseDisplay, options: RunOptions): number {
+const helpAnsi = Object.freeze({ strong: '\x1b[1m', reset: '\x1b[0m' });
+const helpAccent = '#0891b2';
+
+function helpPalette(forceColor: boolean): {
+  readonly heading: string;
+  readonly label: string;
+  readonly strong: string;
+  readonly reset: string;
+} {
+  const format = forceColor ? 'ansi-16m' : 'ansi';
+  const accent = Bun.color(helpAccent, format) ?? '';
+  return {
+    heading: `${helpAnsi.strong}${accent}`,
+    label: accent,
+    ...helpAnsi,
+  };
+}
+
+function shouldStyleHelp(options: RunOptions): boolean {
+  return options.color
+    ?? (
+      options.stdout === undefined
+      && process.stdout.isTTY === true
+      && Bun.env.NO_COLOR === undefined
+      && Bun.env.TERM !== 'dumb'
+    );
+}
+
+function hasHelpOverride(
+  definition: CommandDefinition,
+  output: string,
+): boolean {
+  return definition.overrideHelp === output
+    || definition.subcommands.some((child) => hasHelpOverride(child, output));
+}
+
+function styleHelp(output: string, forceColor: boolean): string {
+  const palette = helpPalette(forceColor);
+  let entrySection = false;
+  return output.split('\n').map((line) => {
+    if (/^(Arguments|Commands|Options):$/.test(line)) {
+      entrySection = true;
+      return `${palette.heading}${line}${palette.reset}`;
+    }
+    if (line === '') {
+      entrySection = false;
+      return line;
+    }
+    if (line.startsWith('Usage: ')) {
+      return `${palette.heading}Usage:${palette.reset} ${palette.strong}${line.slice(7)}${palette.reset}`;
+    }
+    if (line.startsWith('Author: ')) {
+      return `${palette.heading}Author:${palette.reset} ${line.slice(8)}`;
+    }
+    if (entrySection && line.startsWith('  ')) {
+      const content = line.slice(2);
+      const described = /^(.*?\S)( {2,})(\S.*)$/.exec(content);
+      if (described !== null) {
+        const label = described[1] ?? '';
+        const spacing = described[2] ?? '';
+        const description = described[3] ?? '';
+        return `  ${palette.label}${label}${palette.reset}${spacing}${description}`;
+      }
+      return `  ${palette.label}${content}${palette.reset}`;
+    }
+    return line;
+  }).join('\n');
+}
+
+function writeDisplay(
+  definition: CommandDefinition,
+  display: ParseDisplay,
+  options: RunOptions,
+): number {
   const write = options.stdout ?? ((output: string) => console.log(output.trimEnd()));
-  write(display.output);
+  const output = display.kind === DisplayKind.Help
+      && shouldStyleHelp(options)
+      && !hasHelpOverride(definition, display.output)
+    ? styleHelp(display.output, options.color === true)
+    : display.output;
+  write(output);
   return 0;
 }
 
@@ -2672,7 +2755,7 @@ async function runConfiguredHandler<Args extends object>(
     return writeParseFailure(result.error, options);
   }
   if (result.type === 'display') {
-    return writeDisplay(result, options);
+    return writeDisplay(definition, result, options);
   }
 
   const selected = selectDeepestCommand(

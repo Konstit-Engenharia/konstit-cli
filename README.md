@@ -105,7 +105,10 @@ if (outcome.type === 'value') {
 instead of throwing `CliError`. Unexpected programming errors still throw.
 `run()` is the only API that reads `Bun.argv.slice(2)`. It prints displays and
 parse failures, invokes the deepest handler, and returns an exit code. Pass an
-explicit array to `run(argv)` when needed.
+explicit array to `run(argv)` when needed. Interactive help uses ANSI styling
+when stdout is a terminal. Redirected and custom output stays plain unless
+`run({ color: true })` enables styling explicitly. Use `color: false` to disable
+it.
 
 ## Subcommands
 

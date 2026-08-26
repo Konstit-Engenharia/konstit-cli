@@ -231,6 +231,15 @@ describe('subcommands', () => {
     }
   });
 
+  test('renders commands before options', () => {
+    const help = cli.renderHelp();
+    const commands = help.indexOf('Commands:');
+    const options = help.indexOf('Options:');
+
+    expect(commands).toBeGreaterThan(-1);
+    expect(options).toBeGreaterThan(commands);
+  });
+
   test('supports aliases, inferred names, and the help subcommand', () => {
     const aliased = command('repo')
       .subcommand(command('clone').visibleAlias('copy').alias('cp'))
@@ -434,6 +443,49 @@ describe('help, version, and runner', () => {
     });
     expect(code).toBe(0);
     expect(output[0]).toContain('A demo');
+  });
+
+  test('styles interactive help without changing plain or custom help', async () => {
+    const styledCli = command('styled')
+      .about('A styled command')
+      .author('Konstit')
+      .arg(positional('file').describe('Input file'))
+      .arg(flag('verbose').describe('Show details'))
+      .subcommand(command('child'))
+      .handler(() => {});
+    const plain = styledCli.renderHelp();
+    const plainOutput: string[] = [];
+    const styledOutput: string[] = [];
+
+    await styledCli.run({ argv: ['--help'], stdout: (text) => plainOutput.push(text) });
+    await styledCli.run({
+      argv: ['--help'],
+      color: true,
+      stdout: (text) => styledOutput.push(text),
+    });
+
+    const accent = Bun.color('#0891b2', 'ansi-16m') ?? '';
+    expect(accent).not.toBe('');
+    expect(plainOutput[0]).toBe(plain);
+    expect(styledOutput[0]).toContain(`\x1b[1m${accent}Usage:\x1b[0m`);
+    expect(styledOutput[0]).toContain(`\x1b[1m${accent}Commands:\x1b[0m`);
+    expect(styledOutput[0]).toContain(`  ${accent}child\x1b[0m`);
+    const unstyled = styledOutput[0]
+      ?.replaceAll(accent, '')
+      .replaceAll('\x1b[1m', '')
+      .replaceAll('\x1b[0m', '');
+    expect(unstyled).toBe(plain);
+
+    const custom = command('custom')
+      .overrideHelp('Custom help\n')
+      .handler(() => {});
+    const customOutput: string[] = [];
+    await custom.run({
+      argv: ['--help'],
+      color: true,
+      stdout: (text) => customOutput.push(text),
+    });
+    expect(customOutput[0]).toBe('Custom help\n');
   });
 
   test('customizes help and built-in flags', () => {
