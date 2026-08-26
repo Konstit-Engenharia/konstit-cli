@@ -13,7 +13,7 @@ import { fileURLToPath } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const reportDirectory = resolve(root, 'reports');
 const report = resolve(reportDirectory, 'bundle.md');
-const outputDirectory = await mkdtemp(resolve(tmpdir(), 'bun-clap-bundle-'));
+const outputDirectory = await mkdtemp(resolve(tmpdir(), 'konstit-cli-bundle-'));
 
 await mkdir(reportDirectory, { recursive: true });
 
@@ -31,6 +31,8 @@ try {
       '--sourcemap=external',
       '--splitting',
       '--chunk-naming',
+      '--minify',
+      '--keep-names',
       'chunks/[name]-[hash].[ext]',
       `--metafile-md=${report}`,
     ],
