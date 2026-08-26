@@ -2,6 +2,10 @@
   "name": "@konstit/cli",
   "version": "0.0.1",
   "description": "A clap-inspired, type-safe command-line parser for Bun and TypeScript",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Konstit-Engenharia/konstit-cli.git"
+  },
   "author": {
     "name": "KONSTIT ENGENHARIA E TECNOLOGIA LTDA",
     "email": "opensource@konstit.com.br"

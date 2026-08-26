@@ -30,12 +30,6 @@ Requires Bun 1.4 or newer.
 bun add @konstit/cli
 ```
 
-To use a local checkout before publication:
-
-```sh
-bun add /absolute/path/to/konstit-cli
-```
-
 ## Quick start
 
 ```ts
