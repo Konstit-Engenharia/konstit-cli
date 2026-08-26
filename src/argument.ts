@@ -156,7 +156,7 @@ export class Argument<
     this: Argument<Name, Value, Output, Extract<Kind, NamedArgumentKind>, Cardinality, Global>,
     short: OneCharacter<Short>,
   ): Argument<Name, Value, Output, Extract<Kind, NamedArgumentKind>, Cardinality, Global> {
-    if ([...short].length !== 1 || short === '-') {
+    if (Array.from(short).length !== 1 || short === '-') {
       throw new TypeError('A short option must be one character');
     }
     return this.with({ short });
@@ -287,7 +287,7 @@ export class Argument<
     this: Argument<Name, Value, Output, Extract<Kind, ValueArgumentKind>, Cardinality, Global>,
     delimiter: string,
   ): Argument<Name, Value, Output, Extract<Kind, ValueArgumentKind>, Cardinality, Global> {
-    if ([...delimiter].length !== 1) {
+    if (Array.from(delimiter).length !== 1) {
       throw new TypeError('A value delimiter must be one character');
     }
     return this.with({ valueDelimiter: delimiter });

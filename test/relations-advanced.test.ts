@@ -150,7 +150,7 @@ describe('advanced argument relations', () => {
   });
 });
 
-if (false) {
+void (() => {
   const typed = command('typed')
     .arg(option('mode', parsers.enum(['dev', 'prod'])))
     .arg(flag('strict'))
@@ -169,4 +169,4 @@ if (false) {
   typed.groupRequires('missing', 'config');
   // @ts-expect-error group relation targets must be declared arguments
   typed.groupConflicts('settings', 'missing');
-}
+});

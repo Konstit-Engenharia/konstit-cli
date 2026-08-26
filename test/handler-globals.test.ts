@@ -59,16 +59,17 @@ describe('typed handler globals', () => {
         context.global(orphan);
       }),
     );
+    // oxlint-disable-next-line typescript/await-thenable -- Bun async matchers must be awaited.
     await expect(cli.run(['serve'])).rejects.toThrow(
       'Global argument \'profile\' is not registered',
     );
   });
 });
 
-if (false) {
+void (() => {
   const local = option('local');
   command('bad').handler((_args, context) => {
     // @ts-expect-error context.global only accepts arguments branded as global
     context.global(local);
   });
-}
+});

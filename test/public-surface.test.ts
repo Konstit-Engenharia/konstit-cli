@@ -12,25 +12,26 @@ import {
   type Infer,
   type ValueParser,
 } from '../src';
-// @ts-expect-error builder classes are internal
 import type {
-  Argument,
-  Command,
-} from '../src';
-// @ts-expect-error runtime actions and definition plumbing are internal
-import type {
-  ArgumentAction,
-  ArgumentDefinition,
-  CommandDefinition,
-} from '../src';
-// @ts-expect-error internal shape types are not part of the application API
-import type {
+  // @ts-expect-error internal shape types are not part of the application API
   AnyArgument,
+  // @ts-expect-error builder classes are internal
+  Argument,
+  // @ts-expect-error runtime actions and definition plumbing are internal
+  ArgumentAction,
+  // @ts-expect-error internal shape types are not part of the application API
   ArgumentCardinality,
+  // @ts-expect-error runtime actions and definition plumbing are internal
+  ArgumentDefinition,
+  // @ts-expect-error internal shape types are not part of the application API
   ArgumentPresence,
+  // @ts-expect-error builder classes are internal
+  Command,
+  // @ts-expect-error runtime actions and definition plumbing are internal
+  CommandDefinition,
+  // @ts-expect-error custom parsers are created through parsers.custom
+  valueParser,
 } from '../src';
-// @ts-expect-error custom parsers are created through parsers.custom
-import type { valueParser } from '../src';
 import {
   getCommandDefinition,
   type CommandType,
@@ -39,6 +40,17 @@ import {
 type Equal<Left, Right> = (<Value>() => Value extends Left ? 1 : 2) extends (<Value>() => Value extends Right ? 1 : 2) ? true
   : false;
 type Expect<Value extends true> = Value;
+type _InternalExportsStayPrivate = [
+  Argument,
+  Command,
+  ArgumentAction,
+  ArgumentDefinition,
+  CommandDefinition,
+  AnyArgument,
+  ArgumentCardinality,
+  ArgumentPresence,
+  valueParser,
+];
 
 test('keeps the small factory surface exactly typed', () => {
   const percentage: ValueParser<number> = parsers.custom(
@@ -86,16 +98,16 @@ test('hides runtime definitions and type carriers from factory values', () => {
   expect(Reflect.ownKeys(argument)).toEqual([]);
   expect(Reflect.ownKeys(cli)).toEqual([]);
 
-  if (false) {
+  void (() => {
     // @ts-expect-error internal runtime definitions are not public properties
-    argument.definition;
+    void argument.definition;
     // @ts-expect-error type-level argument carriers are inaccessible
-    argument.$output;
+    void argument.$output;
     // @ts-expect-error internal runtime definitions are not public properties
-    cli.definition;
+    void cli.definition;
     // @ts-expect-error type-level command carriers are inaccessible
-    cli.$fields;
-  }
+    void cli.$fields;
+  });
 });
 
 test('rejects objects that did not come from the command factory', () => {

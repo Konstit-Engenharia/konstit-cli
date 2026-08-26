@@ -70,6 +70,7 @@ export interface GroupOptions {
   readonly multiple?: boolean;
 }
 
+// biome-ignore lint/suspicious/noConfusingVoidType: Handlers intentionally support callbacks with no return value.
 export type HandlerResult = void | number;
 
 /** Runtime data available to every command handler. */
@@ -147,6 +148,8 @@ type DuplicateGroup<Name extends string> = {
   readonly __typeclap_error__: `Argument group '${Name}' is already registered`;
 };
 
+type EmptyObject = Record<never, never>;
+
 type ParsedSubcommand<Subcommands extends Record<string, unknown>> = {
   [Name in StringKeyOf<Subcommands>]: Subcommands[Name] extends AnyCommand ? {
       readonly name: Name;
@@ -158,7 +161,7 @@ type ParsedSubcommand<Subcommands extends Record<string, unknown>> = {
 type SubcommandField<
   Subcommands extends Record<string, unknown>,
   Required extends boolean,
-> = StringKeyOf<Subcommands> extends never ? {}
+> = StringKeyOf<Subcommands> extends never ? EmptyObject
   : {
     readonly subcommand: Required extends true ? ParsedSubcommand<Subcommands>
       : ParsedSubcommand<Subcommands> | undefined;
@@ -334,8 +337,8 @@ function updateGroupRelations(
 /** An immutable, clap-style command builder. */
 export class Command<
   const Name extends string,
-  Fields extends object = {},
-  Subcommands extends Record<string, unknown> = {},
+  Fields extends object = EmptyObject,
+  Subcommands extends Record<string, unknown> = EmptyObject,
   SubcommandRequired extends boolean = false,
   Groups extends string = never,
 > implements CommandType<Name, Fields, Subcommands, SubcommandRequired, Groups> {
@@ -1453,7 +1456,7 @@ function parseShortOptions(
   state: ParseState,
   inheritedGlobals: readonly GlobalBinding[],
 ): number {
-  const cluster = [...token.slice(1)];
+  const cluster = Array.from(token.slice(1));
   for (let clusterIndex = 0; clusterIndex < cluster.length; clusterIndex += 1) {
     const short = cluster[clusterIndex];
     if (short === undefined) {

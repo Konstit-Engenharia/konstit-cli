@@ -460,7 +460,7 @@ function storeArgumentValues(
     try {
       parsed.push(argument.parser?.parse(raw) ?? raw);
     } catch {
-      continue;
+      // Completion must continue when a partial value cannot be parsed yet.
     }
   }
   if (parsed.length === 0) {
@@ -485,7 +485,7 @@ function storeArgumentValues(
 
 function storeSwitch(argument: ArgumentDefinition, state: ScanState): void {
   if (argument.kind === 'flag') {
-    state.values[argument.name] = argument.action === 'setFalse' ? false : true;
+    state.values[argument.name] = argument.action !== 'setFalse';
   } else {
     const current = state.values[argument.name];
     state.values[argument.name] = typeof current === 'number' ? current + 1 : 1;

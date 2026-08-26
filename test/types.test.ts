@@ -132,7 +132,7 @@ const handlerRoot = command('tool')
     void typedVerbose;
   });
 
-if (false) {
+void (() => {
   const defaultArgvExitCode: Promise<number> = handlerCommand.run();
   const syncExitCode: Promise<number> = handlerCommand.run(['--port', '3000']);
   const asyncExitCode: Promise<number> = asyncHandlerCommand.run(['ok']);
@@ -176,4 +176,4 @@ if (false) {
   conditional.requiredUnlessPresent(['offline'], 'missing');
   // @ts-expect-error global positional arguments are not supported
   positional('file').global();
-}
+});

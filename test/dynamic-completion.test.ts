@@ -148,6 +148,7 @@ describe('dynamic completion', () => {
     const invalid = command('bad').arg(
       option('value').complete(() => ['bad\nvalue']),
     );
+    // oxlint-disable-next-line typescript/await-thenable -- Bun async matchers must be awaited.
     await expect(
       resolveDynamicCompletion(invalid, ['--value', '']),
     ).rejects.toThrow('single-line');

@@ -50,7 +50,7 @@ function jsonParser<Value>(
 ): ValueParser<Value>;
 function jsonParser<Value>(
   guard?: (value: unknown) => value is Value,
-): ValueParser<Value | unknown> {
+): ValueParser<unknown> {
   return createValueParser('JSON', (input) => {
     let value: unknown;
     try {

@@ -21,6 +21,7 @@ describe('dynamic completion coverage', () => {
   test('validates cursor bounds', async () => {
     const cli = command('tool');
     for (const cursor of [-1, 0.5, 2]) {
+      // oxlint-disable-next-line typescript/await-thenable -- Bun async matchers must be awaited.
       await expect(
         resolveDynamicCompletion(cli, [''], { cursor }),
       ).rejects.toThrow('completion cursor');
@@ -308,6 +309,7 @@ describe('dynamic completion coverage', () => {
           (() => invalidResult) as unknown as DynamicCompletionProvider,
         ),
       );
+      // oxlint-disable-next-line typescript/await-thenable -- Bun async matchers must be awaited.
       await expect(
         resolveDynamicCompletion(cli, ['--value', '']),
       ).rejects.toThrow('iterable of candidates');
@@ -317,6 +319,7 @@ describe('dynamic completion coverage', () => {
       const cli = command('invalid').arg(
         option('value').complete(() => [invalidValue]),
       );
+      // oxlint-disable-next-line typescript/await-thenable -- Bun async matchers must be awaited.
       await expect(
         resolveDynamicCompletion(cli, ['--value', '']),
       ).rejects.toThrow('single-line value');

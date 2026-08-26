@@ -561,6 +561,7 @@ describe('command handlers', () => {
     const missing = command('tool')
       .subcommand(command('status'))
       .handler(() => {});
+    // oxlint-disable-next-line typescript/await-thenable -- Bun async matchers must be awaited.
     await expect(missing.run(['status'])).rejects.toThrow(
       'No handler is configured for command \'tool status\'',
     );
@@ -578,6 +579,7 @@ describe('command handlers', () => {
     expect(calls).toBe(0);
     expect(output[0]).toContain('Usage: demo');
 
+    // oxlint-disable-next-line typescript/await-thenable -- Bun async matchers must be awaited.
     await expect(command('bad').handler(() => 256).run([])).rejects.toThrow(
       'exit code must be an integer from 0 to 255',
     );

@@ -153,7 +153,7 @@ describe('optional value arity', () => {
   });
 });
 
-if (false) {
+void (() => {
   const acceptsGlobal = <Global extends AnyGlobalArgument>(argument: Global): Global => argument;
   acceptsGlobal(option('profile').global());
   acceptsGlobal(option('profile').global().describe('Profile'));
@@ -166,4 +166,4 @@ if (false) {
   flag('enabled').repeatable();
   // @ts-expect-error flags have factory-defined defaults
   flag('enabled').default(true);
-}
+});

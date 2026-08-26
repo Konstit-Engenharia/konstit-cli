@@ -4,10 +4,7 @@ import {
   type CommandDefinition,
   type CommandType,
 } from './command';
-import {
-  completionShells,
-  type CompletionShell,
-} from './completion-shell';
+import type { CompletionShell } from './completion-shell';
 import bashTemplate from './completion-templates/bash.txt' with { type: 'text' };
 import fishTemplate from './completion-templates/fish.txt' with { type: 'text' };
 import powerShellTemplate from './completion-templates/powershell.txt' with { type: 'text' };
@@ -143,7 +140,9 @@ function flattenCommands(root: CommandDefinition): readonly CompletionNode[] {
     ];
     definition.subcommands
       .filter(({ hidden }) => !hidden)
-      .forEach((child, index) => visit(child, `${id}.${index}`, globalsForChildren));
+      .forEach((child, index) => {
+        visit(child, `${id}.${index}`, globalsForChildren);
+      });
   };
   visit(root, '0', []);
   return nodes;
@@ -159,7 +158,10 @@ function childEntries(
 ): readonly (readonly [string, CommandDefinition, CompletionNode])[] {
   const children = node.definition.subcommands.filter(({ hidden }) => !hidden);
   return children.flatMap((child) => {
-    const target = nodes.find(({ definition }) => definition === child)!;
+    const target = nodes.find(({ definition }) => definition === child);
+    if (target === undefined) {
+      throw new Error(`Missing completion node for subcommand '${child.name}'`);
+    }
     return [
       child.name,
       ...child.aliases.filter(({ visible }) => visible).map(({ name }) => name),
@@ -293,7 +295,7 @@ function shellIdentifier(executable: string): string {
 }
 
 function shellQuote(value: string): string {
-  return `'${value.replaceAll('\'', `'\"'\"'`)}'`;
+  return `'${value.replaceAll('\'', `'"'"'`)}'`;
 }
 
 function fishQuote(value: string): string {
@@ -332,8 +334,8 @@ function generateDynamicCompletion(
         `${name}() {`,
         '  local -a candidates',
         `  candidates=("\${(@f)$(${dynamicCompletionEnvironment}=1 ${executableQuoted} "\${words[@]:1}")}")`,
-        '  if (( ${#candidates[@]} )); then',
-        '    compadd -Q -- "${candidates[@]}"',
+        `  if (( \${#candidates[@]} )); then`,
+        `    compadd -Q -- "\${candidates[@]}"`,
         '  else',
         '    _files',
         '  fi',
