@@ -202,11 +202,17 @@ export interface HandledCommand<
   out SubcommandRequired extends boolean = boolean,
   out Groups extends string = string,
 > extends CommandType<Name, Fields, Subcommands, SubcommandRequired, Groups> {
+  /** Parses explicit argv. User-facing failures throw CliError. */
   parse(argv: readonly string[]): ParseOutcome<Infer<this>>;
+  /** Parses argv without exceptions for expected CLI outcomes. */
   tryParse(argv: readonly string[]): ParseResult<Infer<this>>;
+  /** Parses argv and runs the deepest configured handler. */
   run(argv?: readonly string[]): Promise<number>;
+  /** Parses configured argv and runs the deepest configured handler. */
   run(options?: RunOptions): Promise<number>;
+  /** Renders the complete help text for this command. */
   renderHelp(): string;
+  /** Renders the usage line for this command. */
   renderUsage(): string;
 }
 
@@ -367,34 +373,42 @@ export class Command<
     return new Command(copyCommand(getCommandDefinition(this), patch));
   }
 
+  /** Sets the short command description shown in help and completion. */
   about(text: string): Command<Name, Fields, Subcommands, SubcommandRequired, Groups> {
     return this.with({ about: text });
   }
 
+  /** Sets the extended command description shown in full help. */
   longAbout(text: string): Command<Name, Fields, Subcommands, SubcommandRequired, Groups> {
     return this.with({ longAbout: text });
   }
 
+  /** Sets the author line shown in generated help. */
   author(text: string): Command<Name, Fields, Subcommands, SubcommandRequired, Groups> {
     return this.with({ author: text });
   }
 
+  /** Adds text before the generated help content. */
   beforeHelp(text: string): Command<Name, Fields, Subcommands, SubcommandRequired, Groups> {
     return this.with({ beforeHelp: text });
   }
 
+  /** Adds text after the generated help content. */
   afterHelp(text: string): Command<Name, Fields, Subcommands, SubcommandRequired, Groups> {
     return this.with({ afterHelp: text });
   }
 
+  /** Replaces the generated usage line with exact text. */
   overrideUsage(usage: string): Command<Name, Fields, Subcommands, SubcommandRequired, Groups> {
     return this.with({ overrideUsage: usage });
   }
 
+  /** Replaces all generated help output with exact text. */
   overrideHelp(help: string): Command<Name, Fields, Subcommands, SubcommandRequired, Groups> {
     return this.with({ overrideHelp: help });
   }
 
+  /** Adds a parseable alias that is hidden from help and completion. */
   alias(alias: string): Command<Name, Fields, Subcommands, SubcommandRequired, Groups> {
     validateCommandName(alias);
     const definition = getCommandDefinition(this);
@@ -404,6 +418,7 @@ export class Command<
     });
   }
 
+  /** Adds a parseable alias that is shown in help and completion. */
   visibleAlias(alias: string): Command<Name, Fields, Subcommands, SubcommandRequired, Groups> {
     validateCommandName(alias);
     const definition = getCommandDefinition(this);
@@ -413,34 +428,40 @@ export class Command<
     });
   }
 
+  /** Accepts an unambiguous prefix of a subcommand name or alias. */
   inferSubcommands(
     enabled = true,
   ): Command<Name, Fields, Subcommands, SubcommandRequired, Groups> {
     return this.with({ inferSubcommands: enabled });
   }
 
+  /** Disables the generated `help` subcommand. */
   disableHelpSubcommand(
     disabled = true,
   ): Command<Name, Fields, Subcommands, SubcommandRequired, Groups> {
     return this.with({ disableHelpSubcommand: disabled });
   }
 
+  /** Disables the generated `-h` and `--help` flags. */
   disableHelpFlag(
     disabled = true,
   ): Command<Name, Fields, Subcommands, SubcommandRequired, Groups> {
     return this.with({ disableHelpFlag: disabled });
   }
 
+  /** Disables the generated `-V` and `--version` flags. */
   disableVersionFlag(
     disabled = true,
   ): Command<Name, Fields, Subcommands, SubcommandRequired, Groups> {
     return this.with({ disableVersionFlag: disabled });
   }
 
+  /** Sets the version text printed by `-V` and `--version`. */
   version(version: string): Command<Name, Fields, Subcommands, SubcommandRequired, Groups> {
     return this.with({ version });
   }
 
+  /** Hides this command from parent help and completion while keeping it parseable. */
   hide(hidden = true): Command<Name, Fields, Subcommands, SubcommandRequired, Groups> {
     return this.with({ hidden });
   }
@@ -845,11 +866,13 @@ export class Command<
     return runConfiguredHandler(getCommandDefinition(this), this.tryParse(argv), options);
   }
 
+  /** Renders the complete help text for this command. */
   renderHelp(): string {
     const definition = getCommandDefinition(this);
     return renderHelp(definition, [definition.name], []);
   }
 
+  /** Renders the usage line for this command. */
   renderUsage(): string {
     const definition = getCommandDefinition(this);
     return renderUsageText(definition, [definition.name], []);

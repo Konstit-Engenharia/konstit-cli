@@ -70,6 +70,6 @@ const cli = command('tiny-git')
   .subcommand(commit)
   .subcommand(completion)
   .inferSubcommands()
-  .requireSubcommand();
+  .argRequiredElseHelp();
 
 process.exitCode = await cli.run();

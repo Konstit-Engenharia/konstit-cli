@@ -181,10 +181,12 @@ export class Argument<
     return this.with({ aliases: [...definition.aliases, alias] });
   }
 
+  /** Sets the argument description shown in generated help. */
   describe(help: string): Argument<Name, Value, Output, Kind, Cardinality, Global> {
     return this.with({ help });
   }
 
+  /** Sets the value label shown in usage and help, such as PATH. */
   valueName(
     this: Argument<Name, Value, Output, Extract<Kind, ValueArgumentKind>, Cardinality, Global>,
     valueName: string,
@@ -445,6 +447,7 @@ export class Argument<
     return this.with({ env: name });
   }
 
+  /** Hides the argument from help and completion while keeping it parseable. */
   hide(hidden = true): Argument<Name, Value, Output, Kind, Cardinality, Global> {
     return this.with({ hidden });
   }

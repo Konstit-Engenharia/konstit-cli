@@ -5,6 +5,7 @@ export interface ValueParser<out Value> {
   readonly completions?: readonly string[];
   /** A fallback used by generated shell completions. */
   readonly completionHint?: CompletionValueHint;
+  /** Converts one raw argument value or throws when the value is invalid. */
   parse(input: string): Value;
 }
 
@@ -65,9 +66,12 @@ function jsonParser<Value>(
   });
 }
 
+/** Built-in value parsers and factories for custom parsing rules. */
 export const parsers = Object.freeze({
+  /** Returns the raw argument text without conversion. */
   string: createValueParser('STRING', (input) => input),
 
+  /** Parses a base-10 safe integer. */
   integer: createValueParser('INTEGER', (input) => {
     if (!/^[+-]?\d+$/.test(input)) {
       throw new Error('expected an integer');
@@ -79,8 +83,10 @@ export const parsers = Object.freeze({
     return value;
   }),
 
+  /** Parses a finite JavaScript number. */
   float: createValueParser('NUMBER', finiteNumber),
 
+  /** Parses a base-10 bigint. */
   bigint: createValueParser('INTEGER', (input) => {
     if (!/^[+-]?\d+$/.test(input)) {
       throw new Error('expected an integer');
@@ -88,6 +94,7 @@ export const parsers = Object.freeze({
     return BigInt(input);
   }),
 
+  /** Parses common true and false spellings. */
   boolean: createValueParser(
     'BOOLEAN',
     (input) => {
@@ -109,6 +116,7 @@ export const parsers = Object.freeze({
     { completions: ['true', 'false'] },
   ),
 
+  /** Parses a URL accepted by the JavaScript URL constructor. */
   url: createValueParser('URL', (input) => {
     try {
       return new URL(input);
@@ -117,6 +125,7 @@ export const parsers = Object.freeze({
     }
   }),
 
+  /** Parses a date accepted by the JavaScript Date constructor. */
   date: createValueParser('DATE', (input) => {
     const value = new Date(input);
     if (Number.isNaN(value.getTime())) {
@@ -125,6 +134,7 @@ export const parsers = Object.freeze({
     return value;
   }),
 
+  /** Creates a parser that accepts one of the supplied string values. */
   enum<const Values extends readonly [string, ...string[]]>(
     values: Values,
   ): ValueParser<Values[number]> {
@@ -141,8 +151,10 @@ export const parsers = Object.freeze({
     );
   },
 
+  /** Parses JSON and optionally checks its decoded shape with a type guard. */
   json: jsonParser,
 
+  /** Creates a parser from a label and conversion callback. */
   custom<Value>(
     label: string,
     parse: (input: string) => Value,
@@ -151,6 +163,7 @@ export const parsers = Object.freeze({
     return createValueParser(label, parse, options);
   },
 
+  /** Creates a number parser limited to the inclusive range. */
   range(
     minimum: number,
     maximum: number,
