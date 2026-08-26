@@ -1,7 +1,20 @@
-export { count, flag, option, positional, type ValueCountRange } from './argument';
+export {
+  type ArgumentOptions,
+  count,
+  type CountOptions,
+  flag,
+  type FlagOptions,
+  type NamedArgumentOptions,
+  option,
+  type OptionOptions,
+  positional,
+  type PositionalOptions,
+  type ValueCountRange,
+} from './argument';
 export {
   command,
   type CommandHandler,
+  type CommandOptions,
   type GroupOptions,
   type HandledCommand,
   type HandlerContext,

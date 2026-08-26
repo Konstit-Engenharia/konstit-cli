@@ -1,6 +1,7 @@
 import {
   command,
   completionShells,
+  count,
   flag,
   option,
   parsers,
@@ -41,6 +42,73 @@ type Expected = {
 };
 
 type _ResultIsExact = Expect<Equal<Actual, Expected>>;
+
+const initializedCli = command('release', {
+  version: '1.0.0',
+  about: 'Create a release',
+  args: [
+    option('port', parsers.integer).required(),
+    flag('dryRun'),
+  ],
+  subcommands: [
+    command('init').arg(flag('bare')),
+    command('remote').arg(positional('url').required()),
+  ],
+  defaultToHelp: true,
+  handler: ({ port, dryRun, subcommand }) => {
+    const typedPort: number = port;
+    const typedDryRun: boolean = dryRun;
+    const typedSubcommand: InitializedExpected['subcommand'] = subcommand;
+    void [typedPort, typedDryRun, typedSubcommand];
+  },
+});
+
+type InitializedActual = Infer<typeof initializedCli>;
+type InitializedExpected = {
+  readonly port: number;
+  readonly dryRun: boolean;
+  readonly subcommand:
+    | { readonly name: 'init'; readonly args: { readonly bare: boolean; }; }
+    | { readonly name: 'remote'; readonly args: { readonly url: string; }; }
+    | undefined;
+};
+type _InitializerResultIsExact = Expect<
+  Equal<InitializedActual, InitializedExpected>
+>;
+
+const colorParser = parsers.enum(['auto', 'always', 'never']);
+const configuredVerbose = count('verbose', {
+  global: true,
+  short: 'v',
+  describe: 'Verbosity',
+});
+const configuredColor = option('color', colorParser, {
+  global: true,
+  default: 'auto',
+});
+const configuredArgumentsCli = command('configured-arguments', {
+  args: [
+    configuredVerbose,
+    configuredColor,
+    option('fallback', colorParser),
+  ],
+  handler: ({ color, fallback }, context) => {
+    const typedColor: 'auto' | 'always' | 'never' = color;
+    const typedFallback: 'auto' | 'always' | 'never' | undefined = fallback;
+    const typedVerbose: number = context.global(configuredVerbose);
+    void [typedColor, typedFallback, typedVerbose];
+  },
+});
+
+type ConfiguredArgumentsActual = Infer<typeof configuredArgumentsCli>;
+type ConfiguredArgumentsExpected = {
+  readonly verbose: number;
+  readonly color: 'auto' | 'always' | 'never';
+  readonly fallback: 'auto' | 'always' | 'never' | undefined;
+};
+type _ConfiguredArgumentsAreExact = Expect<
+  Equal<ConfiguredArgumentsActual, ConfiguredArgumentsExpected>
+>;
 
 const envScalarCli = command('env').arg(
   option('port', parsers.integer).env('PORT'),
@@ -159,6 +227,50 @@ void (() => {
   handlerCommand.subcommand(command('late'));
   // @ts-expect-error duplicate argument names are rejected
   unique.arg(flag('verbose'));
+  command('duplicate-initial-arguments', {
+    // @ts-expect-error duplicate argument names are rejected in initializer tuples
+    args: [flag('verbose'), flag('verbose')],
+  });
+  command('duplicate-initial-subcommands', {
+    // @ts-expect-error duplicate subcommand names are rejected in initializer tuples
+    subcommands: [command('run'), command('run')],
+  });
+  // @ts-expect-error tuple initialization is a terminal schema step
+  initializedCli.arg(flag('late'));
+  command('bad-initial-handler-argument', {
+    args: [flag('verbose')],
+    // @ts-expect-error initializer handlers only receive configured arguments
+    handler: ({ missing }) => missing,
+  });
+  command('bad-initial-handler-result', {
+    // @ts-expect-error initializer handlers return void or a numeric exit code
+    handler: () => 'failure',
+  });
+  option('bad-default', colorParser, {
+    // @ts-expect-error defaults must match the parser output
+    default: 'sometimes',
+  });
+  // @ts-expect-error undefined is not a valid string default
+  option('undefined-default', parsers.string, {
+    default: undefined,
+  });
+  option(
+    'bad-parser-order', // @ts-expect-error argument configuration cannot replace the positional parser
+    { default: 'auto' },
+  );
+  count('bad-short', {
+    // @ts-expect-error short names are exactly one character
+    short: 'vv',
+  });
+  positional('path', parsers.string, {
+    // @ts-expect-error positional arguments cannot be global
+    global: true,
+  });
+  // @ts-expect-error required and default presence cannot be combined
+  option('conflicting-presence', parsers.string, {
+    required: true,
+    default: 'value',
+  });
   // @ts-expect-error relation names must refer to declared arguments
   related.requires('one', 'missing');
   // @ts-expect-error group names must refer to declared arguments

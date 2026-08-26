@@ -129,6 +129,81 @@ describe('built-in value parsers', () => {
 });
 
 describe('argument builder aliases and metadata', () => {
+  test('applies factory configuration without changing parser ownership', () => {
+    const colorParser = parsers.enum(['auto', 'always', 'never']);
+    const completion = () => ['auto'];
+    const withDefault = option('color', colorParser, {
+      global: true,
+      default: 'auto',
+      short: 'c',
+      describe: 'Color mode',
+      valueName: 'WHEN',
+      valueHint: 'file',
+      complete: completion,
+      env: 'COLOR_MODE',
+      hide: false,
+    });
+    const withoutDefault = option('fallback', colorParser);
+    const verbose = count('verbose', {
+      global: true,
+      short: 'v',
+      long: 'verbosity',
+      aliases: ['details'],
+      describe: 'Verbosity',
+    });
+
+    expect(getArgumentDefinition(withDefault)).toMatchObject({
+      parser: colorParser,
+      presence: 'default',
+      defaultValue: 'auto',
+      short: 'c',
+      help: 'Color mode',
+      valueName: 'WHEN',
+      completionHint: 'file',
+      completion,
+      env: 'COLOR_MODE',
+      hidden: false,
+      global: true,
+    });
+    expect(getArgumentDefinition(withoutDefault)).toMatchObject({
+      parser: colorParser,
+      presence: 'optional',
+      global: false,
+    });
+    expect(getArgumentDefinition(verbose)).toMatchObject({
+      short: 'v',
+      long: 'verbosity',
+      aliases: ['details'],
+      help: 'Verbosity',
+      global: true,
+    });
+    expect(getArgumentDefinition(positional('input', parsers.string, {
+      required: true,
+      valueName: 'SOURCE',
+    }))).toMatchObject({
+      presence: 'required',
+      valueName: 'SOURCE',
+    });
+    expect(getArgumentDefinition(flag('quiet', { global: true, negated: true }))).toMatchObject({
+      action: 'setFalse',
+      defaultValue: true,
+      global: true,
+    });
+  });
+
+  test('validates conflicting factory presence and global positionals', () => {
+    const conflicting = {
+      required: true,
+      default: 'safe',
+    } as never;
+    expect(() => option('mode', parsers.string, conflicting)).toThrow(
+      'cannot be required and have a default',
+    );
+    expect(() => positional('path', parsers.string, { global: true } as never)).toThrow(
+      'Positional arguments cannot be global',
+    );
+  });
+
   test('sets an explicit long name and positional value label', () => {
     const output = option('output').long('destination');
     const input = positional('input').valueName('SOURCE');

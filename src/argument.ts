@@ -67,6 +67,79 @@ type OneCharacter<Value extends string> = Value extends `${infer _First}${infer 
   : never
   : never;
 
+/** Settings shared by every argument factory. */
+export interface ArgumentOptions {
+  /** Sets the argument description shown in generated help. */
+  readonly describe?: string;
+  /** Reads a missing value from this environment variable. */
+  readonly env?: string;
+  /** Hides the argument from help and completion while keeping it parseable. */
+  readonly hide?: boolean;
+}
+
+/** Settings shared by named argument factories. */
+export interface NamedArgumentOptions extends ArgumentOptions {
+  /** Makes the argument available to nested subcommands. */
+  readonly global?: boolean;
+  /** Adds a one-character short form. */
+  readonly short?: string;
+  /** Sets the long form without the leading --. */
+  readonly long?: string;
+  /** Adds parseable long aliases. */
+  readonly aliases?: readonly string[];
+}
+
+interface ValueMetadataOptions<Value> extends ArgumentOptions {
+  /** Sets the value label shown in usage and help. */
+  readonly valueName?: string;
+  /** Selects file or directory completion for the value. */
+  readonly valueHint?: CompletionValueHint;
+  /** Computes value completions from the active command line. */
+  readonly complete?: DynamicCompletionProvider;
+  /** Requires a value when no default is configured. */
+  readonly required?: boolean;
+  /** Supplies a value when the user omits the argument. */
+  readonly default?: NoInfer<Value>;
+}
+
+/** Settings accepted by option(). */
+export type OptionOptions<Value> =
+  & NamedArgumentOptions
+  & ValueMetadataOptions<Value>;
+
+/** Settings accepted by positional(). */
+export type PositionalOptions<Value> = ValueMetadataOptions<Value>;
+
+/** Settings accepted by flag(). */
+export interface FlagOptions extends NamedArgumentOptions {
+  /** Makes the switch false when present and true when absent. */
+  readonly negated?: boolean;
+}
+
+/** Settings accepted by count(). */
+export type CountOptions = NamedArgumentOptions;
+
+type CheckedShort<Options extends NamedArgumentOptions> = Options extends { readonly short: infer Short extends string; }
+  ? { readonly short: OneCharacter<Short>; }
+  : unknown;
+
+type ConfiguredGlobal<Options> = Options extends { readonly global: infer Global extends boolean; } ? Global
+  : 'global' extends keyof Options ? boolean
+  : false;
+
+type CheckedValueOptions<Value, Options> = Options extends { readonly required: true; readonly default: unknown; }
+  ? { readonly __typeclap_error__: 'An argument cannot be required and have a default'; }
+  : Options extends { readonly default: infer Default; } ? [Default] extends [Value] ? unknown : { readonly default: NoInfer<Value>; }
+  : unknown;
+
+type ConfiguredValueOutput<Value, Options> = Options extends { readonly default: unknown; } ? Value
+  : Options extends { readonly required: true; } ? Exclude<Value, undefined>
+  : Value | undefined;
+
+interface RuntimeValueOptions<Value> extends ValueMetadataOptions<Value> {}
+
+interface RuntimeOptionOptions<Value> extends NamedArgumentOptions, RuntimeValueOptions<Value> {}
+
 type PreserveUndefined<Current, Present> = undefined extends Current ? Present | undefined : Present;
 
 type FixedTuple<
@@ -509,6 +582,110 @@ function baseDefinition(
   });
 }
 
+function applyArgumentOptions<
+  const Name extends string,
+  Value,
+  Output,
+  const Kind extends ArgumentKind,
+  const Cardinality extends ArgumentCardinality,
+  const Global extends boolean,
+>(
+  argument: Argument<Name, Value, Output, Kind, Cardinality, Global>,
+  options: ArgumentOptions,
+): Argument<Name, Value, Output, Kind, Cardinality, Global> {
+  let configured = argument;
+  if (options.describe !== undefined) {
+    configured = configured.describe(options.describe);
+  }
+  if (options.env !== undefined) {
+    configured = configured.env(options.env);
+  }
+  if (options.hide !== undefined) {
+    configured = configured.hide(options.hide);
+  }
+  return configured;
+}
+
+function applyNamedArgumentOptions<
+  const Name extends string,
+  Value,
+  Output,
+  const Kind extends NamedArgumentKind,
+  const Cardinality extends ArgumentCardinality,
+  const Options extends NamedArgumentOptions,
+>(
+  argument: Argument<Name, Value, Output, Kind, Cardinality, false>,
+  options: Options,
+): Argument<Name, Value, Output, Kind, Cardinality, ConfiguredGlobal<Options>> {
+  let configured = applyArgumentOptions(argument, options) as Argument<
+    Name,
+    Value,
+    Output,
+    Extract<Kind, NamedArgumentKind>,
+    Cardinality,
+    false
+  >;
+  if (options.short !== undefined) {
+    configured = configured.short(options.short as never);
+  }
+  if (options.long !== undefined) {
+    configured = configured.long(options.long);
+  }
+  for (const alias of options.aliases ?? []) {
+    configured = configured.alias(alias);
+  }
+  const result = options.global === true ? configured.global() : configured;
+  return result as unknown as Argument<
+    Name,
+    Value,
+    Output,
+    Kind,
+    Cardinality,
+    ConfiguredGlobal<Options>
+  >;
+}
+
+function applyValueArgumentOptions<
+  const Name extends string,
+  Value,
+  Output,
+  const Kind extends ValueArgumentKind,
+  const Global extends boolean,
+>(
+  argument: Argument<Name, Value, Output, Kind, 'one', Global>,
+  options: RuntimeValueOptions<Value>,
+): ArgumentType<Name, Value, unknown, Kind, 'one', Global> {
+  let configured = applyArgumentOptions(argument, options) as Argument<
+    Name,
+    Value,
+    Output,
+    Extract<Kind, ValueArgumentKind>,
+    'one',
+    Global
+  >;
+  if (options.valueName !== undefined) {
+    configured = configured.valueName(options.valueName);
+  }
+  if (options.valueHint !== undefined) {
+    configured = configured.valueHint(options.valueHint);
+  }
+  if (options.complete !== undefined) {
+    configured = configured.complete(options.complete);
+  }
+
+  const hasDefault = Object.hasOwn(options, 'default');
+  if (hasDefault && options.required === true) {
+    throw new TypeError('An argument configuration cannot be required and have a default');
+  }
+  if (hasDefault) {
+    return configured.default(options.default as Value);
+  }
+  if (options.required === true) {
+    return configured.required();
+  }
+  return configured;
+}
+
 /** Creates a named --option which consumes one value. */
 export function option<const Name extends string>(
   name: Name,
@@ -517,11 +694,34 @@ export function option<const Name extends string, Value>(
   name: Name,
   parser: ValueParser<Value>,
 ): Argument<Name, Value, Value | undefined, 'option'>;
+export function option<
+  const Name extends string,
+  Value,
+  const Options extends OptionOptions<NoInfer<Value>>,
+>(
+  name: Name,
+  parser: ValueParser<Value>,
+  options: Options & CheckedShort<Options> & CheckedValueOptions<Value, Options>,
+): Argument<
+  Name,
+  Value,
+  ConfiguredValueOutput<Value, Options>,
+  'option',
+  'one',
+  ConfiguredGlobal<Options>
+>;
 export function option(
   name: string,
   parser: ValueParser<unknown> = parsers.string,
-): Argument<string, unknown, unknown, 'option'> {
-  return new Argument(baseDefinition(name, 'option', parser));
+  options: RuntimeOptionOptions<unknown> = {},
+): ArgumentType {
+  const argument = applyNamedArgumentOptions(
+    new Argument<string, unknown, unknown, 'option'>(
+      baseDefinition(name, 'option', parser),
+    ),
+    options,
+  );
+  return applyValueArgumentOptions(argument, options);
 }
 
 /** Creates a positional value. Positionals are consumed in declaration order. */
@@ -532,25 +732,72 @@ export function positional<const Name extends string, Value>(
   name: Name,
   parser: ValueParser<Value>,
 ): Argument<Name, Value, Value | undefined, 'positional'>;
+export function positional<
+  const Name extends string,
+  Value,
+  const Options extends PositionalOptions<NoInfer<Value>>,
+>(
+  name: Name,
+  parser: ValueParser<Value>,
+  options: Options & CheckedValueOptions<Value, Options>,
+): Argument<Name, Value, ConfiguredValueOutput<Value, Options>, 'positional'>;
 export function positional(
   name: string,
   parser: ValueParser<unknown> = parsers.string,
-): Argument<string, unknown, unknown, 'positional'> {
-  return new Argument(baseDefinition(name, 'positional', parser));
+  options: RuntimeValueOptions<unknown> = {},
+): ArgumentType {
+  if (Object.hasOwn(options, 'global')) {
+    throw new TypeError('Positional arguments cannot be global');
+  }
+  return applyValueArgumentOptions(
+    new Argument<string, unknown, unknown, 'positional'>(
+      baseDefinition(name, 'positional', parser),
+    ),
+    options,
+  );
 }
 
 /** Creates a boolean switch. An absent flag is false. */
 export function flag<const Name extends string>(
   name: Name,
-): Argument<Name, boolean, boolean, 'flag'> {
-  return new Argument(baseDefinition(name, 'flag'));
+): Argument<Name, boolean, boolean, 'flag'>;
+export function flag<
+  const Name extends string,
+  const Options extends FlagOptions,
+>(
+  name: Name,
+  options: Options & CheckedShort<Options>,
+): Argument<Name, boolean, boolean, 'flag', 'one', ConfiguredGlobal<Options>>;
+export function flag(
+  name: string,
+  options: FlagOptions = {},
+): ArgumentType {
+  const configured = applyNamedArgumentOptions(
+    new Argument<string, boolean, boolean, 'flag'>(baseDefinition(name, 'flag')),
+    options,
+  );
+  return options.negated === true ? configured.negated() : configured;
 }
 
 /** Creates an occurrence counter, such as -vvv. An absent counter is zero. */
 export function count<const Name extends string>(
   name: Name,
-): Argument<Name, number, number, 'count'> {
-  return new Argument(baseDefinition(name, 'count'));
+): Argument<Name, number, number, 'count'>;
+export function count<
+  const Name extends string,
+  const Options extends CountOptions,
+>(
+  name: Name,
+  options: Options & CheckedShort<Options>,
+): Argument<Name, number, number, 'count', 'one', ConfiguredGlobal<Options>>;
+export function count(
+  name: string,
+  options: CountOptions = {},
+): ArgumentType {
+  return applyNamedArgumentOptions(
+    new Argument<string, number, number, 'count'>(baseDefinition(name, 'count')),
+    options,
+  );
 }
 
 /** The covariant type surface used to inspect any argument builder. */

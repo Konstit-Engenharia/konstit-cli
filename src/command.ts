@@ -1,11 +1,13 @@
 import {
   ArgumentAction,
   getArgumentDefinition,
+  type AnyArgument,
   type AnyGlobalArgument,
   type Argument,
   type ArgumentCardinality,
   type ArgumentDefinition,
   type ArgumentKind,
+  type ArgumentName,
   type ArgumentOutput,
 } from './argument';
 import {
@@ -194,7 +196,7 @@ export interface CommandType<
 
 export type AnyCommand = CommandType;
 
-/** A terminal command schema with a configured handler. */
+/** A terminal command schema that can parse, render, and run. */
 export interface HandledCommand<
   out Name extends string = string,
   out Fields extends object = object,
@@ -879,8 +881,86 @@ export class Command<
   }
 }
 
-/** Starts an immutable command definition. */
-export function command<const Name extends string>(
+type FieldsFromArguments<Arguments extends readonly AnyArgument[]> = Simplify<
+  {
+    [Value in Arguments[number] as ArgumentName<Value>]: ArgumentOutput<Value>;
+  }
+>;
+
+type CommandName<Value extends AnyCommand> = Value extends CommandType<infer Name> ? Name : never;
+
+type SubcommandsFromTuple<Subcommands extends readonly AnyCommand[]> = Simplify<
+  {
+    [Value in Subcommands[number] as CommandName<Value>]: Value;
+  }
+>;
+
+type UniqueArguments<
+  Arguments extends readonly AnyArgument[],
+  Seen extends string = never,
+> = number extends Arguments['length'] ? unknown
+  : Arguments extends readonly [
+    infer First extends AnyArgument,
+    ...infer Rest extends readonly AnyArgument[],
+  ] ? ArgumentName<First> extends infer Name extends string ? string extends Name ? unknown
+      : [Name] extends [Seen] ? DuplicateArgument<Name>
+      : UniqueArguments<Rest, Seen | Name>
+    : unknown
+  : unknown;
+
+type UniqueSubcommands<
+  Subcommands extends readonly AnyCommand[],
+  Seen extends string = never,
+> = number extends Subcommands['length'] ? unknown
+  : Subcommands extends readonly [
+    infer First extends AnyCommand,
+    ...infer Rest extends readonly AnyCommand[],
+  ] ? CommandName<First> extends infer Name extends string ? string extends Name ? unknown
+      : [Name] extends [Seen] ? DuplicateSubcommand<Name>
+      : UniqueSubcommands<Rest, Seen | Name>
+    : unknown
+  : unknown;
+
+/** Optional values applied when starting an immutable command definition. */
+export interface CommandOptions<
+  Arguments extends readonly AnyArgument[] = readonly AnyArgument[],
+  Subcommands extends readonly AnyCommand[] = readonly AnyCommand[],
+> {
+  /** Sets the version text printed by `-V` and `--version`. */
+  readonly version?: string;
+  /** Sets the short command description shown in help and completion. */
+  readonly about?: string;
+  /** Adds parseable aliases that are hidden from help and completion. */
+  readonly aliases?: readonly string[];
+  /** Adds parseable aliases that are shown in help and completion. */
+  readonly visibleAliases?: readonly string[];
+  /** Adds arguments in tuple order. */
+  readonly args?: Arguments;
+  /** Adds subcommands in tuple order. */
+  readonly subcommands?: Subcommands;
+  /** Accepts an unambiguous prefix of a subcommand name or alias. */
+  readonly inferSubcommands?: boolean;
+  /** Displays help when no argument or subcommand was supplied. */
+  readonly defaultToHelp?: boolean;
+  /** Attaches a callback with the exact configured argument type. */
+  readonly handler?: CommandHandler<
+    CommandArguments<
+      FieldsFromArguments<Arguments>,
+      SubcommandsFromTuple<Subcommands>,
+      false
+    >
+  >;
+}
+
+type CheckedCommandOptions<
+  Arguments extends readonly AnyArgument[],
+  Subcommands extends readonly AnyCommand[],
+> = CommandOptions<Arguments, Subcommands> & {
+  readonly args?: Arguments & UniqueArguments<Arguments>;
+  readonly subcommands?: Subcommands & UniqueSubcommands<Subcommands>;
+};
+
+function emptyCommand<const Name extends string>(
   name: Name,
 ): Command<Name> {
   validateCommandName(name);
@@ -906,6 +986,58 @@ export function command<const Name extends string>(
     disableVersionFlag: false,
     hidden: false,
   }));
+}
+
+/** Starts an immutable command definition. */
+export function command<const Name extends string>(name: Name): Command<Name>;
+/** Starts an immutable command definition from tuple-based options. */
+export function command<
+  const Name extends string,
+  const Arguments extends readonly AnyArgument[] = readonly [],
+  const Subcommands extends readonly AnyCommand[] = readonly [],
+>(
+  name: Name,
+  options: CheckedCommandOptions<Arguments, Subcommands>,
+): HandledCommand<
+  Name,
+  FieldsFromArguments<Arguments>,
+  SubcommandsFromTuple<Subcommands>,
+  false,
+  never
+>;
+export function command(
+  name: string,
+  options: CommandOptions<readonly AnyArgument[], readonly AnyCommand[]> = {},
+): AnyCommand {
+  let configured = emptyCommand(name);
+  if (options.version !== undefined) {
+    configured = configured.version(options.version);
+  }
+  if (options.about !== undefined) {
+    configured = configured.about(options.about);
+  }
+  for (const alias of options.visibleAliases ?? []) {
+    configured = configured.visibleAlias(alias);
+  }
+  for (const alias of options.aliases ?? []) {
+    configured = configured.alias(alias);
+  }
+  for (const argument of options.args ?? []) {
+    configured = configured.arg(argument as never);
+  }
+  for (const subcommand of options.subcommands ?? []) {
+    configured = configured.subcommand(subcommand);
+  }
+  if (options.inferSubcommands !== undefined) {
+    configured = configured.inferSubcommands(options.inferSubcommands);
+  }
+  if (options.defaultToHelp !== undefined) {
+    configured = configured.argRequiredElseHelp(options.defaultToHelp);
+  }
+  if (options.handler !== undefined) {
+    return configured.handler(options.handler as never);
+  }
+  return configured;
 }
 
 function validateCommandName(name: string): void {

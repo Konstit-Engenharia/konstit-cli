@@ -16,8 +16,15 @@ type Expect<Value extends true> = Value;
 
 describe('typed handler globals', () => {
   test('provides inherited globals through every handler context', async () => {
-    const verbose = count('verbose').short('v').global().describe('Verbosity');
-    const profile = option('profile').global().default('default');
+    const verbose = count('verbose', {
+      global: true,
+      short: 'v',
+      describe: 'Verbosity',
+    });
+    const profile = option('profile', parsers.string, {
+      global: true,
+      default: 'default',
+    });
     let received: unknown;
     let receivedPath: readonly string[] = [];
     const serve = command('serve')
@@ -53,7 +60,7 @@ describe('typed handler globals', () => {
   });
 
   test('rejects a global that is not registered in the selected path', async () => {
-    const orphan = option('profile').global();
+    const orphan = option('profile', parsers.string, { global: true });
     const cli = command('tool').subcommand(
       command('serve').handler((_args, context) => {
         context.global(orphan);
@@ -68,8 +75,13 @@ describe('typed handler globals', () => {
 
 void (() => {
   const local = option('local');
+  const explicitlyLocal = option('explicitlyLocal', parsers.string, {
+    global: false,
+  });
   command('bad').handler((_args, context) => {
     // @ts-expect-error context.global only accepts arguments branded as global
     context.global(local);
+    // @ts-expect-error global false keeps an argument local
+    context.global(explicitlyLocal);
   });
 });

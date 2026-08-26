@@ -54,19 +54,24 @@ import {
   type Infer,
 } from '@konstit/cli';
 
-const serve = command('serve')
-  .about('Serve static files')
-  .version('1.0.0')
-  .arg(option('port', parsers.range(1, 65_535)).short('p').default(3000))
-  .arg(option('host').default('127.0.0.1'))
-  .arg(flag('open').short('o'))
-  .arg(count('verbose').short('v'))
-  .arg(positional('root').required())
-  .handler(async ({ port, host, open, verbose, root }) => {
+const verbose = count('verbose', { global: true, short: 'v' });
+
+const serve = command('serve', {
+  about: 'Serve static files',
+  version: '1.0.0',
+  args: [
+    option('port', parsers.range(1, 65_535), { short: 'p', default: 3000 }),
+    option('host', parsers.string, { default: '127.0.0.1' }),
+    flag('open', { short: 'o' }),
+    verbose,
+    positional('root', parsers.string, { required: true }),
+  ],
+  handler: async ({ port, host, open, verbose, root }) => {
     // port: number; host: string; open: boolean
     // verbose: number; root: string
     console.log(`Serving ${root} on ${host}:${port}`);
-  });
+  },
+});
 
 type Args = Infer<typeof serve>;
 // {
@@ -81,6 +86,31 @@ const exitCode = await serve.run();
 
 process.exitCode = exitCode;
 ```
+
+The command factory also accepts tuple-based initial values:
+
+```ts
+const cli = command('tiny-git', {
+  version: '0.1.0',
+  about: 'A type-safe git-like example',
+  args: [verbose, color],
+  subcommands: [clone, commit, completion],
+  inferSubcommands: true,
+  defaultToHelp: true,
+});
+
+process.exitCode = await cli.run();
+```
+
+Each property is optional. Tuple order is preserved, and duplicate primary
+argument or subcommand names fail during type checking. Alias collisions and
+widened arrays are checked at runtime. `defaultToHelp: true` has the same
+behavior as `.argRequiredElseHelp()`.
+Initializer handlers are contextually typed from the argument and subcommand
+tuples. Hidden aliases, visible aliases, and inferred subcommands can also be
+configured in the initializer.
+The tuple initializer is a terminal schema step; use the fluent form when a
+command needs more configuration.
 
 `.handler()` receives the exact inferred argument object, so destructuring keeps
 every field type. It is a terminal schema step: add all arguments, subcommands,
@@ -276,6 +306,28 @@ Add the dot-source command to `$PROFILE` for persistent loading.
 
 ## Arguments
 
+Argument configuration always comes last. Value arguments keep their parser in
+the second position:
+
+```ts
+const verbose = count('verbose', {
+  global: true,
+  short: 'v',
+  describe: 'Increase verbosity',
+});
+
+const color = option(
+  'color',
+  parsers.enum(['auto', 'always', 'never']),
+  { global: true, default: 'auto' },
+);
+```
+
+Defaults belong to the argument, not the parser. A default must match the
+parser output and removes `undefined` from the inferred argument type. Use an
+explicit `parsers.string` when a string option or positional needs
+configuration.
+
 ```ts
 option('port', parsers.integer) // number | undefined
   .short('p')
@@ -374,8 +426,8 @@ exclusive unless `{ multiple: true }` is set. Group names are checked after
 ## Global arguments and custom help
 
 ```ts
-const verbose = count('verbose').short('v').global();
-const profile = option('profile').global();
+const verbose = count('verbose', { global: true, short: 'v' });
+const profile = option('profile', parsers.string, { global: true });
 
 const cli = command('tool')
   .about('Manage services')
@@ -396,8 +448,8 @@ const cli = command('tool')
   );
 ```
 
-Global arguments work before or after nested subcommands and appear in nested
-help and completion output. A handler receives local fields in its first
+Set `global: true` on a named argument to make it available before or after
+nested subcommands and show it in nested help and completion output. A handler receives local fields in its first
 parameter. Its context returns a registered global value through
 `context.global(globalArgument)`, with the exact inferred type. Help can also
 use `.overrideUsage()`,

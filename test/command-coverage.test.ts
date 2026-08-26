@@ -93,6 +93,52 @@ describe('command coverage', () => {
     expect(parse(cli, ['--verbose']).verbose).toBe(true);
   });
 
+  test('initializes a command from tuple options', async () => {
+    const cli = command('tool', {
+      version: '1.2.3',
+      about: 'Tuple configured tool',
+      args: [flag('verbose')],
+      subcommands: [
+        command('status', {
+          visibleAliases: ['state'],
+          aliases: ['s'],
+          args: [flag('short')],
+          handler: ({ short }) => short ? 7 : 0,
+        }),
+      ],
+      inferSubcommands: true,
+      defaultToHelp: true,
+    });
+
+    expect(cli.tryParse([])).toMatchObject({
+      ok: true,
+      type: 'display',
+      kind: DisplayKind.Help,
+    });
+    expect(cli.tryParse(['--version'])).toMatchObject({
+      ok: true,
+      type: 'display',
+      kind: DisplayKind.Version,
+      output: 'tool 1.2.3\n',
+    });
+    expect(cli.renderHelp()).toContain('Tuple configured tool');
+    expect(cli.renderHelp()).toContain('--verbose');
+    expect(cli.renderHelp()).toContain('status (aliases: state)');
+    expect(cli.renderHelp()).not.toContain('(aliases: s)');
+    expect(parse(cli, ['--verbose', 'sta', '--short'])).toEqual({
+      verbose: true,
+      subcommand: {
+        name: 'status',
+        args: { short: true },
+      },
+    });
+    expect(await cli.run(['s', '--short'])).toBe(7);
+
+    expect(parse(command('defaults', { defaultToHelp: false }), [])).toEqual(
+      {},
+    );
+  });
+
   test('suggests close subcommand names and aliases', () => {
     const cli = command('tool').subcommand(
       command('clone').alias('copy'),
@@ -134,6 +180,45 @@ describe('command coverage', () => {
       .toThrow('Duplicate long option');
     expect(() => argumentsCli.arg(flag('first') as never))
       .toThrow('Duplicate argument');
+
+    expect(() =>
+      command('tool', {
+        args: [flag('same'), flag('same')] as never,
+      })
+    ).toThrow('Duplicate argument');
+    expect(() =>
+      command('tool', {
+        args: [
+          flag('first').alias('shared'),
+          flag('second').alias('shared'),
+        ],
+      })
+    ).toThrow('Duplicate long option');
+    expect(() =>
+      command('tool', {
+        subcommands: [command('same'), command('same')] as never,
+      })
+    ).toThrow('Duplicate subcommand name or alias');
+    expect(() =>
+      command('tool', {
+        subcommands: [
+          command('first').alias('shared'),
+          command('shared'),
+        ],
+      })
+    ).toThrow('Duplicate subcommand name or alias');
+    expect(() =>
+      command('tool', {
+        version: '1',
+        args: [flag('revision').short('V')],
+      })
+    ).toThrow('Option \'-V\' is reserved');
+    expect(() =>
+      command('tool', {
+        visibleAliases: ['shared'],
+        aliases: ['shared'],
+      })
+    ).toThrow('Duplicate command alias');
   });
 
   test('rejects invalid positional and inherited global layouts', () => {
