@@ -2,6 +2,22 @@
   "name": "@konstit/cli",
   "version": "0.2.0",
   "description": "A clap-inspired, type-safe command-line parser for Bun and TypeScript",
+  "author": {
+    "name": "KONSTIT ENGENHARIA E TECNOLOGIA LTDA",
+    "email": "opensource@konstit.com.br"
+  },
+  "contributors": [
+    {
+      "name": "Diego Alcântara",
+      "url": "https://github.com/dgoalcantara",
+      "email": "diego.alcantara@konstit.com.br"
+    },
+    {
+      "name": "Marcelo Marchioro",
+      "url": "https://github.com/Sprayscelo",
+      "email": "marcelo.marchioro@konstit.com.br"
+    }
+  ],
   "type": "module",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -23,7 +39,7 @@
   "scripts": {
     "build": "bun run build:clean && bun run --parallel build:js build:types && bun run build:validate",
     "build:clean": "bun ./scripts/clean-dist.ts",
-    "build:js": "bun build ./src/index.ts ./src/completion.ts --outdir ./dist --target=bun --format=esm --sourcemap=external --splitting --chunk-naming 'chunks/[name]-[hash].[ext]'",
+    "build:js": "bun build ./src/index.ts ./src/completion.ts --outdir ./dist --target=bun --format=esm --sourcemap=external --minify --keep-names --splitting --chunk-naming 'chunks/[name]-[hash].[ext]'",
     "build:types": "tsc -p tsconfig.build.json",
     "build:validate": "bun ./scripts/validate-package.ts",
     "analyze:bundle": "bun ./scripts/analyze-bundle.ts",
