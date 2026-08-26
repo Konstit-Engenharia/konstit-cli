@@ -3,13 +3,19 @@ name: Publish to npm
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing GitHub Release tag to publish
+        required: true
+        type: string
 
 permissions:
   contents: write
   id-token: write
 
 concurrency:
-  group: npm-publish-${{ github.event.release.tag_name }}
+  group: npm-publish-${{ github.event.release.tag_name || inputs.tag }}
   cancel-in-progress: false
 
 jobs:
@@ -23,6 +29,8 @@ jobs:
     steps:
       - name: Check out release
         uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.release.tag_name || inputs.tag }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -39,9 +47,14 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Install test shells
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes zsh
+
       - name: Verify release version
         env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
         run: |
           PACKAGE_VERSION="$(node -p "require('./package.json').version")"
           TAG_VERSION="${RELEASE_TAG#v}"
@@ -64,7 +77,7 @@ jobs:
       - name: Add tarball to GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
           TARBALL: ${{ steps.package.outputs.tarball }}
         run: gh release upload "$RELEASE_TAG" "$TARBALL" --clobber
 
