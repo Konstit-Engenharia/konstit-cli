@@ -17,19 +17,26 @@ import {
   generateCompletion,
 } from '../src/completion';
 
-const cli = command('demo')
-  .version('1.0.0')
-  .arg(option('mode', parsers.enum(['dev', 'prod'])).short('m'))
-  .arg(option('config').valueHint('file'))
-  .arg(flag('verbose').short('v'))
-  .arg(positional('output').valueHint('directory'))
-  .arg(option('secret').hide())
-  .subcommand(
-    command('run')
-      .about('Run the application')
-      .arg(option('target', parsers.enum(['web', 'server']))),
-  )
-  .subcommand(command('internal').hide().arg(flag('unsafe')));
+const cli = command('demo', {
+  version: '1.0.0',
+  args: [
+    option('mode', parsers.enum(['dev', 'prod']), { short: 'm' }),
+    option('config', parsers.string, { valueHint: 'file' }),
+    flag('verbose', { short: 'v' }),
+    positional('output', parsers.string, { valueHint: 'directory' }),
+    option('secret', parsers.string, { hide: true }),
+  ],
+  subcommands: [
+    command('run', {
+      about: 'Run the application',
+      args: [option('target', parsers.enum(['web', 'server']))],
+    }),
+    command('internal', {
+      hide: true,
+      args: [flag('unsafe')],
+    }),
+  ],
+});
 
 describe('completion generation', () => {
   test('supports the common shell set', () => {
@@ -56,9 +63,15 @@ describe('completion generation', () => {
   });
 
   test('includes inherited globals and visible subcommand aliases', () => {
-    const globalCli = command('tool')
-      .arg(flag('verbose').global())
-      .subcommand(command('serve').visibleAlias('server').alias('s'));
+    const globalCli = command('tool', {
+      args: [flag('verbose', { global: true })],
+      subcommands: [
+        command('serve', {
+          visibleAliases: ['server'],
+          aliases: ['s'],
+        }),
+      ],
+    });
     const script = generateCompletion(globalCli, 'bash');
     expect(script).toContain('--verbose');
     expect(script).toContain('server');
@@ -94,9 +107,13 @@ describe('completion generation', () => {
   });
 
   test('writes dynamic provider candidates through the shell protocol', async () => {
-    const dynamicCli = command('packages').arg(
-      option('package').complete(async () => ['react', 'redis', 'vue']),
-    );
+    const dynamicCli = command('packages', {
+      args: [
+        option('package', parsers.string, {
+          complete: async () => ['react', 'redis', 'vue'],
+        }),
+      ],
+    });
     let output = '';
     expect(
       await withDynamicCompletion(() =>
@@ -129,11 +146,15 @@ printf 'DYNAMIC:%s\n' "\${COMPREPLY[*]}"
   });
 
   test('preserves dynamic descriptions in shell protocols', async () => {
-    const described = command('packages').arg(
-      option('package').complete(() => [
-        { value: 'react', description: 'UI library' },
-      ]),
-    );
+    const described = command('packages', {
+      args: [
+        option('package', parsers.string, {
+          complete: () => [
+            { value: 'react', description: 'UI library' },
+          ],
+        }),
+      ],
+    });
     let output = '';
     await withDynamicCompletion(() =>
       described.run({
@@ -184,11 +205,14 @@ printf 'NESTED:%s\n' "\${COMPREPLY[*]}"
   });
 
   test('Bash tracks multi-value options, require-equals, and positional indexes', () => {
-    const arityCli = command('arity')
-      .arg(option('pair', parsers.enum(['first', 'second'])).numArgs(2))
-      .arg(option('equal', parsers.enum(['dev', 'prod'])).requireEquals())
-      .arg(positional('source', parsers.enum(['alpha'])))
-      .arg(positional('target', parsers.enum(['beta'])));
+    const arityCli = command('arity', {
+      args: [
+        option('pair', parsers.enum(['first', 'second']), { numArgs: 2 }),
+        option('equal', parsers.enum(['dev', 'prod']), { requireEquals: true }),
+        positional('source', parsers.enum(['alpha'])),
+        positional('target', parsers.enum(['beta'])),
+      ],
+    });
     const script = `${generateCompletion(arityCli, 'bash')}
 COMP_WORDS=(arity --pair first s)
 COMP_CWORD=3
@@ -222,25 +246,27 @@ printf 'SECOND_POSITIONAL:%s\n' "\${COMPREPLY[*]}"
   });
 
   test('Bash scans delimited, attached, ranged, and unbounded option values', () => {
-    const scannerCli = command('scanner')
-      .arg(flag('verbose').short('v'))
-      .arg(
-        option('pair', parsers.enum(['first', 'second']))
-          .short('p')
-          .numArgs(2)
-          .valueDelimiter(','),
-      )
-      .arg(
-        option('range', parsers.enum(['first', 'second']))
-          .numArgs({ min: 1, max: 2 }),
-      )
-      .arg(
-        option('many', parsers.enum(['first', 'second']))
-          .numArgs({ min: 1 }),
-      )
-      .arg(flag('force'))
-      .arg(positional('target', parsers.enum(['alpha'])))
-      .subcommand(command('run').arg(flag('child-force')));
+    const scannerCli = command('scanner', {
+      args: [
+        flag('verbose', { short: 'v' }),
+        option('pair', parsers.enum(['first', 'second']), {
+          short: 'p',
+          numArgs: 2,
+          valueDelimiter: ',',
+        }),
+        option('range', parsers.enum(['first', 'second']), {
+          numArgs: { min: 1, max: 2 },
+        }),
+        option('many', parsers.enum(['first', 'second']), {
+          numArgs: { min: 1 },
+        }),
+        flag('force'),
+        positional('target', parsers.enum(['alpha'])),
+      ],
+      subcommands: [
+        command('run', { args: [flag('child-force')] }),
+      ],
+    });
     const script = `${generateCompletion(scannerCli, 'bash')}
 COMP_WORDS=(scanner --pair=first,second "")
 COMP_CWORD=2
@@ -288,13 +314,15 @@ printf 'UNBOUNDED_SUBCOMMAND_STOP:%s\n' "\${COMPREPLY[*]}"
   });
 
   test('Bash matches positional token policy, logical arity, and inferred commands', () => {
-    const positionalCli = command('positionals')
-      .arg(
-        positional('literal', parsers.enum(['--literal']))
-          .allowHyphenValues(),
-      )
-      .arg(positional('target', parsers.enum(['beta'])))
-      .arg(flag('known'));
+    const positionalCli = command('positionals', {
+      args: [
+        positional('literal', parsers.enum(['--literal']), {
+          allowHyphenValues: true,
+        }),
+        positional('target', parsers.enum(['beta'])),
+        flag('known'),
+      ],
+    });
     const positionalScript = `${generateCompletion(positionalCli, 'bash')}
 COMP_WORDS=(positionals --literal "")
 COMP_CWORD=2
@@ -315,13 +343,15 @@ printf 'DECLARED_OPTION:%s\n' "\${COMPREPLY[*]}"
     expect(positionalResult.stdout).toContain('HYPHEN_CURRENT:--literal');
     expect(positionalResult.stdout).toContain('DECLARED_OPTION:--literal');
 
-    const logicalCli = command('logical')
-      .arg(
-        positional('pair', parsers.enum(['first', 'second']))
-          .numArgs(2)
-          .valueDelimiter(','),
-      )
-      .arg(positional('target', parsers.enum(['beta'])));
+    const logicalCli = command('logical', {
+      args: [
+        positional('pair', parsers.enum(['first', 'second']), {
+          numArgs: 2,
+          valueDelimiter: ',',
+        }),
+        positional('target', parsers.enum(['beta'])),
+      ],
+    });
     const logicalScript = `${generateCompletion(logicalCli, 'bash')}
 COMP_WORDS=(logical first,second "")
 COMP_CWORD=2
@@ -332,10 +362,15 @@ printf 'POSITIONAL_DELIMITER:%s\n' "\${COMPREPLY[*]}"
     expect(logicalResult.exitCode).toBe(0);
     expect(logicalResult.stdout).toContain('POSITIONAL_DELIMITER:beta');
 
-    const inferredCli = command('tool')
-      .inferSubcommands()
-      .arg(option('values').numArgs({ min: 1, max: 3 }))
-      .subcommand(command('status').arg(flag('child')));
+    const inferredCli = command('tool', {
+      inferSubcommands: true,
+      args: [
+        option('values', parsers.string, { numArgs: { min: 1, max: 3 } }),
+      ],
+      subcommands: [
+        command('status', { args: [flag('child')] }),
+      ],
+    });
     const inferredScript = `${generateCompletion(inferredCli, 'bash')}
 COMP_WORDS=(tool --values one sta --c)
 COMP_CWORD=4
@@ -348,11 +383,16 @@ printf 'INFERRED_STOP:%s\n' "\${COMPREPLY[*]}"
   });
 
   test('Bash matches exact inference, repeatable positionals, and terminators', () => {
-    const inferredCli = command('exact')
-      .inferSubcommands()
-      .arg(option('values').numArgs({ min: 1, max: 3 }))
-      .subcommand(command('foo').arg(flag('exact-child')))
-      .subcommand(command('foobar').arg(flag('long-child')));
+    const inferredCli = command('exact', {
+      inferSubcommands: true,
+      args: [
+        option('values', parsers.string, { numArgs: { min: 1, max: 3 } }),
+      ],
+      subcommands: [
+        command('foo', { args: [flag('exact-child')] }),
+        command('foobar', { args: [flag('long-child')] }),
+      ],
+    });
     const inferredScript = `${generateCompletion(inferredCli, 'bash')}
 COMP_WORDS=(exact --values one foo --e)
 COMP_CWORD=4
@@ -364,9 +404,14 @@ printf 'EXACT_INFERENCE:%s\n' "\${COMPREPLY[*]}"
     expect(inferredResult.stdout).toContain('EXACT_INFERENCE:--exact-child');
     expect(inferredResult.stdout).not.toContain('--long-child');
 
-    const repeatCli = command('repeat').arg(
-      positional('items', parsers.enum(['one', 'two'])).numArgs(2).repeatable(),
-    );
+    const repeatCli = command('repeat', {
+      args: [
+        positional('items', parsers.enum(['one', 'two']), {
+          numArgs: 2,
+          repeatable: true,
+        }),
+      ],
+    });
     const repeatScript = `${generateCompletion(repeatCli, 'bash')}
 COMP_WORDS=(repeat one two "")
 COMP_CWORD=3
@@ -377,9 +422,15 @@ printf 'REPEATABLE:%s\n' "\${COMPREPLY[*]}"
     expect(repeatResult.exitCode).toBe(0);
     expect(repeatResult.stdout).toContain('REPEATABLE:one two');
 
-    const terminatorCli = command('terminator')
-      .arg(positional('items').numArgs({ min: 1, max: 3 }).valueTerminator(';'))
-      .arg(positional('target', parsers.enum(['beta'])));
+    const terminatorCli = command('terminator', {
+      args: [
+        positional('items', parsers.string, {
+          numArgs: { min: 1, max: 3 },
+          valueTerminator: ';',
+        }),
+        positional('target', parsers.enum(['beta'])),
+      ],
+    });
     const terminatorScript = `${generateCompletion(terminatorCli, 'bash')}
 COMP_WORDS=(terminator one ';' "")
 COMP_CWORD=3
@@ -392,10 +443,13 @@ printf 'TERMINATOR:%s\n' "\${COMPREPLY[*]}"
   });
 
   test('Bash parses hidden arguments and exact built-ins without displaying them', () => {
-    const hiddenCli = command('hidden')
-      .arg(option('secret').numArgs(2).hide())
-      .arg(positional('internal').hide())
-      .arg(positional('target', parsers.enum(['beta'])));
+    const hiddenCli = command('hidden', {
+      args: [
+        option('secret', parsers.string, { numArgs: 2, hide: true }),
+        positional('internal', parsers.string, { hide: true }),
+        positional('target', parsers.enum(['beta'])),
+      ],
+    });
     const hiddenScript = `${generateCompletion(hiddenCli, 'bash')}
 COMP_WORDS=(hidden --s)
 COMP_CWORD=1
@@ -418,15 +472,17 @@ printf 'HIDDEN_PARSE:%s\n' "\${COMPREPLY[*]}"
     expect(hiddenPowerShell).toContain('\'0:1\'');
     expect(hiddenPowerShell).not.toContain('Value = \'--secret\'');
 
-    const builtinCli = command('builtin')
-      .version('1.0.0')
-      .arg(
+    const builtinCli = command('builtin', {
+      version: '1.0.0',
+      args: [
         positional(
           'literal',
           parsers.enum(['--help=x', '--version=x', '-hx', '-Vx']),
-        ).allowHyphenValues(),
-      )
-      .arg(positional('target', parsers.enum(['beta'])));
+          { allowHyphenValues: true },
+        ),
+        positional('target', parsers.enum(['beta'])),
+      ],
+    });
     const builtinScript = `${generateCompletion(builtinCli, 'bash')}
 for token in --help=x --version=x -hx -Vx; do
   COMP_WORDS=(builtin "$token" "")
@@ -453,9 +509,15 @@ printf 'AFTER_TERMINATOR:%s\n' "\${COMPREPLY[*]}"
   });
 
   test('encodes control delimiters in static shell metadata', () => {
-    const tab = command('tab').arg(option('value').valueDelimiter('\t'));
-    const newline = command('newline').arg(option('value').valueDelimiter('\n'));
-    const nul = command('nul').arg(option('value').valueDelimiter('\0'));
+    const tab = command('tab', {
+      args: [option('value', parsers.string, { valueDelimiter: '\t' })],
+    });
+    const newline = command('newline', {
+      args: [option('value', parsers.string, { valueDelimiter: '\n' })],
+    });
+    const nul = command('nul', {
+      args: [option('value', parsers.string, { valueDelimiter: '\0' })],
+    });
     for (const shell of completionShells) {
       expect(generateCompletion(tab, shell)).not.toContain('\t1\t\t0');
       expect(generateCompletion(newline, shell)).not.toContain('\n1\n\n0');

@@ -14,7 +14,6 @@ import {
   parsers,
   positional,
 } from '../src';
-import { getCommandDefinition } from '../src/command';
 import type { ParseOutcome } from '../src/error';
 
 function parse<Value>(
@@ -30,11 +29,14 @@ function parse<Value>(
 
 describe('command parsing', () => {
   test('parses typed options, defaults, flags, and positionals', () => {
-    const cli = command('serve')
-      .arg(option('port', parsers.integer).short('p').required())
-      .arg(option('host').default('localhost'))
-      .arg(flag('open').short('o'))
-      .arg(positional('root').required());
+    const cli = command('serve', {
+      args: [
+        option('port', parsers.integer, { short: 'p', required: true }),
+        option('host', parsers.string, { default: 'localhost' }),
+        flag('open', { short: 'o' }),
+        positional('root', parsers.string, { required: true }),
+      ],
+    });
 
     expect(parse(cli, ['-p', '8080', '--open', 'public'])).toEqual({
       port: 8080,
@@ -45,9 +47,12 @@ describe('command parsing', () => {
   });
 
   test('supports long equals values, attached short values, and aliases', () => {
-    const cli = command('app')
-      .arg(option('port', parsers.integer).short('p'))
-      .arg(option('output').alias('out'));
+    const cli = command('app', {
+      args: [
+        option('port', parsers.integer, { short: 'p' }),
+        option('output', parsers.string, { aliases: ['out'] }),
+      ],
+    });
 
     expect(parse(cli, ['-p3000', '--out=result.txt'])).toEqual({
       port: 3000,
@@ -56,17 +61,23 @@ describe('command parsing', () => {
   });
 
   test('clusters flags and counts occurrences', () => {
-    const cli = command('app')
-      .arg(flag('quiet').short('q'))
-      .arg(count('verbose').short('v'));
+    const cli = command('app', {
+      args: [
+        flag('quiet', { short: 'q' }),
+        count('verbose', { short: 'v' }),
+      ],
+    });
 
     expect(parse(cli, ['-qvvv'])).toEqual({ quiet: true, verbose: 3 });
   });
 
   test('collects repeatable options and positionals', () => {
-    const cli = command('copy')
-      .arg(option('tag').short('t').repeatable())
-      .arg(positional('files').repeatable());
+    const cli = command('copy', {
+      args: [
+        option('tag', parsers.string, { short: 't', repeatable: true }),
+        positional('files', parsers.string, { repeatable: true }),
+      ],
+    });
 
     const result = parse(cli, ['-t', 'one', '--tag=two', 'a', 'b']);
     expect(result).toEqual({ tag: ['one', 'two'], files: ['a', 'b'] });
@@ -74,14 +85,16 @@ describe('command parsing', () => {
   });
 
   test('uses -- to stop option parsing', () => {
-    const cli = command('print').arg(positional('values').repeatable());
+    const cli = command('print', {
+      args: [positional('values', parsers.string, { repeatable: true })],
+    });
     expect(parse(cli, ['--', '--literal', '-x'])).toEqual({
       values: ['--literal', '-x'],
     });
   });
 
   test('keeps absent optional fields in the stable result shape', () => {
-    const cli = command('app').arg(option('config'));
+    const cli = command('app', { args: [option('config')] });
     const result = parse(cli, []);
     expect(result).toEqual({ config: undefined });
     expect(Object.hasOwn(result, 'config')).toBe(true);
@@ -91,9 +104,11 @@ describe('command parsing', () => {
     const original = Bun.env.TYPECLAP_TEST_PORT;
     Bun.env.TYPECLAP_TEST_PORT = '1000';
     try {
-      const cli = command('serve').arg(
-        option('port', parsers.integer).env('TYPECLAP_TEST_PORT'),
-      );
+      const cli = command('serve', {
+        args: [
+          option('port', parsers.integer, { env: 'TYPECLAP_TEST_PORT' }),
+        ],
+      });
       expect(parse(cli, []).port).toBe(1000);
       expect(parse(cli, ['--port', '2000']).port).toBe(2000);
     } finally {
@@ -106,12 +121,24 @@ describe('command parsing', () => {
   });
 
   test('supports fixed and ranged value counts, delimiters, and terminators', () => {
-    const cli = command('copy')
-      .arg(option('pair').numArgs(2).required())
-      .arg(option('point', parsers.integer).numArgs(2).repeatable())
-      .arg(option('tag').numArgs({ min: 1, max: 3 }).valueDelimiter(','))
-      .arg(option('include').repeatable().valueDelimiter(','))
-      .arg(option('define').numArgs({ min: 1, max: 3 }).valueTerminator(';'));
+    const cli = command('copy', {
+      args: [
+        option('pair', parsers.string, { numArgs: 2, required: true }),
+        option('point', parsers.integer, { numArgs: 2, repeatable: true }),
+        option('tag', parsers.string, {
+          numArgs: { min: 1, max: 3 },
+          valueDelimiter: ',',
+        }),
+        option('include', parsers.string, {
+          repeatable: true,
+          valueDelimiter: ',',
+        }),
+        option('define', parsers.string, {
+          numArgs: { min: 1, max: 3 },
+          valueTerminator: ';',
+        }),
+      ],
+    });
 
     expect(
       parse(cli, [
@@ -153,10 +180,103 @@ describe('command parsing', () => {
     });
   });
 
+  test('applies declarative cardinality and value behavior', () => {
+    const cli = command('configured', {
+      args: [
+        option('pair', parsers.string, { numArgs: 2, required: true }),
+        option('point', parsers.integer, { numArgs: 2, repeatable: true }),
+        option('tag', parsers.string, {
+          numArgs: { min: 1, max: 3 },
+          valueDelimiter: ',',
+        }),
+        option('include', parsers.string, {
+          repeatable: true,
+          valueDelimiter: ',',
+        }),
+        option('define', parsers.string, {
+          numArgs: { min: 1, max: 3 },
+          valueTerminator: ';',
+        }),
+        option('mode', parsers.enum(['fast', 'safe']), {
+          defaultMissing: 'safe',
+        }),
+        option('exact', parsers.string, { requireEquals: true }),
+        option('pattern', parsers.string, { allowHyphenValues: true }),
+        option('number', parsers.integer, { allowNegativeNumbers: true }),
+        positional('command', parsers.string, { trailingVarArg: true }),
+      ],
+    });
+
+    const result = parse(cli, [
+      '--pair',
+      'left',
+      'right',
+      '--point',
+      '1',
+      '2',
+      '--point',
+      '3',
+      '4',
+      '--tag',
+      'one,two',
+      'three',
+      '--define',
+      'x',
+      'y',
+      ';',
+      '--mode',
+      '--exact=value',
+      '--pattern',
+      '-literal',
+      '--number',
+      '-5',
+      'run',
+      '--raw',
+    ]);
+
+    expect(result).toEqual({
+      pair: ['left', 'right'],
+      point: [1, 2, 3, 4],
+      tag: ['one', 'two', 'three'],
+      include: [],
+      define: ['x', 'y'],
+      mode: 'safe',
+      exact: 'value',
+      pattern: '-literal',
+      number: -5,
+      command: ['run', '--raw'],
+    });
+    expect(Object.isFrozen(result.point)).toBe(true);
+    expect(Object.isFrozen(result.include)).toBe(true);
+    expect(Object.isFrozen(result.command)).toBe(true);
+
+    const positionalCli = command('files', {
+      args: [positional('files', parsers.string, { repeatable: true })],
+    });
+    expect(parse(positionalCli, ['one', 'two'])).toEqual({
+      files: ['one', 'two'],
+    });
+
+    const optionalRequiredCli = command('optional-required', {
+      args: [option('maybe', parsers.string, {
+        numArgs: { min: 0, max: 1 },
+        required: true,
+      })],
+    });
+    expect(parse(optionalRequiredCli, ['--maybe'])).toEqual({ maybe: undefined });
+    expect(optionalRequiredCli.tryParse([])).toMatchObject({
+      ok: false,
+      error: { kind: ErrorKind.MissingRequiredArgument },
+    });
+  });
+
   test('supports equals-only and optional option values', () => {
-    const cli = command('app')
-      .arg(option('config').requireEquals())
-      .arg(option('color').defaultMissing('auto'));
+    const cli = command('app', {
+      args: [
+        option('config', parsers.string, { requireEquals: true }),
+        option('color', parsers.string, { defaultMissing: 'auto' }),
+      ],
+    });
 
     expect(parse(cli, ['--config=app.json', '--color'])).toEqual({
       config: 'app.json',
@@ -170,13 +290,34 @@ describe('command parsing', () => {
       ok: false,
       error: { kind: ErrorKind.NoEquals },
     });
+
+    const flexibleCli = command('app', {
+      args: [
+        option('color', parsers.string, {
+          defaultMissing: 'auto',
+          requireEquals: false,
+        }),
+        flag('force'),
+      ],
+    });
+    expect(parse(flexibleCli, ['--color', 'always'])).toEqual({
+      color: 'always',
+      force: false,
+    });
+    expect(parse(flexibleCli, ['--color', '--force'])).toEqual({
+      color: 'auto',
+      force: true,
+    });
   });
 
   test('supports hyphen values, negative numbers, and trailing arguments', () => {
-    const cli = command('run')
-      .arg(option('pattern').allowHyphenValues())
-      .arg(option('offset', parsers.integer).allowNegativeNumbers())
-      .arg(positional('command').trailingVarArg());
+    const cli = command('run', {
+      args: [
+        option('pattern', parsers.string, { allowHyphenValues: true }),
+        option('offset', parsers.integer, { allowNegativeNumbers: true }),
+        positional('command', parsers.string, { trailingVarArg: true }),
+      ],
+    });
 
     expect(parse(cli, [
       '--pattern',
@@ -195,18 +336,19 @@ describe('command parsing', () => {
 });
 
 describe('subcommands', () => {
-  const cli = command('tool')
-    .arg(flag('quiet').short('q'))
-    .subcommand(
-      command('add')
-        .about('Add a file')
-        .arg(positional('file').required()),
-    )
-    .subcommand(
-      command('remove')
-        .arg(option('id', parsers.integer).required()),
-    )
-    .requireSubcommand();
+  const cli = command('tool', {
+    args: [flag('quiet', { short: 'q' })],
+    subcommands: [
+      command('add', {
+        about: 'Add a file',
+        args: [positional('file', parsers.string, { required: true })],
+      }),
+      command('remove', {
+        args: [option('id', parsers.integer, { required: true })],
+      }),
+    ],
+    subcommandRequired: true,
+  });
 
   test('returns a discriminated subcommand result', () => {
     expect(parse(cli, ['-q', 'add', 'README.md'])).toEqual({
@@ -241,9 +383,15 @@ describe('subcommands', () => {
   });
 
   test('supports aliases, inferred names, and the help subcommand', () => {
-    const aliased = command('repo')
-      .subcommand(command('clone').visibleAlias('copy').alias('cp'))
-      .inferSubcommands();
+    const aliased = command('repo', {
+      subcommands: [
+        command('clone', {
+          visibleAliases: ['copy'],
+          aliases: ['cp'],
+        }),
+      ],
+      inferSubcommands: true,
+    });
 
     for (const name of ['clone', 'copy', 'cp', 'clo']) {
       expect(parse(aliased, [name]).subcommand?.name).toBe('clone');
@@ -259,10 +407,10 @@ describe('subcommands', () => {
   });
 
   test('reports ambiguous inferred subcommands', () => {
-    const cli = command('repo')
-      .subcommand(command('clone'))
-      .subcommand(command('close'))
-      .inferSubcommands();
+    const cli = command('repo', {
+      subcommands: [command('clone'), command('close')],
+      inferSubcommands: true,
+    });
     expect(cli.tryParse(['cl'])).toMatchObject({
       ok: false,
       error: { kind: ErrorKind.InvalidSubcommand },
@@ -270,12 +418,21 @@ describe('subcommands', () => {
   });
 
   test('accepts global arguments before and after nested subcommands', () => {
-    const cli = command('tool')
-      .arg(count('verbose').short('v').global())
-      .arg(option('profile').global())
-      .subcommand(
-        command('serve').subcommand(command('http').arg(option('port', parsers.integer))),
-      );
+    const cli = command('tool', {
+      args: [
+        count('verbose', { short: 'v', global: true }),
+        option('profile', parsers.string, { global: true }),
+      ],
+      subcommands: [
+        command('serve', {
+          subcommands: [
+            command('http', {
+              args: [option('port', parsers.integer)],
+            }),
+          ],
+        }),
+      ],
+    });
 
     expect(parse(cli, ['--profile', 'dev', 'serve', 'http', '-vv', '--port', '8080']))
       .toEqual({
@@ -303,8 +460,11 @@ describe('subcommands', () => {
 
 describe('validation and errors', () => {
   test('reports missing and invalid values as structured errors', () => {
-    const cli = command('serve')
-      .arg(option('port', parsers.range(1, 65_535)).required());
+    const cli = command('serve', {
+      args: [
+        option('port', parsers.range(1, 65_535), { required: true }),
+      ],
+    });
 
     const missing = cli.tryParse([]);
     expect(missing.ok).toBe(false);
@@ -323,7 +483,7 @@ describe('validation and errors', () => {
   });
 
   test('suggests close option names', () => {
-    const cli = command('app').arg(flag('verbose'));
+    const cli = command('app', { args: [flag('verbose')] });
     const result = cli.tryParse(['--verbse']);
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -332,14 +492,21 @@ describe('validation and errors', () => {
   });
 
   test('enforces requirements, conflicts, and groups', () => {
-    const cli = command('release')
-      .arg(flag('major'))
-      .arg(flag('minor'))
-      .arg(flag('dry-run'))
-      .arg(option('token'))
-      .conflicts('major', 'minor')
-      .requires('token', 'dry-run')
-      .group('level', ['major', 'minor'], { required: true });
+    const cli = command('release', {
+      args: [
+        flag('major'),
+        flag('minor'),
+        flag('dry-run'),
+        option('token'),
+      ],
+      conflicts: [['major', 'minor']],
+      requires: [['token', 'dry-run']],
+      groups: [{
+        name: 'level',
+        members: ['major', 'minor'],
+        required: true,
+      }],
+    });
 
     expect(cli.tryParse([])).toMatchObject({
       ok: false,
@@ -357,25 +524,39 @@ describe('validation and errors', () => {
   });
 
   test('detects invalid command definitions', () => {
-    expect(() => command('app').arg(flag('one').short('x')).arg(flag('two').short('x')))
+    expect(() =>
+      command('app', {
+        args: [flag('one', { short: 'x' }), flag('two', { short: 'x' })],
+      })
+    )
       .toThrow('Duplicate short option');
-    expect(() => command('app').arg(positional('rest').repeatable()).arg(positional('last')))
+    expect(() =>
+      command('app', {
+        args: [
+          positional('rest', parsers.string, { repeatable: true }),
+          positional('last'),
+        ],
+      })
+    )
       .toThrow('No positional can follow repeatable');
-    expect(() => command('app').arg(flag('one').alias('one')))
+    expect(() => command('app', { args: [flag('one', { aliases: ['one'] })] }))
       .toThrow('duplicate long options');
   });
 
   test('supports conditional requirements, required-unless, and overrides', () => {
-    const cli = command('publish')
-      .arg(option('format', parsers.enum(['text', 'json'])).default('text'))
-      .arg(option('schema'))
-      .arg(option('token'))
-      .arg(flag('offline'))
-      .arg(flag('quiet'))
-      .arg(count('verbose'))
-      .requiresIf('format', 'json', 'schema')
-      .requiredUnlessPresent(['offline'], 'token')
-      .overrides('quiet', 'verbose');
+    const cli = command('publish', {
+      args: [
+        option('format', parsers.enum(['text', 'json']), { default: 'text' }),
+        option('schema'),
+        option('token'),
+        flag('offline'),
+        flag('quiet'),
+        count('verbose'),
+      ],
+      requiresIf: [['format', 'json', 'schema']],
+      requiredUnlessPresent: [{ alternatives: ['offline'], target: 'token' }],
+      overrides: [['quiet', 'verbose']],
+    });
 
     expect(cli.tryParse(['--format', 'json', '--offline'])).toMatchObject({
       ok: false,
@@ -393,10 +574,12 @@ describe('validation and errors', () => {
 });
 
 describe('help, version, and runner', () => {
-  const cli = command('demo')
-    .about('A demo')
-    .version('1.2.3')
-    .arg(flag('verbose').short('v').describe('Show details'));
+  const cli = command('demo', {
+    about: 'A demo',
+    version: '1.2.3',
+    args: [flag('verbose', { short: 'v', describe: 'Show details' })],
+    handler: () => {},
+  });
 
   test('generates help and version output', () => {
     const help = cli.tryParse(['--help']);
@@ -413,11 +596,13 @@ describe('help, version, and runner', () => {
   });
 
   test('aligns help labels that contain wide Unicode characters', () => {
-    const help = command('demo')
-      .disableHelpFlag()
-      .arg(option('mode').valueName('界').describe('Wide'))
-      .arg(flag('verbose').describe('ASCII'))
-      .renderHelp();
+    const help = command('demo', {
+      disableHelpFlag: true,
+      args: [
+        option('mode', parsers.string, { valueName: '界', describe: 'Wide' }),
+        flag('verbose', { describe: 'ASCII' }),
+      ],
+    }).renderHelp();
 
     expect(help).toContain('  --mode <界>  Wide');
     expect(help).toContain('  --verbose    ASCII');
@@ -425,11 +610,16 @@ describe('help, version, and runner', () => {
 
   test('aligns help labels without counting ANSI escape codes', () => {
     const redValue = '\x1b[31mVALUE\x1b[0m';
-    const help = command('demo')
-      .disableHelpFlag()
-      .arg(option('color').valueName(redValue).describe('Color'))
-      .arg(flag('verbose').describe('ASCII'))
-      .renderHelp();
+    const help = command('demo', {
+      disableHelpFlag: true,
+      args: [
+        option('color', parsers.string, {
+          valueName: redValue,
+          describe: 'Color',
+        }),
+        flag('verbose', { describe: 'ASCII' }),
+      ],
+    }).renderHelp();
 
     expect(help).toContain(`  --color <${redValue}>  Color`);
     expect(help).toContain('  --verbose        ASCII');
@@ -437,7 +627,7 @@ describe('help, version, and runner', () => {
 
   test('runner writes control output and returns its exit code', async () => {
     const output: string[] = [];
-    const code = await cli.handler(() => {}).run({
+    const code = await cli.run({
       argv: ['--help'],
       stdout: (text) => output.push(text),
     });
@@ -446,13 +636,16 @@ describe('help, version, and runner', () => {
   });
 
   test('styles interactive help without changing plain or custom help', async () => {
-    const styledCli = command('styled')
-      .about('A styled command')
-      .author('Konstit')
-      .arg(positional('file').describe('Input file'))
-      .arg(flag('verbose').describe('Show details'))
-      .subcommand(command('child'))
-      .handler(() => {});
+    const styledCli = command('styled', {
+      about: 'A styled command',
+      author: 'Konstit',
+      args: [
+        positional('file', parsers.string, { describe: 'Input file' }),
+        flag('verbose', { describe: 'Show details' }),
+      ],
+      subcommands: [command('child')],
+      handler: () => {},
+    });
     const plain = styledCli.renderHelp();
     const plainOutput: string[] = [];
     const styledOutput: string[] = [];
@@ -476,9 +669,10 @@ describe('help, version, and runner', () => {
       .replaceAll('\x1b[0m', '');
     expect(unstyled).toBe(plain);
 
-    const custom = command('custom')
-      .overrideHelp('Custom help\n')
-      .handler(() => {});
+    const custom = command('custom', {
+      overrideHelp: 'Custom help\n',
+      handler: () => {},
+    });
     const customOutput: string[] = [];
     await custom.run({
       argv: ['--help'],
@@ -489,13 +683,14 @@ describe('help, version, and runner', () => {
   });
 
   test('customizes help and built-in flags', () => {
-    const cli = command('demo')
-      .about('A demo')
-      .author('Konstit')
-      .beforeHelp('Before')
-      .afterHelp('After')
-      .overrideUsage('demo [CUSTOM]')
-      .arg(flag('verbose'));
+    const cli = command('demo', {
+      about: 'A demo',
+      author: 'Konstit',
+      beforeHelp: 'Before',
+      afterHelp: 'After',
+      overrideUsage: 'demo [CUSTOM]',
+      args: [flag('verbose')],
+    });
     const help = cli.renderHelp();
     expect(help).toStartWith('Before\n');
     expect(help).toContain('Author: Konstit');
@@ -503,13 +698,14 @@ describe('help, version, and runner', () => {
     expect(help).toEndWith('After\n');
     expect(cli.renderUsage()).toBe('demo [CUSTOM]');
 
-    const exact = command('exact').overrideHelp('custom help\n');
+    const exact = command('exact', { overrideHelp: 'custom help\n' });
     expect(exact.renderHelp()).toBe('custom help\n');
 
-    const disabled = command('plain')
-      .version('1.0.0')
-      .disableHelpFlag()
-      .disableVersionFlag();
+    const disabled = command('plain', {
+      version: '1.0.0',
+      disableHelpFlag: true,
+      disableVersionFlag: true,
+    });
     expect(disabled.tryParse(['--help'])).toMatchObject({
       ok: false,
       error: { kind: ErrorKind.UnknownArgument },
@@ -524,12 +720,15 @@ describe('help, version, and runner', () => {
 describe('command handlers', () => {
   test('passes parsed arguments to a synchronous handler', async () => {
     let received: { readonly port: number; readonly open: boolean; } | undefined;
-    const cli = command('serve')
-      .arg(option('port', parsers.integer).required())
-      .arg(flag('open'))
-      .handler(({ port, open }) => {
+    const cli = command('serve', {
+      args: [
+        option('port', parsers.integer, { required: true }),
+        flag('open'),
+      ],
+      handler: ({ port, open }) => {
         received = { port, open };
-      });
+      },
+    });
 
     expect(await cli.run(['--port', '8080', '--open'])).toBe(0);
     expect(received).toEqual({ port: 8080, open: true });
@@ -537,13 +736,14 @@ describe('command handlers', () => {
 
   test('awaits asynchronous handlers and returns their exit code', async () => {
     let completed = false;
-    const cli = command('check')
-      .arg(positional('file').required())
-      .handler(async ({ file }) => {
+    const cli = command('check', {
+      args: [positional('file', parsers.string, { required: true })],
+      handler: async ({ file }) => {
         await Promise.resolve();
         completed = file === 'README.md';
         return 7;
-      });
+      },
+    });
 
     expect(await cli.run(['README.md'])).toBe(7);
     expect(completed).toBe(true);
@@ -551,24 +751,27 @@ describe('command handlers', () => {
 
   test('invokes only the deepest matched subcommand handler', async () => {
     const calls: string[] = [];
-    const http = command('http')
-      .arg(option('port', parsers.integer).required())
-      .handler(({ port }) => {
+    const http = command('http', {
+      args: [option('port', parsers.integer, { required: true })],
+      handler: ({ port }) => {
         calls.push(`http:${port}`);
         return 3;
-      });
-    const serve = command('serve')
-      .subcommand(http)
-      .handler(() => {
+      },
+    });
+    const serve = command('serve', {
+      subcommands: [http],
+      handler: () => {
         calls.push('serve');
         return 2;
-      });
-    const cli = command('tool')
-      .subcommand(serve)
-      .handler(() => {
+      },
+    });
+    const cli = command('tool', {
+      subcommands: [serve],
+      handler: () => {
         calls.push('tool');
         return 1;
-      });
+      },
+    });
 
     expect(await cli.run(['serve', 'http', '--port', '8080'])).toBe(3);
     expect(calls).toEqual(['http:8080']);
@@ -576,11 +779,12 @@ describe('command handlers', () => {
 
   test('runs a handler attached to a configured schema', async () => {
     let received: string | undefined;
-    const cli = command('print')
-      .arg(positional('value').required())
-      .handler(({ value }) => {
+    const cli = command('print', {
+      args: [positional('value', parsers.string, { required: true })],
+      handler: ({ value }) => {
         received = value;
-      });
+      },
+    });
     const code = await cli.run(['hello']);
 
     expect(code).toBe(0);
@@ -589,30 +793,28 @@ describe('command handlers', () => {
 
   test('routes aliases and inferred prefixes to the canonical handler', async () => {
     const calls: string[] = [];
-    const cli = command('repo')
-      .subcommand(
-        command('clone')
-          .visibleAlias('copy')
-          .handler(() => {
+    const cli = command('repo', {
+      subcommands: [
+        command('clone', {
+          visibleAliases: ['copy'],
+          handler: () => {
             calls.push('clone');
-          }),
-      )
-      .inferSubcommands();
+          },
+        }),
+      ],
+      inferSubcommands: true,
+    });
 
     expect(await cli.run(['copy'])).toBe(0);
     expect(await cli.run(['clo'])).toBe(0);
     expect(calls).toEqual(['clone', 'clone']);
   });
 
-  test('keeps handler attachment immutable and requires a selected handler', async () => {
-    const base = command('tool');
-    const configured = base.handler(() => {});
-    expect(getCommandDefinition(base).handler).toBeUndefined();
-    expect(getCommandDefinition(configured).handler).toBeFunction();
-
-    const missing = command('tool')
-      .subcommand(command('status'))
-      .handler(() => {});
+  test('requires a handler on the selected command', async () => {
+    const missing = command('tool', {
+      subcommands: [command('status')],
+      handler: () => {},
+    });
     // oxlint-disable-next-line typescript/await-thenable -- Bun async matchers must be awaited.
     await expect(missing.run(['status'])).rejects.toThrow(
       'No handler is configured for command \'tool status\'',
@@ -622,8 +824,10 @@ describe('command handlers', () => {
   test('does not invoke handlers for help and validates exit codes', async () => {
     let calls = 0;
     const output: string[] = [];
-    const cli = command('demo').handler(() => {
-      calls += 1;
+    const cli = command('demo', {
+      handler: () => {
+        calls += 1;
+      },
     });
 
     expect(await cli.run({ argv: ['--help'], stdout: (text) => output.push(text) }))
@@ -632,7 +836,7 @@ describe('command handlers', () => {
     expect(output[0]).toContain('Usage: demo');
 
     // oxlint-disable-next-line typescript/await-thenable -- Bun async matchers must be awaited.
-    await expect(command('bad').handler(() => 256).run([])).rejects.toThrow(
+    await expect(command('bad', { handler: () => 256 }).run([])).rejects.toThrow(
       'exit code must be an integer from 0 to 255',
     );
   });

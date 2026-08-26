@@ -3,3 +3,6 @@ dist/
 coverage/
 reports/
 .DS_Store
+
+.codegraph/
+.codegraph/**

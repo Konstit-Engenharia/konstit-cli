@@ -27,9 +27,9 @@ describe('typed handler globals', () => {
     });
     let received: unknown;
     let receivedPath: readonly string[] = [];
-    const serve = command('serve')
-      .arg(option('port', parsers.integer).required())
-      .handler((args, context) => {
+    const serve = command('serve', {
+      args: [option('port', parsers.integer, { required: true })],
+      handler: (args, context) => {
         type _ArgsAreExact = Expect<
           Equal<typeof args, {
             readonly port: number;
@@ -39,11 +39,12 @@ describe('typed handler globals', () => {
         const typedProfile: string = context.global(profile);
         received = { ...args, verbose: typedVerbose, profile: typedProfile };
         receivedPath = context.commandPath;
-      });
-    const cli = command('tool')
-      .arg(verbose)
-      .arg(profile)
-      .subcommand(serve);
+      },
+    });
+    const cli = command('tool', {
+      args: [verbose, profile],
+      subcommands: [serve],
+    });
 
     expect(
       await cli.run([
@@ -61,11 +62,13 @@ describe('typed handler globals', () => {
 
   test('rejects a global that is not registered in the selected path', async () => {
     const orphan = option('profile', parsers.string, { global: true });
-    const cli = command('tool').subcommand(
-      command('serve').handler((_args, context) => {
-        context.global(orphan);
-      }),
-    );
+    const cli = command('tool', {
+      subcommands: [command('serve', {
+        handler: (_args, context) => {
+          context.global(orphan);
+        },
+      })],
+    });
     // oxlint-disable-next-line typescript/await-thenable -- Bun async matchers must be awaited.
     await expect(cli.run(['serve'])).rejects.toThrow(
       'Global argument \'profile\' is not registered',
@@ -78,10 +81,12 @@ void (() => {
   const explicitlyLocal = option('explicitlyLocal', parsers.string, {
     global: false,
   });
-  command('bad').handler((_args, context) => {
-    // @ts-expect-error context.global only accepts arguments branded as global
-    context.global(local);
-    // @ts-expect-error global false keeps an argument local
-    context.global(explicitlyLocal);
+  command('bad', {
+    handler: (_args, context) => {
+      // @ts-expect-error context.global only accepts arguments branded as global
+      context.global(local);
+      // @ts-expect-error global false keeps an argument local
+      context.global(explicitlyLocal);
+    },
   });
 });

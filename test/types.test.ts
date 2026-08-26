@@ -8,6 +8,7 @@ import {
   positional,
   type CompletionShell,
   type Infer,
+  type OptionOptions,
 } from '../src';
 import { generateCompletion } from '../src/completion';
 
@@ -15,19 +16,22 @@ type Equal<Left, Right> = (<Value>() => Value extends Left ? 1 : 2) extends (<Va
   : false;
 type Expect<Value extends true> = Value;
 
-const typedCli = command('deploy')
-  .arg(option('port', parsers.integer).required())
-  .arg(option('mode', parsers.enum(['dev', 'prod'])).default('dev'))
-  .arg(option('labels').repeatable())
-  .arg(flag('verbose'))
-  .arg(positional('directory'))
-  .subcommand(
-    command('init').arg(flag('bare')),
-  )
-  .subcommand(
-    command('remote').arg(positional('url').required()),
-  )
-  .requireSubcommand();
+const typedCli = command('deploy', {
+  args: [
+    option('port', parsers.integer, { required: true }),
+    option('mode', parsers.enum(['dev', 'prod']), { default: 'dev' }),
+    option('labels', parsers.string, { repeatable: true }),
+    flag('verbose'),
+    positional('directory'),
+  ],
+  subcommands: [
+    command('init', { args: [flag('bare')] }),
+    command('remote', {
+      args: [positional('url', parsers.string, { required: true })],
+    }),
+  ],
+  subcommandRequired: true,
+});
 
 type Actual = Infer<typeof typedCli>;
 type Expected = {
@@ -47,12 +51,14 @@ const initializedCli = command('release', {
   version: '1.0.0',
   about: 'Create a release',
   args: [
-    option('port', parsers.integer).required(),
+    option('port', parsers.integer, { required: true }),
     flag('dryRun'),
   ],
   subcommands: [
-    command('init').arg(flag('bare')),
-    command('remote').arg(positional('url').required()),
+    command('init', { args: [flag('bare')] }),
+    command('remote', {
+      args: [positional('url', parsers.string, { required: true })],
+    }),
   ],
   defaultToHelp: true,
   handler: ({ port, dryRun, subcommand }) => {
@@ -74,6 +80,36 @@ type InitializedExpected = {
 };
 type _InitializerResultIsExact = Expect<
   Equal<InitializedActual, InitializedExpected>
+>;
+
+const requiredSubcommandHandler = command('required-handler', {
+  subcommands: [command('child', { args: [flag('force')] })],
+  subcommandRequired: true,
+  handler: ({ subcommand }) => {
+    type _HandlerSubcommandIsRequired = Expect<
+      Equal<
+        typeof subcommand,
+        {
+          readonly name: 'child';
+          readonly args: { readonly force: boolean; };
+        }
+      >
+    >;
+    const childName: 'child' = subcommand.name;
+    const force: boolean = subcommand.args.force;
+    void [childName, force];
+  },
+});
+type _RequiredHandlerResultIsExact = Expect<
+  Equal<
+    Infer<typeof requiredSubcommandHandler>,
+    {
+      readonly subcommand: {
+        readonly name: 'child';
+        readonly args: { readonly force: boolean; };
+      };
+    }
+  >
 >;
 
 const colorParser = parsers.enum(['auto', 'always', 'never']);
@@ -110,9 +146,82 @@ type _ConfiguredArgumentsAreExact = Expect<
   Equal<ConfiguredArgumentsActual, ConfiguredArgumentsExpected>
 >;
 
-const envScalarCli = command('env').arg(
-  option('port', parsers.integer).env('PORT'),
-);
+const advancedConfiguredCli = command('advanced-configured', {
+  args: [
+    option('pair', parsers.string, { numArgs: 2, required: true }),
+    option('points', parsers.integer, { numArgs: 2, repeatable: true }),
+    option('values', parsers.integer, { numArgs: { min: 1, max: 3 } }),
+    option('maybe', parsers.string, {
+      numArgs: { min: 0, max: 1 },
+      required: true,
+    }),
+    option('mode', parsers.enum(['fast', 'safe']), { defaultMissing: 'safe' }),
+    positional('command', parsers.string, { trailingVarArg: true }),
+  ],
+  handler: ({ pair, points, values, maybe, mode, command }) => {
+    const typedPair: readonly [string, string] = pair;
+    const typedPoints: readonly number[] = points;
+    const typedValues: readonly number[] | undefined = values;
+    const typedMaybe: string | undefined = maybe;
+    const typedMode: 'fast' | 'safe' | undefined = mode;
+    const typedCommand: readonly string[] = command;
+    void [
+      typedPair,
+      typedPoints,
+      typedValues,
+      typedMaybe,
+      typedMode,
+      typedCommand,
+    ];
+  },
+});
+
+type AdvancedConfiguredActual = Infer<typeof advancedConfiguredCli>;
+type AdvancedConfiguredExpected = {
+  readonly pair: readonly [string, string];
+  readonly points: readonly number[];
+  readonly values: readonly number[] | undefined;
+  readonly maybe: string | undefined;
+  readonly mode: 'fast' | 'safe' | undefined;
+  readonly command: readonly string[];
+};
+type _AdvancedConfiguredArgumentsAreExact = Expect<
+  Equal<AdvancedConfiguredActual, AdvancedConfiguredExpected>
+>;
+
+const broadOptions = {} as OptionOptions<string>;
+const broadConfiguredCli = command('broad-configured', {
+  args: [option('value', parsers.string, broadOptions)],
+});
+type _BroadConfiguredOutputIsSafe = Expect<
+  Equal<
+    Infer<typeof broadConfiguredCli>['value'],
+    string | readonly string[] | undefined
+  >
+>;
+
+const optionalPairOptions: { readonly numArgs?: 2; } = { numArgs: 2 };
+const optionalPairCli = command('optional-pair', {
+  args: [option('pair', parsers.string, optionalPairOptions)],
+});
+type _OptionalPairConfigKeepsPrecision = Expect<
+  Equal<
+    Infer<typeof optionalPairCli>['pair'],
+    string | readonly [string, string] | undefined
+  >
+>;
+
+const disabledRepeatOptions: { readonly repeatable?: false; } = {};
+const disabledRepeatCli = command('disabled-repeat', {
+  args: [option('value', parsers.string, disabledRepeatOptions)],
+});
+type _DisabledOptionalRepeatStaysScalar = Expect<
+  Equal<Infer<typeof disabledRepeatCli>['value'], string | undefined>
+>;
+
+const envScalarCli = command('env', {
+  args: [option('port', parsers.integer, { env: 'PORT' })],
+});
 type _EnvScalarIsExact = Expect<
   Equal<Infer<typeof envScalarCli>['port'], number | undefined>
 >;
@@ -140,18 +249,23 @@ switch (parsed.subcommand.name) {
   }
 }
 
-const unique = command('unique').arg(flag('verbose'));
-const related = command('related').arg(flag('one')).arg(flag('two'));
 const shell: CompletionShell = completionShells[0];
 const completionScript: string = generateCompletion(typedCli, shell);
 void completionScript;
 
-const advanced = command('advanced')
-  .arg(option('pair').numArgs(2).env('ADVANCED_PAIR').required())
-  .arg(option('points', parsers.integer).numArgs(2).repeatable())
-  .arg(option('values', parsers.integer).numArgs({ min: 1, max: 3 }))
-  .arg(option('mode', parsers.enum(['fast', 'safe'])).defaultMissing('safe'))
-  .arg(positional('command').trailingVarArg());
+const advanced = command('advanced', {
+  args: [
+    option('pair', parsers.string, {
+      numArgs: 2,
+      env: 'ADVANCED_PAIR',
+      required: true,
+    }),
+    option('points', parsers.integer, { numArgs: 2, repeatable: true }),
+    option('values', parsers.integer, { numArgs: { min: 1, max: 3 } }),
+    option('mode', parsers.enum(['fast', 'safe']), { defaultMissing: 'safe' }),
+    positional('command', parsers.string, { trailingVarArg: true }),
+  ],
+});
 const advancedOutcome = advanced.parse(['--pair', 'left', 'right']);
 if (advancedOutcome.type !== 'value') {
   throw new Error('expected parsed arguments');
@@ -164,48 +278,51 @@ const advancedMode: 'fast' | 'safe' | undefined = advancedResult.mode;
 const trailingCommand: readonly string[] = advancedResult.command;
 void [pair, points, values, advancedMode, trailingCommand];
 
-const conditional = command('conditional')
-  .arg(option('mode', parsers.enum(['dev', 'prod'])))
-  .arg(option('config'))
-  .arg(flag('offline'))
-  .requiresIf('mode', 'prod', 'config')
-  .requiredUnlessPresent(['offline'], 'config')
-  .overrides('offline', 'config');
-
-const handlerBase = command('handler')
-  .arg(option('port', parsers.integer).required())
-  .arg(option('mode', parsers.enum(['dev', 'prod'])).default('dev'))
-  .arg(flag('verbose'));
-const handlerCommand = handlerBase.handler((args) => {
-  type _HandlerArgsAreExact = Expect<Equal<typeof args, Infer<typeof handlerBase>>>;
-  const { port, mode, verbose } = args;
-  const typedPort: number = port;
-  const typedMode: 'dev' | 'prod' = mode;
-  const typedVerbose: boolean = verbose;
-  void [typedPort, typedMode, typedVerbose];
-  return 4;
+type HandlerArguments = {
+  readonly port: number;
+  readonly mode: 'dev' | 'prod';
+  readonly verbose: boolean;
+};
+const handlerCommand = command('handler', {
+  args: [
+    option('port', parsers.integer, { required: true }),
+    option('mode', parsers.enum(['dev', 'prod']), { default: 'dev' }),
+    flag('verbose'),
+  ],
+  handler: (args) => {
+    type _HandlerArgsAreExact = Expect<Equal<typeof args, HandlerArguments>>;
+    const { port, mode, verbose } = args;
+    const typedPort: number = port;
+    const typedMode: 'dev' | 'prod' = mode;
+    const typedVerbose: boolean = verbose;
+    void [typedPort, typedMode, typedVerbose];
+    return 4;
+  },
 });
 type _HandlerKeepsCommandResult = Expect<
-  Equal<Infer<typeof handlerCommand>, Infer<typeof handlerBase>>
+  Equal<Infer<typeof handlerCommand>, HandlerArguments>
 >;
 
-const asyncHandlerCommand = command('async-handler')
-  .arg(positional('file').required())
-  .handler(async ({ file }) => file === 'ok' ? 0 : 1);
+const asyncHandlerCommand = command('async-handler', {
+  args: [positional('file', parsers.string, { required: true })],
+  handler: async ({ file }) => file === 'ok' ? 0 : 1,
+});
 
-const nestedHandler = command('serve')
-  .arg(option('port', parsers.integer).required())
-  .handler(({ port }) => {
+const nestedHandler = command('serve', {
+  args: [option('port', parsers.integer, { required: true })],
+  handler: ({ port }) => {
     const typedPort: number = port;
     void typedPort;
-  });
-const handlerRoot = command('tool')
-  .arg(flag('verbose'))
-  .subcommand(nestedHandler)
-  .handler(({ verbose }) => {
+  },
+});
+const handlerRoot = command('tool', {
+  args: [flag('verbose')],
+  subcommands: [nestedHandler],
+  handler: ({ verbose }) => {
     const typedVerbose: boolean = verbose;
     void typedVerbose;
-  });
+  },
+});
 
 void (() => {
   const defaultArgvExitCode: Promise<number> = handlerCommand.run();
@@ -217,16 +334,10 @@ void (() => {
   typedCli.parse();
   // @ts-expect-error tryParse requires explicit argv
   typedCli.tryParse();
-  // @ts-expect-error handler arguments only contain configured fields
-  command('bad-handler').arg(flag('verbose')).handler(({ missing }) => missing);
-  // @ts-expect-error handlers return void or a numeric exit code
-  command('bad-exit').handler(() => 'failure');
-  // @ts-expect-error handlers are a terminal schema step
+  // @ts-expect-error command schemas expose no fluent argument mutation
   handlerCommand.arg(flag('late'));
-  // @ts-expect-error subcommands must be registered before a handler
+  // @ts-expect-error command schemas expose no fluent subcommand mutation
   handlerCommand.subcommand(command('late'));
-  // @ts-expect-error duplicate argument names are rejected
-  unique.arg(flag('verbose'));
   command('duplicate-initial-arguments', {
     // @ts-expect-error duplicate argument names are rejected in initializer tuples
     args: [flag('verbose'), flag('verbose')],
@@ -235,7 +346,7 @@ void (() => {
     // @ts-expect-error duplicate subcommand names are rejected in initializer tuples
     subcommands: [command('run'), command('run')],
   });
-  // @ts-expect-error tuple initialization is a terminal schema step
+  // @ts-expect-error command schemas expose no fluent mutation
   initializedCli.arg(flag('late'));
   command('bad-initial-handler-argument', {
     args: [flag('verbose')],
@@ -245,6 +356,15 @@ void (() => {
   command('bad-initial-handler-result', {
     // @ts-expect-error initializer handlers return void or a numeric exit code
     handler: () => 'failure',
+  });
+  command('bad-command-key', {
+    // @ts-expect-error command configuration does not accept unknown fields
+    unknownCommandField: true,
+  });
+  command('bad-group-key', {
+    args: [flag('known')],
+    // @ts-expect-error group configuration does not accept unknown fields
+    groups: [{ name: 'group', members: ['known'], unknownGroupField: true }],
   });
   option('bad-default', colorParser, {
     // @ts-expect-error defaults must match the parser output
@@ -262,37 +382,119 @@ void (() => {
     // @ts-expect-error short names are exactly one character
     short: 'vv',
   });
+  const widenedShort = 'v' as string;
+  count('widened-short', { short: widenedShort });
+  count('dash-short', {
+    // @ts-expect-error a dash is not a valid short option
+    short: '-',
+  });
+  count('emoji-short', {
+    // @ts-expect-error astral symbols use two UTF-16 characters
+    short: '💥',
+  });
   positional('path', parsers.string, {
     // @ts-expect-error positional arguments cannot be global
     global: true,
+  });
+  // @ts-expect-error positionals cannot configure short names
+  positional('named-positional', parsers.string, {
+    required: true,
+    short: 'p',
+  });
+  // @ts-expect-error flags cannot be repeatable
+  flag('value-flag', {
+    describe: 'Invalid value configuration',
+    repeatable: true,
+  });
+  // @ts-expect-error counts cannot configure value counts
+  count('value-count', {
+    describe: 'Invalid value configuration',
+    numArgs: 2,
+  });
+  // @ts-expect-error options cannot be negated
+  option('negated-option', parsers.string, {
+    required: true,
+    negated: true,
   });
   // @ts-expect-error required and default presence cannot be combined
   option('conflicting-presence', parsers.string, {
     required: true,
     default: 'value',
   });
-  // @ts-expect-error relation names must refer to declared arguments
-  related.requires('one', 'missing');
-  // @ts-expect-error group names must refer to declared arguments
-  related.group('bad', ['one', 'missing']);
-  // @ts-expect-error a short option is exactly one character
-  flag('verbose').short('vv');
-  // @ts-expect-error repeatable values always use an empty-array fallback
-  option('tag').repeatable().default('latest');
-  // @ts-expect-error flags cannot collect values
-  flag('verbose').repeatable();
-  // @ts-expect-error positionals cannot have option names
-  positional('file').short('f');
+  // @ts-expect-error repeatable arguments cannot have scalar defaults
+  option('repeatable-default', parsers.string, {
+    repeatable: true,
+    default: 'value',
+  });
+  // @ts-expect-error multi-value arguments cannot have scalar defaults
+  option('multi-default', parsers.string, {
+    numArgs: 2,
+    default: 'value',
+  });
+  // @ts-expect-error ranged multi-value arguments cannot have scalar defaults
+  option('ranged-default', parsers.string, {
+    numArgs: { min: 1, max: 2 },
+    default: 'value',
+  });
+  // @ts-expect-error defaultMissing defines its own optional value arity
+  option('missing-count', parsers.string, {
+    defaultMissing: 'value',
+    numArgs: 1,
+  });
+  option('missing-without-equals', parsers.string, {
+    defaultMissing: 'value',
+    requireEquals: false,
+  });
+  // @ts-expect-error defaultMissing must match the parser output
+  option('bad-missing', parsers.integer, { defaultMissing: 'value' });
+  // @ts-expect-error options cannot be trailing positional arguments
+  option('trailing-option', parsers.string, { trailingVarArg: true });
+  // @ts-expect-error positionals cannot require equals-form values
+  positional('equals-positional', parsers.string, { requireEquals: true });
+  // @ts-expect-error positionals cannot configure defaultMissing
+  positional('missing-positional', parsers.string, { defaultMissing: 'value' });
+  // @ts-expect-error trailing arguments cannot also be repeatable
+  positional('repeatable-trailing', parsers.string, {
+    trailingVarArg: true,
+    repeatable: true,
+  });
+  // @ts-expect-error trailing arguments cannot configure a separate arity
+  positional('counted-trailing', parsers.string, {
+    trailingVarArg: true,
+    numArgs: 2,
+  });
+  // @ts-expect-error trailing arguments cannot have scalar defaults
+  positional('defaulted-trailing', parsers.string, {
+    trailingVarArg: true,
+    default: 'value',
+  });
+  command('bad-relation', {
+    args: [flag('one'), flag('two')],
+    // @ts-expect-error relation names must refer to declared arguments
+    requires: [['one', 'missing']],
+  });
+  command('bad-group', {
+    args: [flag('one'), flag('two')],
+    // @ts-expect-error group members must refer to declared arguments
+    groups: [{ name: 'bad', members: ['one', 'missing'] }],
+  });
   // @ts-expect-error completion shells are a closed union
   generateCompletion(typedCli, 'nu');
   // @ts-expect-error flags do not consume values
-  flag('verbose').valueHint('file');
+  flag('verbose', { valueHint: 'file' });
   // @ts-expect-error value hints are a closed union
-  option('database').valueHint('database');
-  // @ts-expect-error conditional relation values match the source parser
-  conditional.requiresIf('mode', 'preview', 'config');
-  // @ts-expect-error conditional relation names must exist
-  conditional.requiredUnlessPresent(['offline'], 'missing');
-  // @ts-expect-error global positional arguments are not supported
-  positional('file').global();
+  option('database', parsers.string, { valueHint: 'database' });
+  command('bad-relation-value', {
+    args: [
+      option('mode', parsers.enum(['dev', 'prod'])),
+      option('config'),
+    ],
+    // @ts-expect-error conditional relation values match the source parser
+    requiresIf: [['mode', 'preview', 'config']],
+  });
+  command('bad-relation-name', {
+    args: [flag('offline'), option('config')],
+    // @ts-expect-error conditional relation names must exist
+    requiredUnlessPresent: [{ alternatives: ['offline'], target: 'missing' }],
+  });
 });

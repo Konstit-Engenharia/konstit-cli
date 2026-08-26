@@ -1,30 +1,26 @@
 # @konstit/cli
 
-A clap-inspired command-line parser for Bun. Its immutable builders carry the
-command schema through TypeScript, so successful parse values have the exact
-inferred type.
+A declarative, type-safe command-line parser for Bun.
 
-This is an independent TypeScript implementation. It uses clap's builder UX as
-a reference; it is not a source port and does not try to match every clap feature.
+The command and argument factories infer the successful parse type from one
+static schema. This is an independent TypeScript implementation inspired by
+clap. It is not a source port.
 
-## What is type-safe
+## Type safety
 
 - Value parsers determine the returned TypeScript type.
-- `.required()` removes `undefined`.
-- `.default()` keeps a value present.
-- `.repeatable()` returns `readonly Value[]`.
-- `.numArgs(2)` returns an exact readonly tuple.
-- `.numArgs({ min: 0, max: 1 })` keeps the value optional after `.required()`.
-- Ranged arity and repeated arity return `readonly Value[]`.
-- Flags and counters always return `boolean` and `number`.
+- `required: true` removes `undefined` when the configured arity guarantees a value.
+- `default` keeps a value present.
+- `repeatable: true` returns `readonly Value[]`.
+- `numArgs: 2` returns an exact readonly tuple for a non-repeated argument.
+- Ranged and repeated arity return readonly arrays.
+- Flags and counters return `boolean` and `number`.
 - Subcommands return a discriminated union.
-- Argument names in groups, conflicts, and requirements are checked.
-- Conditional values in `.requiresIf()` are checked against the source parser type.
-- Advanced conditional relations correlate every source name with its value type.
-- Handler contexts return only the exact type of each declared global argument.
-- Duplicate argument and subcommand names fail during type checking.
-- Short names with more than one character fail during type checking.
-- Completion shells and value hints are closed string unions.
+- `subcommandRequired: true` removes `undefined` from that union.
+- Argument names and conditional values in relations are checked.
+- Duplicate argument, subcommand, and group names fail during type checking.
+- Widened arrays and JavaScript input receive structural runtime validation.
+- Handler contexts preserve the exact type of each global argument.
 
 ## Install
 
@@ -34,8 +30,7 @@ Requires Bun 1.4 or newer.
 bun add @konstit/cli
 ```
 
-To use a local checkout before the package is published, pass the checkout's
-absolute path from the project where you install it:
+To use a local checkout before publication:
 
 ```sh
 bun add /absolute/path/to/konstit-cli
@@ -60,7 +55,10 @@ const serve = command('serve', {
   about: 'Serve static files',
   version: '1.0.0',
   args: [
-    option('port', parsers.range(1, 65_535), { short: 'p', default: 3000 }),
+    option('port', parsers.range(1, 65_535), {
+      short: 'p',
+      default: 3000,
+    }),
     option('host', parsers.string, { default: '127.0.0.1' }),
     flag('open', { short: 'o' }),
     verbose,
@@ -74,240 +72,127 @@ const serve = command('serve', {
 });
 
 type Args = Infer<typeof serve>;
-// {
-//   readonly port: number;
-//   readonly host: string;
-//   readonly open: boolean;
-//   readonly verbose: number;
-//   readonly root: string;
-// }
 
-const exitCode = await serve.run();
-
-process.exitCode = exitCode;
+process.exitCode = await serve.run();
 ```
 
-The command factory also accepts tuple-based initial values:
+Tuple order is preserved. A command schema is complete when `command()`
+returns. Add all arguments, subcommands, relations, and the handler in its
+options object.
 
-```ts
-const cli = command('tiny-git', {
-  version: '0.1.0',
-  about: 'A type-safe git-like example',
-  args: [verbose, color],
-  subcommands: [clone, commit, completion],
-  inferSubcommands: true,
-  defaultToHelp: true,
-});
+## Command configuration
 
-process.exitCode = await cli.run();
-```
+`command(name, options)` accepts these fields:
 
-Each property is optional. Tuple order is preserved, and duplicate primary
-argument or subcommand names fail during type checking. Alias collisions and
-widened arrays are checked at runtime. `defaultToHelp: true` has the same
-behavior as `.argRequiredElseHelp()`.
-Initializer handlers are contextually typed from the argument and subcommand
-tuples. Hidden aliases, visible aliases, and inferred subcommands can also be
-configured in the initializer.
-The tuple initializer is a terminal schema step; use the fluent form when a
-command needs more configuration.
+| Field                   | Purpose                                                     |
+| ----------------------- | ----------------------------------------------------------- |
+| `version`               | Text printed by `-V` and `--version`.                       |
+| `about`                 | Short help and completion description.                      |
+| `longAbout`             | Extended help description.                                  |
+| `author`                | Author line in help.                                        |
+| `beforeHelp`            | Text before generated help.                                 |
+| `afterHelp`             | Text after generated help.                                  |
+| `overrideUsage`         | Exact replacement for generated usage.                      |
+| `overrideHelp`          | Exact replacement for generated help.                       |
+| `aliases`               | Parseable aliases hidden from help and completion.          |
+| `visibleAliases`        | Parseable aliases shown in help and completion.             |
+| `args`                  | Argument tuple in parse order.                              |
+| `subcommands`           | Subcommand tuple.                                           |
+| `inferSubcommands`      | Accept an unambiguous name or alias prefix.                 |
+| `subcommandRequired`    | Require a subcommand and make its result non-optional.      |
+| `defaultToHelp`         | Display help when no argument or subcommand is supplied.    |
+| `disableHelpSubcommand` | Disable the generated `help` subcommand.                    |
+| `disableHelpFlag`       | Disable generated `-h` and `--help`.                        |
+| `disableVersionFlag`    | Disable generated `-V` and `--version`.                     |
+| `hide`                  | Hide this command from parent help and completion.          |
+| `requires`              | Unconditional argument dependencies.                        |
+| `requiresIf`            | Single-value conditional dependencies.                      |
+| `requiredIfAny`         | Dependencies activated by any matching condition.           |
+| `requiredIfAll`         | Dependencies activated by all matching conditions.          |
+| `requiredUnlessPresent` | Require a target unless one alternative is present.         |
+| `requiredUnlessAll`     | Require a target unless all alternatives are present.       |
+| `overrides`             | Clear a target when a source is explicitly supplied.        |
+| `conflicts`             | Mutually conflicting argument sets.                         |
+| `exclusive`             | Arguments that conflict with every other supplied argument. |
+| `groups`                | Named argument groups and their relations.                  |
+| `handler`               | Synchronous or asynchronous command callback.               |
 
-`.handler()` receives the exact inferred argument object, so destructuring keeps
-every field type. It is a terminal schema step: add all arguments, subcommands,
-and relations before the handler. The returned command supports parsing,
-rendering, and running, but no more schema changes.
+Each field is optional. Duplicate primary argument and subcommand names are
+checked from literal tuples. Alias collisions, invalid layouts, and widened
+configuration are checked at runtime.
 
-`parse(argv)` always parses the explicit array. It returns either a value or a
-successful display request for help or version. It throws `CliError` only for a
-user-facing parse failure:
+## Parsing and running
+
+`parse(argv)` parses an explicit array. It returns a parsed value or a
+successful help/version display request. It throws `CliError` only for an
+expected CLI failure.
 
 ```ts
 const outcome = serve.parse(['--port', '8080', '.']);
 
 if (outcome.type === 'value') {
-  console.log(outcome.value.port); // number
+  console.log(outcome.value.port);
 } else {
-  process.stdout.write(outcome.output); // help or version
+  process.stdout.write(outcome.output);
 }
 ```
 
-`tryParse(argv)` adds `{ ok: false, type: "error", error }` to that result union
-instead of throwing `CliError`. Unexpected programming errors still throw.
-`run()` is the only API that reads `Bun.argv.slice(2)`. It prints displays and
-parse failures, invokes the deepest handler, and returns an exit code. Pass an
-explicit array to `run(argv)` when needed. Interactive help uses ANSI styling
-when stdout is a terminal. Redirected and custom output stays plain unless
-`run({ color: true })` enables styling explicitly. Use `color: false` to disable
-it.
+`tryParse(argv)` returns `{ ok: false, type: 'error', error }` for expected CLI
+failures. Unexpected programming errors still throw.
+
+`run()` reads `Bun.argv.slice(2)`, writes displays and parse failures, invokes
+the deepest selected handler, and returns an exit code. Pass an explicit array
+to `run(argv)` for tests or embedding. Pass `run({ color: true })` or
+`run({ color: false })` to control styling.
+
+Each command path that can be selected by `run()` needs a handler. Set
+`subcommandRequired: true` when only subcommands are runnable.
+
+Use `renderHelp()` and `renderUsage()` when output must be generated without
+parsing arguments.
 
 ## Subcommands
 
 ```ts
-const cli = command('repo')
-  .subcommand(
-    command('clone')
-      .visibleAlias('copy')
-      .alias('cp')
-      .arg(positional('url').required())
-      .arg(flag('bare'))
-      .handler(({ url, bare }) => {
-        // url: string; bare: boolean
-        console.log(`clone ${url}${bare ? ' --bare' : ''}`);
-      }),
-  )
-  .subcommand(
-    command('commit')
-      .arg(option('message').short('m').required())
-      .handler(({ message }) => {
-        // message: string
-        console.log(`commit: ${message}`);
-      }),
-  )
-  .inferSubcommands()
-  .requireSubcommand();
+const clone = command('clone', {
+  visibleAliases: ['copy'],
+  aliases: ['cp'],
+  args: [
+    positional('url', parsers.string, { required: true }),
+    flag('bare'),
+  ],
+  handler: ({ url, bare }) => {
+    console.log(`clone ${url}${bare ? ' --bare' : ''}`);
+  },
+});
+
+const commit = command('commit', {
+  args: [
+    option('message', parsers.string, { short: 'm', required: true }),
+  ],
+  handler: ({ message }) => {
+    console.log(`commit: ${message}`);
+  },
+});
+
+const cli = command('repo', {
+  subcommands: [clone, commit],
+  inferSubcommands: true,
+  subcommandRequired: true,
+});
 
 process.exitCode = await cli.run();
 ```
 
-Without `.requireSubcommand()`, the `subcommand` field also includes `undefined`.
-Visible aliases appear in help and completion output. Hidden aliases only affect
-parsing. With `.inferSubcommands()`, an unambiguous prefix such as `clo` selects
-`clone`. `repo help clone` renders nested help. `.run()` invokes the handler on
-the deepest matched subcommand. That handler receives its command's local fields
-and a context for registered global values.
-
-## Shell completions
-
-Generate scripts for Bash, Zsh, Fish, and PowerShell with a handled completion
-subcommand:
-
-```ts
-import {
-  command,
-  completionShells,
-  parsers,
-  positional,
-} from '@konstit/cli';
-
-const completion = command('completion')
-  .about('Generate a shell completion script')
-  .arg(positional('shell', parsers.enum(completionShells)).required())
-  .handler(async ({ shell }) => {
-    const { generateCompletion } = await import('@konstit/cli/completion');
-    process.stdout.write(generateCompletion(cli, shell, {
-      executable: 'tiny-git',
-      dynamic: true,
-    }));
-  });
-
-const cli = command('tiny-git')
-  // Add the application's other arguments and subcommands here.
-  .subcommand(completion)
-  .requireSubcommand();
-
-process.exitCode = await cli.run();
-```
-
-The handler's dynamic import keeps the generator out of the normal command path.
-For a dynamic script, plain `cli.run()` detects and serves completion requests.
-The application does not need an environment check or a separate startup path.
-
-The generated scripts include visible options, aliases, help, version, nested
-subcommands, and static parser values. Hidden arguments and commands are omitted.
-
-Enum and Boolean parser values are completed automatically:
-
-```ts
-option('mode', parsers.enum(['dev', 'prod']));
-option('enabled', parsers.boolean);
-```
-
-Add custom static values or path completion metadata:
-
-```ts
-const region = parsers.custom('REGION', parseRegion, {
-  completions: ['us-east-1', 'eu-west-1'],
-});
-
-option('region', region);
-option('config').valueHint('file');
-positional('output').valueHint('directory');
-```
-
-Use `.complete()` when candidates depend on the current command line. Providers
-can return an array, a promise, or an async iterable:
-
-```ts
-const packageOption = option('package').complete(async ({
-  current,
-  commandPath,
-  rawValues,
-}) => {
-  const workspace = rawValues.workspace?.at(-1);
-  const packages = await findWorkspacePackages(workspace, current);
-  return packages.map((name) => ({
-    value: name,
-    description: `Package in ${commandPath.join(' ')}`,
-  }));
-});
-```
-
-You can also generate a script directly:
-
-```ts
-import { generateCompletion } from '@konstit/cli/completion';
-
-await Bun.write(
-  './tiny-git.bash',
-  generateCompletion(cli, 'bash', { executable: 'tiny-git' }),
-);
-```
-
-Install or load each generated script as follows.
-
-### Bash
-
-```sh
-tiny-git completion bash > ~/.tiny-git-completion.bash
-source ~/.tiny-git-completion.bash
-```
-
-Add the `source` command to `.bashrc` for persistent loading.
-
-### Zsh
-
-```sh
-mkdir -p ~/.zfunc
-tiny-git completion zsh > ~/.zfunc/_tiny-git
-```
-
-Configure Zsh to load the file:
-
-```zsh
-fpath=(~/.zfunc $fpath)
-autoload -Uz compinit && compinit
-```
-
-### Fish
-
-```fish
-mkdir -p ~/.config/fish/completions
-tiny-git completion fish > ~/.config/fish/completions/tiny-git.fish
-```
-
-### PowerShell
-
-```powershell
-tiny-git completion powershell > "$HOME/.tiny-git-completion.ps1"
-. "$HOME/.tiny-git-completion.ps1"
-```
-
-Add the dot-source command to `$PROFILE` for persistent loading.
+The `subcommand` result is a union discriminated by its canonical `name`.
+Without `subcommandRequired: true`, it also includes `undefined`. Visible
+aliases appear in help and completion. Hidden aliases affect parsing only.
+`repo help clone` renders nested help.
 
 ## Arguments
 
-Argument configuration always comes last. Value arguments keep their parser in
-the second position:
+Argument configuration is always last. Value arguments keep their parser in
+the second position.
 
 ```ts
 const verbose = count('verbose', {
@@ -323,105 +208,156 @@ const color = option(
 );
 ```
 
-Defaults belong to the argument, not the parser. A default must match the
-parser output and removes `undefined` from the inferred argument type. Use an
-explicit `parsers.string` when a string option or positional needs
-configuration.
+All argument kinds accept `describe`, `env`, and `hide`. Named arguments also
+accept `global`, `short`, `long`, and `aliases`.
+
+Value options and positionals accept:
+
+| Field                  | Purpose                                                         |
+| ---------------------- | --------------------------------------------------------------- |
+| `valueName`            | Label shown in usage and help.                                  |
+| `valueHint`            | `file` or `directory` path completion.                          |
+| `complete`             | Dynamic completion provider.                                    |
+| `required`             | Require the argument occurrence.                                |
+| `default`              | Value used when the argument is absent.                         |
+| `repeatable`           | Append occurrences into a readonly array.                       |
+| `numArgs`              | Fixed count or `{ min, max? }` value range.                     |
+| `valueDelimiter`       | Split each raw value by one character.                          |
+| `valueTerminator`      | Stop collecting values at a token.                              |
+| `allowHyphenValues`    | Accept values that begin with `-`.                              |
+| `allowNegativeNumbers` | Accept negative numeric values while preserving option parsing. |
+
+Options also accept `defaultMissing` and `requireEquals`. Positionals also
+accept `trailingVarArg`. Flags accept `negated`. Counters use their occurrence
+count as the output value.
 
 ```ts
-option('port', parsers.integer) // number | undefined
-  .short('p')
-  .long('port')
-  .alias('listen-port')
-  .required() // number
-  .describe('Port to listen on')
-  .valueName('PORT')
-  .env('PORT');
+const port = option('port', parsers.integer, {
+  short: 'p',
+  long: 'port',
+  aliases: ['listen-port'],
+  required: true,
+  describe: 'Port to listen on',
+  valueName: 'PORT',
+  env: 'PORT',
+}); // number
 
-option('tag').repeatable(); // readonly string[], empty when absent
-option('color').numArgs({ min: 0, max: 1 }); // string | undefined
-option('pair').numArgs(2); // readonly [string, string] | undefined
-option('level', parsers.integer)
-  .numArgs({ min: 1, max: 3 }); // readonly number[] | undefined
-option('point', parsers.integer)
-  .numArgs(2)
-  .repeatable(); // readonly number[]
-positional('file').required(); // string
-flag('force'); // boolean, false when absent
-flag('cache').negated(); // boolean, true when absent and false when present
-count('verbose').short('v'); // number, supports -vvv
+const tag = option('tag', parsers.string, { repeatable: true });
+// readonly string[], empty when absent
+
+const colorMode = option('color', parsers.string, {
+  numArgs: { min: 0, max: 1 },
+}); // string | undefined
+
+const pair = option('pair', parsers.string, { numArgs: 2 });
+// readonly [string, string] | undefined
+
+const points = option('point', parsers.integer, {
+  numArgs: 2,
+  repeatable: true,
+}); // readonly number[]
+
+const file = positional('file', parsers.string, { required: true });
+const cache = flag('cache', { negated: true });
+const verbosity = count('verbose', { short: 'v' });
 ```
 
-Use `.repeatable()` to collect option values, `count()` for occurrences, and
-`.negated()` for a switch that disables an enabled-by-default value. Help and
-version behavior comes from the command.
+Defaults belong to the argument, not its parser. A default must match the
+parser output. Use an explicit `parsers.string` when a string option or
+positional needs configuration.
+
+### Advanced value collection
+
+```ts
+const run = command('run', {
+  args: [
+    option('features', parsers.string, {
+      repeatable: true,
+      valueDelimiter: ',',
+    }),
+    option('define', parsers.string, {
+      numArgs: { min: 1, max: 4 },
+      valueTerminator: ';',
+    }),
+    option('config', parsers.string, { requireEquals: true }),
+    option('color', parsers.string, { defaultMissing: 'auto' }),
+    option('offset', parsers.integer, { allowNegativeNumbers: true }),
+    option('pattern', parsers.string, { allowHyphenValues: true }),
+    positional('command', parsers.string, { trailingVarArg: true }),
+  ],
+});
+```
+
+- `--features a,b --features c` returns `['a', 'b', 'c']`.
+- `--config=file.json` is accepted. `--config file.json` is rejected.
+- `--color` uses `auto`; `--color=always` uses `always`.
+- A trailing positional captures tokens such as `--inspect` without `--`.
+
+## Parsers
 
 Built-in parsers include `string`, `integer`, `float`, `bigint`, `boolean`,
 `url`, and `date`. Factory parsers include:
 
 ```ts
-parsers.enum(['dev', 'prod']); // "dev" | "prod"
-parsers.range(1, 10); // number
-parsers.json(isMyConfig); // MyConfig, inferred from the type guard
-parsers.custom('PORT', parsePort); // inferred from parsePort
+parsers.enum(['dev', 'prod']);
+parsers.range(1, 10);
+parsers.json(isMyConfig);
+parsers.custom('PORT', parsePort);
 ```
 
-A custom parser can throw an `Error`. `@konstit/cli` converts it to a structured
+A custom parser can throw an `Error`. The library converts it to a structured
 `CliError` with `ErrorKind.InvalidValue`.
 
-### Value collection
+## Relations and groups
+
+Relation names are checked against the `args` tuple. Conditional expected
+values are checked against the source parser type.
 
 ```ts
-const cli = command('run')
-  .arg(option('features').repeatable().valueDelimiter(','))
-  .arg(option('define').numArgs({ min: 1, max: 4 }).valueTerminator(';'))
-  .arg(option('config').requireEquals())
-  .arg(option('color').defaultMissing('auto'))
-  .arg(option('offset', parsers.integer).allowNegativeNumbers())
-  .arg(option('pattern').allowHyphenValues())
-  .arg(positional('command').trailingVarArg());
+const release = command('release', {
+  args: [
+    flag('major'),
+    flag('minor'),
+    flag('dry-run'),
+    flag('offline'),
+    flag('quiet'),
+    count('verbose'),
+    option('format', parsers.enum(['text', 'json'])),
+    option('schema'),
+    option('token'),
+  ],
+  conflicts: [['major', 'minor']],
+  requires: [['token', 'dry-run']],
+  requiresIf: [['format', 'json', 'schema']],
+  requiredIfAny: [{
+    conditions: [['format', 'json'], ['dry-run', true]],
+    target: 'schema',
+  }],
+  requiredIfAll: [{
+    conditions: [['format', 'json'], ['offline', true]],
+    target: 'token',
+  }],
+  requiredUnlessPresent: [{ alternatives: ['offline'], target: 'token' }],
+  requiredUnlessAll: [{
+    alternatives: ['offline', 'dry-run'],
+    target: 'schema',
+  }],
+  overrides: [['quiet', 'verbose']],
+  exclusive: ['offline'],
+  groups: [{
+    name: 'level',
+    members: ['major', 'minor'],
+    required: true,
+    requires: ['format'],
+    conflicts: ['quiet'],
+  }],
+});
 ```
 
-- `--features a,b --features c` returns `["a", "b", "c"]`.
-- `--config=file.json` is accepted. `--config file.json` is rejected.
-- `--color` uses `"auto"`; `--color=always` uses `"always"`.
-- A trailing positional captures tokens such as `--inspect` without `--`.
-
-## Relations
-
-Relation names use the command's accumulated argument-name union:
-
-```ts
-const release = command('release')
-  .arg(flag('major'))
-  .arg(flag('minor'))
-  .arg(flag('dry-run'))
-  .arg(flag('offline'))
-  .arg(flag('quiet'))
-  .arg(count('verbose'))
-  .arg(option('format', parsers.enum(['text', 'json'])))
-  .arg(option('schema'))
-  .arg(option('token'))
-  .conflicts('major', 'minor')
-  .requires('token', 'dry-run')
-  .requiresIf('format', 'json', 'schema')
-  .requiredIfAny([['format', 'json'], ['dry-run', true]], 'schema')
-  .requiredIfAll([['format', 'json'], ['offline', false]], 'token')
-  .requiredUnlessPresent(['offline'], 'token')
-  .requiredUnlessAll(['offline', 'dry-run'], 'schema')
-  .overrides('quiet', 'verbose')
-  .exclusive('offline')
-  .group('level', ['major', 'minor'], { required: true })
-  .groupRequires('level', 'format')
-  .groupConflicts('level', 'quiet');
-```
-
-Relations put their source or source list before the target. `requiredIfAny`
-matches one condition. `requiredIfAll` matches every condition.
-`requiredUnlessAll` requires its target until all alternatives are present.
-`exclusive` conflicts with every other supplied argument. Groups are mutually
-exclusive unless `{ multiple: true }` is set. Group names are checked after
-`.group()`.
+Each conflict entry makes its members mutually exclusive. Each `exclusive`
+argument conflicts with every other supplied argument. A group allows one
+member by default. Set `multiple: true` to allow more than one. Group
+`requires` and `conflicts` activate when any member is present.
 
 ## Global arguments and custom help
 
@@ -429,48 +365,115 @@ exclusive unless `{ multiple: true }` is set. Group names are checked after
 const verbose = count('verbose', { global: true, short: 'v' });
 const profile = option('profile', parsers.string, { global: true });
 
-const cli = command('tool')
-  .about('Manage services')
-  .author('Example team')
-  .beforeHelp('Run this command from a project directory.')
-  .afterHelp('See https://example.test/docs for more help.')
-  .arg(verbose)
-  .arg(profile)
-  .subcommand(
-    command('serve')
-      .arg(option('port', parsers.integer).required())
-      .handler(({ port }, context) => {
-        const verbosity = context.global(verbose);
-        const selectedProfile = context.global(profile);
-        // port: number; verbosity: number
-        // selectedProfile: string | undefined
-      }),
-  );
+const serveCommand = command('serve', {
+  args: [option('port', parsers.integer, { required: true })],
+  handler: ({ port }, context) => {
+    const verbosity = context.global(verbose);
+    const selectedProfile = context.global(profile);
+    // port: number; verbosity: number
+    // selectedProfile: string | undefined
+  },
+});
+
+const cli = command('tool', {
+  about: 'Manage services',
+  author: 'Example team',
+  beforeHelp: 'Run this command from a project directory.',
+  afterHelp: 'See https://example.test/docs for more help.',
+  args: [verbose, profile],
+  subcommands: [serveCommand],
+  subcommandRequired: true,
+});
 ```
 
-Set `global: true` on a named argument to make it available before or after
-nested subcommands and show it in nested help and completion output. A handler receives local fields in its first
-parameter. Its context returns a registered global value through
-`context.global(globalArgument)`, with the exact inferred type. Help can also
-use `.overrideUsage()`,
-`.overrideHelp()`, `.disableHelpFlag()`, `.disableVersionFlag()`, and
-`.disableHelpSubcommand()`.
+A global named argument is available before or after nested subcommands. It is
+shown in nested help and completion. A handler receives local fields in its
+first parameter. `context.global(globalArgument)` returns a registered global
+value with its exact inferred type.
 
-## Supported parsing behavior
+Use `overrideUsage`, `overrideHelp`, `disableHelpFlag`,
+`disableVersionFlag`, and `disableHelpSubcommand` for custom control output.
 
-- Long options: `--port 3000` and `--port=3000`
-- Short values: `-p 3000` and `-p3000`
-- Short flag clusters and counters: `-qvvv`
-- Repeatable options and trailing positionals
-- Fixed and ranged value counts, delimiters, and value terminators
-- Equals-only options, optional option values, hyphen values, and negative numbers
-- `--` to stop option parsing
-- Nested subcommands, aliases, inferred prefixes, and the `help` subcommand
+## Shell completions
+
+Generate scripts for Bash, Zsh, Fish, and PowerShell with a completion
+subcommand:
+
+```ts
+import {
+  command,
+  completionShells,
+  parsers,
+  positional,
+} from '@konstit/cli';
+
+const completion = command('completion', {
+  about: 'Generate a shell completion script',
+  args: [
+    positional('shell', parsers.enum(completionShells), { required: true }),
+  ],
+  handler: async ({ shell }) => {
+    const { generateCompletion } = await import('@konstit/cli/completion');
+    process.stdout.write(generateCompletion(cli, shell, {
+      executable: 'tiny-git',
+      dynamic: true,
+    }));
+  },
+});
+
+const cli = command('tiny-git', {
+  subcommands: [completion],
+  subcommandRequired: true,
+});
+
+process.exitCode = await cli.run();
+```
+
+The generated scripts include visible options, aliases, built-ins, nested
+subcommands, and static parser values. Hidden arguments and commands are
+omitted. Plain `cli.run()` detects and serves dynamic completion requests.
+
+Use parser metadata for static values and path completion:
+
+```ts
+const region = parsers.custom('REGION', parseRegion, {
+  completions: ['us-east-1', 'eu-west-1'],
+});
+
+const config = option('config', parsers.string, { valueHint: 'file' });
+const output = positional('output', parsers.string, { valueHint: 'directory' });
+```
+
+Use the `complete` argument field when candidates depend on the command line:
+
+```ts
+const packageOption = option('package', parsers.string, {
+  complete: async ({ current, commandPath, rawValues }) => {
+    const workspace = rawValues.workspace?.at(-1);
+    const packages = await findWorkspacePackages(workspace, current);
+    return packages.map((name) => ({
+      value: name,
+      description: `Package in ${commandPath.join(' ')}`,
+    }));
+  },
+});
+```
+
+Providers can return an array, a promise, or an async iterable. Scripts can
+also be generated directly with `generateCompletion(cli, shell, options)`.
+
+## Supported behavior
+
+- Long and short options, attached values, clusters, and counters
+- Repeatable, fixed-count, ranged, delimited, and terminated values
+- Equals-only options and optional option values
+- Hyphen values, negative numbers, trailing positionals, and `--`
+- Nested subcommands, aliases, inferred prefixes, and generated help
 - Global options shared by nested subcommands
-- Environment fallbacks, overridden by explicit CLI values
-- Conditional sets, required-unless rules, exclusivity, group relations, and overrides
+- Environment fallbacks overridden by explicit CLI values
+- Requirements, conflicts, exclusivity, overrides, and argument groups
 - Automatic help, version, usage, and close-name suggestions
-- Static and async completion generation for Bash, Zsh, Fish, and PowerShell
+- Static and dynamic completion for Bash, Zsh, Fish, and PowerShell
 
 ## Development
 

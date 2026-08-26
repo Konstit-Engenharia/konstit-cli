@@ -128,7 +128,7 @@ describe('built-in value parsers', () => {
   });
 });
 
-describe('argument builder aliases and metadata', () => {
+describe('argument configuration and metadata', () => {
   test('applies factory configuration without changing parser ownership', () => {
     const colorParser = parsers.enum(['auto', 'always', 'never']);
     const completion = () => ['auto'];
@@ -144,6 +144,7 @@ describe('argument builder aliases and metadata', () => {
       hide: false,
     });
     const withoutDefault = option('fallback', colorParser);
+    const parsedPositional = positional('port', parsers.integer);
     const verbose = count('verbose', {
       global: true,
       short: 'v',
@@ -170,6 +171,18 @@ describe('argument builder aliases and metadata', () => {
       presence: 'optional',
       global: false,
     });
+    expect(getArgumentDefinition(parsedPositional)).toMatchObject({
+      parser: parsers.integer,
+      presence: 'optional',
+    });
+    expect(getArgumentDefinition(option('optional-default', parsers.string, {
+      default: 'value',
+      numArgs: { min: 0, max: 1 },
+    }))).toMatchObject({
+      defaultValue: 'value',
+      minValues: 0,
+      maxValues: 1,
+    });
     expect(getArgumentDefinition(verbose)).toMatchObject({
       short: 'v',
       long: 'verbosity',
@@ -191,7 +204,7 @@ describe('argument builder aliases and metadata', () => {
     });
   });
 
-  test('validates conflicting factory presence and global positionals', () => {
+  test('validates conflicting declarative argument configurations', () => {
     const conflicting = {
       required: true,
       default: 'safe',
@@ -202,96 +215,265 @@ describe('argument builder aliases and metadata', () => {
     expect(() => positional('path', parsers.string, { global: true } as never)).toThrow(
       'Positional arguments cannot be global',
     );
+    expect(() =>
+      option(
+        'trailing-option',
+        parsers.string,
+        { trailingVarArg: true } as never,
+      )
+    ).toThrow('Options cannot be trailing positional arguments');
+    expect(() =>
+      positional(
+        'missing-positional',
+        parsers.string,
+        { defaultMissing: 'value' } as never,
+      )
+    ).toThrow('Positional arguments cannot configure defaultMissing');
+    expect(() =>
+      positional(
+        'equals-positional',
+        parsers.string,
+        { requireEquals: true } as never,
+      )
+    ).toThrow('Positional arguments cannot require equals-form values');
+    expect(() =>
+      option(
+        'repeatable-default',
+        parsers.string,
+        { repeatable: true, default: 'value' } as never,
+      )
+    ).toThrow('A repeatable argument cannot have a scalar default');
+    expect(() =>
+      positional(
+        'trailing-default',
+        parsers.string,
+        { trailingVarArg: true, default: 'value' } as never,
+      )
+    ).toThrow('A trailing argument cannot have a scalar default');
+    expect(() =>
+      option(
+        'multi-default',
+        parsers.string,
+        { numArgs: 2, default: 'value' } as never,
+      )
+    ).toThrow('A multi-value argument cannot have a scalar default');
+    expect(() =>
+      option(
+        'ranged-default',
+        parsers.string,
+        { numArgs: { min: 1, max: 2 }, default: 'value' } as never,
+      )
+    ).toThrow('A multi-value argument cannot have a scalar default');
+    expect(() =>
+      option(
+        'missing-count',
+        parsers.string,
+        { defaultMissing: 'value', numArgs: 1 } as never,
+      )
+    ).toThrow('defaultMissing cannot be combined with numArgs');
+    expect(() => flag('verbose', { repeatable: true } as never)).toThrow(
+      'flag arguments cannot configure repeatable',
+    );
+    expect(() => count('verbose', { numArgs: 2 } as never)).toThrow(
+      'count arguments cannot configure numArgs',
+    );
+    expect(() =>
+      positional(
+        'named-positional',
+        parsers.string,
+        { required: true, short: 'p' } as never,
+      )
+    ).toThrow('positional arguments cannot configure short');
+    expect(() =>
+      option(
+        'negated-option',
+        parsers.string,
+        { required: true, negated: true } as never,
+      )
+    ).toThrow('option arguments cannot configure negated');
+    expect(() =>
+      positional(
+        'repeatable-trailing',
+        parsers.string,
+        { trailingVarArg: true, repeatable: true } as never,
+      )
+    ).toThrow('A trailing argument cannot be repeatable');
+    expect(() =>
+      positional(
+        'counted-trailing',
+        parsers.string,
+        { trailingVarArg: true, numArgs: 2 } as never,
+      )
+    ).toThrow('A trailing argument cannot configure numArgs');
+    expect(() =>
+      positional(
+        'strict-trailing',
+        parsers.string,
+        { trailingVarArg: true, allowHyphenValues: false } as never,
+      )
+    ).toThrow('A trailing argument must allow hyphen values');
   });
 
   test('sets an explicit long name and positional value label', () => {
-    const output = option('output').long('destination');
-    const input = positional('input').valueName('SOURCE');
+    const output = option('output', parsers.string, { long: 'destination' });
+    const input = positional('input', parsers.string, { valueName: 'SOURCE' });
 
     expect(getArgumentDefinition(output).long).toBe('destination');
     expect(getArgumentDefinition(input).valueName).toBe('SOURCE');
   });
 
-  test('restores optional behavior after requiring an argument', () => {
-    const input = option('input').required().optional();
-    expect(getArgumentDefinition(input)).toMatchObject({
-      presence: 'optional',
-      defaultValue: undefined,
-    });
+  test('uses optional behavior unless required or defaulted', () => {
+    const input = option('input');
+    const definition = getArgumentDefinition(input);
+    expect(definition.presence).toBe('optional');
+    expect(definition.defaultValue).toBeUndefined();
   });
 
-  test('rejects optional scalar behavior on a repeatable argument', () => {
-    const values = option('value').repeatable() as unknown as {
-      optional(): unknown;
-    };
-    expect(() => values.optional()).toThrow(
-      'A repeatable argument always defaults to an empty array',
-    );
+  test('does not expose fluent methods on configured arguments', () => {
+    for (
+      const argument of [
+        option('value'),
+        positional('input'),
+        flag('enabled'),
+        count('verbose'),
+      ]
+    ) {
+      expect(Reflect.ownKeys(argument)).toEqual([]);
+      expect('required' in argument).toBe(false);
+      expect('short' in argument).toBe(false);
+      expect('hide' in argument).toBe(false);
+      expect(Object.isFrozen(argument)).toBe(true);
+    }
   });
 
   test('sets a default value', () => {
-    const mode = option('mode').default('safe');
+    const mode = option('mode', parsers.string, { default: 'safe' });
     expect(getArgumentDefinition(mode)).toMatchObject({
       presence: 'default',
       defaultValue: 'safe',
     });
   });
 
-  test('rejects invalid builder definitions at runtime', () => {
+  test('rejects invalid declarative definitions at runtime', () => {
     expect(() => getArgumentDefinition({} as ArgumentType)).toThrow(
       'Expected an argument created by option(), positional(), flag(), or count()',
     );
 
-    const unsafeShort = flag('verbose') as unknown as {
-      short(value: string): unknown;
-    };
-    expect(() => unsafeShort.short('vv')).toThrow(
-      'A short option must be one character',
+    expect(() => flag('verbose', { short: 'vv' } as never)).toThrow(
+      'one UTF-16 character',
     );
-    expect(() => option('pair').default('x').numArgs(2)).toThrow(
+    expect(() =>
+      option('pair', parsers.string, {
+        default: 'x',
+        numArgs: 2,
+      } as never)
+    ).toThrow(
       'A multi-value argument cannot have a scalar default',
     );
-    expect(() => option('value').valueDelimiter('::')).toThrow(
+    expect(() => option('value', parsers.string, { valueDelimiter: '::' } as never)).toThrow(
       'A value delimiter must be one character',
     );
-    expect(() => option('value').valueTerminator('')).toThrow(
+    expect(() => option('value', parsers.string, { valueTerminator: '' } as never)).toThrow(
       'A value terminator cannot be empty',
     );
-    expect(() => positional('value').default('x').trailingVarArg()).toThrow(
+    expect(() =>
+      positional('value', parsers.string, {
+        default: 'x',
+        trailingVarArg: true,
+      } as never)
+    ).toThrow(
       'A trailing argument cannot have a scalar default',
     );
 
-    const repeated = option('value').repeatable() as unknown as {
-      default(value: string): unknown;
-    };
-    expect(() => repeated.default('x')).toThrow(
+    expect(() =>
+      option('value', parsers.string, {
+        default: 'x',
+        repeatable: true,
+      } as never)
+    ).toThrow(
       'A repeatable argument cannot have a scalar default',
     );
-    const unsafeFlag = flag('enabled') as unknown as {
-      repeatable(): unknown;
-    };
-    expect(() => unsafeFlag.repeatable()).toThrow(
-      'Flags and counters cannot be repeatable values',
-    );
-    const unsafeCount = count('verbose') as unknown as {
-      repeatable(): unknown;
-    };
-    expect(() => unsafeCount.repeatable()).toThrow(
-      'Flags and counters cannot be repeatable values',
-    );
 
-    expect(() => option('value').env('')).toThrow(
+    expect(() => option('value', parsers.string, { env: '' })).toThrow(
       'An environment variable name cannot be empty',
     );
     expect(() => option('not valid')).toThrow('Invalid argument name');
-    expect(() => option('value').long('--invalid')).toThrow(
+    expect(() => option('value', parsers.string, { long: '--invalid' })).toThrow(
       'Invalid argument name',
     );
-    expect(() => option('value').numArgs(-1)).toThrow(
+    expect(() => option('value', parsers.string, { numArgs: -1 })).toThrow(
       'The minimum value count must be a non-negative integer',
     );
-    expect(() => option('value').numArgs({ min: 2, max: 1 })).toThrow(
+    expect(() => option('value', parsers.string, { numArgs: { min: 2, max: 1 } })).toThrow(
       'The maximum value count must be an integer at least equal to min',
+    );
+  });
+
+  test('validates widened argument names, parsers, and option field types', () => {
+    expect(() => option(1 as never)).toThrow('argument name must be a string');
+    expect(() => flag({ toString: () => 'valid' } as never)).toThrow(
+      'argument name must be a string',
+    );
+    expect(() => option('value', parsers.string, { long: 1 } as never)).toThrow('option \'long\' must be a string');
+
+    for (
+      const parser of [
+        null,
+        {},
+        { label: 1, parse: () => '' },
+        { label: 'VALUE', parse: 'invalid' },
+        { label: 'VALUE', parse: () => '', completions: ['ok', 1] },
+        { label: 'VALUE', parse: () => '', completionHint: 'database' },
+      ]
+    ) {
+      expect(() => option('value', parser as never)).toThrow(/value parser/i);
+    }
+
+    for (
+      const configuration of [
+        null,
+        [],
+        { describe: 1 },
+        { env: 1 },
+        { hide: 'yes' },
+        { global: 'yes' },
+        { short: 1 },
+        { aliases: ['valid', 1] },
+        { valueName: 1 },
+        { valueHint: 'database' },
+        { complete: 'invalid' },
+        { required: 'yes' },
+        { repeatable: 'yes' },
+        { numArgs: 'many' },
+        { numArgs: { min: 'one' } },
+        { numArgs: { min: 1, max: 'two' } },
+        { numArgs: { min: 1, extra: 2 } },
+        { valueDelimiter: 1 },
+        { valueTerminator: 1 },
+        { requireEquals: 'yes' },
+        { allowHyphenValues: 'yes' },
+        { allowNegativeNumbers: 'yes' },
+      ]
+    ) {
+      expect(() => option('value', parsers.string, configuration as never)).toThrow();
+    }
+    expect(() => positional('value', parsers.string, { trailingVarArg: 'yes' } as never)).toThrow(
+      'option \'trailingVarArg\' must be a boolean',
+    );
+    expect(() => flag('value', { negated: 'yes' } as never)).toThrow(
+      'option \'negated\' must be a boolean',
+    );
+  });
+
+  test('uses one non-dash UTF-16 character for short options', () => {
+    expect(getArgumentDefinition(flag('valid', { short: '界' })).short).toBe(
+      '界',
+    );
+    expect(() => flag('dash', { short: '-' } as never)).toThrow(
+      'one UTF-16 character',
+    );
+    expect(() => flag('emoji', { short: '💥' } as never)).toThrow(
+      'one UTF-16 character',
     );
   });
 });

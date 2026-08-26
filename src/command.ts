@@ -3,12 +3,12 @@ import {
   getArgumentDefinition,
   type AnyArgument,
   type AnyGlobalArgument,
-  type Argument,
   type ArgumentCardinality,
   type ArgumentDefinition,
   type ArgumentKind,
   type ArgumentName,
   type ArgumentOutput,
+  type ArgumentType,
 } from './argument';
 import {
   CliError,
@@ -65,7 +65,7 @@ interface GroupDefinition {
   readonly conflicts: readonly string[];
 }
 
-export interface GroupOptions {
+interface GroupOptions {
   /** At least one member must be present. */
   readonly required?: boolean;
   /** More than one member can be present. The default is false. */
@@ -85,7 +85,7 @@ export interface HandlerContext {
   ): ArgumentOutput<ArgumentType>;
 }
 
-/** A command callback whose argument shape is inferred from its builder. */
+/** A command callback whose argument shape is inferred from its schema. */
 export type CommandHandler<in Arguments extends object> = (
   args: Arguments,
   context: HandlerContext,
@@ -344,8 +344,8 @@ function updateGroupRelations(
   return groups.map((current) => current.name === groupName ? { ...current, [relation]: combined } : current);
 }
 
-/** An immutable, clap-style command builder. */
-export class Command<
+/** Internal immutable command configurator. */
+class Command<
   const Name extends string,
   Fields extends object = EmptyObject,
   Subcommands extends Record<string, unknown> = EmptyObject,
@@ -478,7 +478,7 @@ export class Command<
     const Global extends boolean,
   >(
     argument:
-      & Argument<ArgumentName, Value, Output, Kind, Cardinality, Global>
+      & ArgumentType<ArgumentName, Value, Output, Kind, Cardinality, Global>
       & (ArgumentName extends keyof Fields ? DuplicateArgument<ArgumentName>
         : unknown),
   ): Command<
@@ -895,6 +895,60 @@ type SubcommandsFromTuple<Subcommands extends readonly AnyCommand[]> = Simplify<
   }
 >;
 
+type NonEmptyTuple<Value> = readonly [Value, ...Value[]];
+type AtLeastTwoTuple<Value> = readonly [Value, Value, ...Value[]];
+
+type BinaryArgumentRelation<Fields extends object> = {
+  [Source in StringKeyOf<Fields>]: readonly [
+    source: Source,
+    target: Exclude<StringKeyOf<Fields>, Source>,
+  ];
+}[StringKeyOf<Fields>];
+
+type ConditionalArgumentRelation<Fields extends object> = {
+  [Source in StringKeyOf<Fields>]: readonly [
+    source: Source,
+    expected: RelationValue<Fields[Source]>,
+    target: Exclude<StringKeyOf<Fields>, Source>,
+  ];
+}[StringKeyOf<Fields>];
+
+type ConditionalSetRelation<Fields extends object> = {
+  [Target in StringKeyOf<Fields>]: {
+    readonly conditions: NonEmptyTuple<FieldCondition<Fields, Target>>;
+    readonly target: Target;
+  };
+}[StringKeyOf<Fields>];
+
+type RequiredUnlessRelation<Fields extends object> = {
+  [Target in StringKeyOf<Fields>]: {
+    readonly alternatives: NonEmptyTuple<
+      Exclude<StringKeyOf<Fields>, Target>
+    >;
+    readonly target: Target;
+  };
+}[StringKeyOf<Fields>];
+
+/** A declarative clap-style argument group. */
+export interface CommandGroupOptions<
+  Name extends string = string,
+  ArgumentName extends string = string,
+> extends GroupOptions {
+  /** The name used to identify the group in diagnostics. */
+  readonly name: Name;
+  /** Arguments that belong to this group. */
+  readonly members: NonEmptyTuple<ArgumentName>;
+  /** Arguments required whenever any group member is present. */
+  readonly requires?: readonly ArgumentName[];
+  /** Arguments that conflict whenever any group member is present. */
+  readonly conflicts?: readonly ArgumentName[];
+}
+
+type GroupNamesFromTuple<
+  Groups extends readonly CommandGroupOptions[],
+> = Groups[number] extends CommandGroupOptions<infer Name, string> ? Name
+  : never;
+
 type UniqueArguments<
   Arguments extends readonly AnyArgument[],
   Seen extends string = never,
@@ -921,15 +975,89 @@ type UniqueSubcommands<
     : unknown
   : unknown;
 
+type CommandConfigurationError<Message extends string> = {
+  readonly __typeclap_error__: Message;
+};
+
+type DuplicateString<
+  Values extends readonly string[],
+  Seen extends string = never,
+> = number extends Values['length'] ? never
+  : Values extends readonly [
+    infer First extends string,
+    ...infer Rest extends readonly string[],
+  ] ? string extends First ? never
+    : First extends Seen ? First
+    : DuplicateString<Rest, Seen | First>
+  : never;
+
+type CheckedUniqueStrings<
+  Values extends readonly string[],
+  Context extends string,
+> = DuplicateString<Values> extends infer Duplicate extends string ? [Duplicate] extends [never] ? unknown
+  : CommandConfigurationError<`${Context} contains duplicate '${Duplicate}'`>
+  : unknown;
+
+type CheckedGroup<
+  Group extends CommandGroupOptions,
+> =
+  & (Exclude<keyof Group, keyof CommandGroupOptions> extends never ? unknown
+    : CommandConfigurationError<`Argument group '${Group['name']}' contains unsupported fields`>)
+  & CheckedUniqueStrings<Group['members'], `Argument group '${Group['name']}'`>
+  & ('requires' extends keyof Group ? Group['requires'] extends readonly string[] ? CheckedUniqueStrings<
+        Group['requires'],
+        `Argument group '${Group['name']}' requirements`
+      >
+    : unknown
+    : unknown)
+  & ('conflicts' extends keyof Group ? Group['conflicts'] extends readonly string[] ? CheckedUniqueStrings<
+        Group['conflicts'],
+        `Argument group '${Group['name']}' conflicts`
+      >
+    : unknown
+    : unknown);
+
+type CheckedGroups<
+  Groups extends readonly CommandGroupOptions[],
+  Seen extends string = never,
+> = number extends Groups['length'] ? unknown
+  : Groups extends readonly [
+    infer First extends CommandGroupOptions,
+    ...infer Rest extends readonly CommandGroupOptions[],
+  ] ? string extends First['name'] ? unknown
+    : First['name'] extends Seen ? DuplicateGroup<First['name']>
+    : CheckedGroup<First> & CheckedGroups<Rest, Seen | First['name']>
+  : unknown;
+
 /** Optional values applied when starting an immutable command definition. */
 export interface CommandOptions<
   Arguments extends readonly AnyArgument[] = readonly AnyArgument[],
   Subcommands extends readonly AnyCommand[] = readonly AnyCommand[],
+  SubcommandRequired extends boolean = boolean,
+  Groups extends readonly CommandGroupOptions<
+    string,
+    StringKeyOf<FieldsFromArguments<Arguments>>
+  >[] = readonly CommandGroupOptions<
+    string,
+    StringKeyOf<FieldsFromArguments<Arguments>>
+  >[],
 > {
   /** Sets the version text printed by `-V` and `--version`. */
   readonly version?: string;
   /** Sets the short command description shown in help and completion. */
   readonly about?: string;
+  /** Sets the extended command description shown in full help. */
+  readonly longAbout?: string;
+  /** Sets the author line shown in generated help. */
+  readonly author?: string;
+  /** Adds text before the generated help content. */
+  readonly beforeHelp?: string;
+  /** Adds text after the generated help content. */
+  readonly afterHelp?: string;
+  /** Replaces the generated usage line with exact text. */
+  readonly overrideUsage?: string;
+  /** Replaces all generated help output with exact text. */
+  readonly overrideHelp?: string;
   /** Adds parseable aliases that are hidden from help and completion. */
   readonly aliases?: readonly string[];
   /** Adds parseable aliases that are shown in help and completion. */
@@ -940,14 +1068,62 @@ export interface CommandOptions<
   readonly subcommands?: Subcommands;
   /** Accepts an unambiguous prefix of a subcommand name or alias. */
   readonly inferSubcommands?: boolean;
+  /** Makes the parsed subcommand field required. */
+  readonly subcommandRequired?: SubcommandRequired;
   /** Displays help when no argument or subcommand was supplied. */
   readonly defaultToHelp?: boolean;
+  /** Disables the generated `help` subcommand. */
+  readonly disableHelpSubcommand?: boolean;
+  /** Disables the generated `-h` and `--help` flags. */
+  readonly disableHelpFlag?: boolean;
+  /** Disables the generated `-V` and `--version` flags. */
+  readonly disableVersionFlag?: boolean;
+  /** Hides this command from parent help and completion. */
+  readonly hide?: boolean;
+  /** Requires a target whenever its source is present. */
+  readonly requires?: readonly BinaryArgumentRelation<
+    FieldsFromArguments<Arguments>
+  >[];
+  /** Requires a target whenever its source equals an expected value. */
+  readonly requiresIf?: readonly ConditionalArgumentRelation<
+    FieldsFromArguments<Arguments>
+  >[];
+  /** Requires a target whenever any configured condition matches. */
+  readonly requiredIfAny?: readonly ConditionalSetRelation<
+    FieldsFromArguments<Arguments>
+  >[];
+  /** Requires a target whenever all configured conditions match. */
+  readonly requiredIfAll?: readonly ConditionalSetRelation<
+    FieldsFromArguments<Arguments>
+  >[];
+  /** Requires a target unless at least one alternative is present. */
+  readonly requiredUnlessPresent?: readonly RequiredUnlessRelation<
+    FieldsFromArguments<Arguments>
+  >[];
+  /** Requires a target unless every alternative is present. */
+  readonly requiredUnlessAll?: readonly RequiredUnlessRelation<
+    FieldsFromArguments<Arguments>
+  >[];
+  /** Clears a target whenever its source is explicitly provided. */
+  readonly overrides?: readonly BinaryArgumentRelation<
+    FieldsFromArguments<Arguments>
+  >[];
+  /** Makes every argument in each tuple mutually exclusive. */
+  readonly conflicts?: readonly AtLeastTwoTuple<
+    StringKeyOf<FieldsFromArguments<Arguments>>
+  >[];
+  /** Makes each listed argument conflict with all other supplied arguments. */
+  readonly exclusive?: NonEmptyTuple<
+    StringKeyOf<FieldsFromArguments<Arguments>>
+  >;
+  /** Defines clap-style argument groups and their relations. */
+  readonly groups?: Groups;
   /** Attaches a callback with the exact configured argument type. */
   readonly handler?: CommandHandler<
     CommandArguments<
       FieldsFromArguments<Arguments>,
       SubcommandsFromTuple<Subcommands>,
-      false
+      SubcommandRequired
     >
   >;
 }
@@ -955,10 +1131,25 @@ export interface CommandOptions<
 type CheckedCommandOptions<
   Arguments extends readonly AnyArgument[],
   Subcommands extends readonly AnyCommand[],
-> = CommandOptions<Arguments, Subcommands> & {
-  readonly args?: Arguments & UniqueArguments<Arguments>;
-  readonly subcommands?: Subcommands & UniqueSubcommands<Subcommands>;
-};
+  SubcommandRequired extends boolean,
+  Groups extends readonly CommandGroupOptions<
+    string,
+    StringKeyOf<FieldsFromArguments<Arguments>>
+  >[],
+> =
+  & CommandOptions<Arguments, Subcommands, SubcommandRequired, Groups>
+  & (SubcommandRequired extends true ? number extends Subcommands['length'] ? unknown
+    : Subcommands extends readonly [] ? CommandConfigurationError<
+        'A command with subcommandRequired enabled must define at least one subcommand'
+      >
+    : unknown
+    : unknown)
+  & {
+    readonly args?: Arguments & UniqueArguments<Arguments>;
+    readonly subcommands?: Subcommands & UniqueSubcommands<Subcommands>;
+    readonly subcommandRequired?: SubcommandRequired;
+    readonly groups?: Groups & CheckedGroups<Groups>;
+  };
 
 function emptyCommand<const Name extends string>(
   name: Name,
@@ -989,32 +1180,77 @@ function emptyCommand<const Name extends string>(
 }
 
 /** Starts an immutable command definition. */
-export function command<const Name extends string>(name: Name): Command<Name>;
+export function command<const Name extends string>(
+  name: Name,
+): HandledCommand<Name, EmptyObject, EmptyObject, false, never>;
 /** Starts an immutable command definition from tuple-based options. */
 export function command<
   const Name extends string,
   const Arguments extends readonly AnyArgument[] = readonly [],
   const Subcommands extends readonly AnyCommand[] = readonly [],
+  const SubcommandRequired extends boolean = false,
+  const Groups extends readonly CommandGroupOptions<
+    string,
+    StringKeyOf<FieldsFromArguments<Arguments>>
+  >[] = readonly [],
 >(
   name: Name,
-  options: CheckedCommandOptions<Arguments, Subcommands>,
+  options: CheckedCommandOptions<
+    Arguments,
+    Subcommands,
+    SubcommandRequired,
+    Groups
+  >,
 ): HandledCommand<
   Name,
   FieldsFromArguments<Arguments>,
   SubcommandsFromTuple<Subcommands>,
-  false,
-  never
+  SubcommandRequired,
+  GroupNamesFromTuple<Groups>
 >;
 export function command(
   name: string,
-  options: CommandOptions<readonly AnyArgument[], readonly AnyCommand[]> = {},
-): AnyCommand {
+  options: CommandOptions<
+    readonly AnyArgument[],
+    readonly AnyCommand[],
+    boolean,
+    readonly CommandGroupOptions<string, string>[]
+  > = {},
+): HandledCommand {
+  validateCommandOptions(options);
   let configured = emptyCommand(name);
-  if (options.version !== undefined) {
-    configured = configured.version(options.version);
-  }
   if (options.about !== undefined) {
     configured = configured.about(options.about);
+  }
+  if (options.longAbout !== undefined) {
+    configured = configured.longAbout(options.longAbout);
+  }
+  if (options.author !== undefined) {
+    configured = configured.author(options.author);
+  }
+  if (options.beforeHelp !== undefined) {
+    configured = configured.beforeHelp(options.beforeHelp);
+  }
+  if (options.afterHelp !== undefined) {
+    configured = configured.afterHelp(options.afterHelp);
+  }
+  if (options.overrideUsage !== undefined) {
+    configured = configured.overrideUsage(options.overrideUsage);
+  }
+  if (options.overrideHelp !== undefined) {
+    configured = configured.overrideHelp(options.overrideHelp);
+  }
+  if (options.disableHelpSubcommand !== undefined) {
+    configured = configured.disableHelpSubcommand(options.disableHelpSubcommand);
+  }
+  if (options.disableHelpFlag !== undefined) {
+    configured = configured.disableHelpFlag(options.disableHelpFlag);
+  }
+  if (options.disableVersionFlag !== undefined) {
+    configured = configured.disableVersionFlag(options.disableVersionFlag);
+  }
+  if (options.version !== undefined) {
+    configured = configured.version(options.version);
   }
   for (const alias of options.visibleAliases ?? []) {
     configured = configured.visibleAlias(alias);
@@ -1031,16 +1267,526 @@ export function command(
   if (options.inferSubcommands !== undefined) {
     configured = configured.inferSubcommands(options.inferSubcommands);
   }
+  if (options.subcommandRequired === true) {
+    configured = configured.requireSubcommand() as unknown as typeof configured;
+  }
   if (options.defaultToHelp !== undefined) {
     configured = configured.argRequiredElseHelp(options.defaultToHelp);
   }
-  if (options.handler !== undefined) {
-    return configured.handler(options.handler as never);
+  if (options.hide !== undefined) {
+    configured = configured.hide(options.hide);
   }
-  return configured;
+
+  validateCommandRelations(options, getCommandDefinition(configured));
+  for (const [source, target,] of options.requires ?? []) {
+    configured = configured.requires(source as never, target as never);
+  }
+  for (const [source, expected, target,] of options.requiresIf ?? []) {
+    configured = configured.requiresIf(
+      source as never,
+      expected as never,
+      target as never,
+    );
+  }
+  for (const { conditions, target } of options.requiredIfAny ?? []) {
+    configured = configured.requiredIfAny(conditions as never, target as never);
+  }
+  for (const { conditions, target } of options.requiredIfAll ?? []) {
+    configured = configured.requiredIfAll(conditions as never, target as never);
+  }
+  for (const { alternatives, target } of options.requiredUnlessPresent ?? []) {
+    configured = configured.requiredUnlessPresent(
+      alternatives as never,
+      target as never,
+    );
+  }
+  for (const { alternatives, target } of options.requiredUnlessAll ?? []) {
+    configured = configured.requiredUnlessAll(
+      alternatives as never,
+      target as never,
+    );
+  }
+  for (const [source, target,] of options.overrides ?? []) {
+    configured = configured.overrides(source as never, target as never);
+  }
+  for (const conflict of options.conflicts ?? []) {
+    const [first, second, ...rest] = conflict;
+    configured = configured.conflicts(
+      first as never,
+      second as never,
+      ...rest as never,
+    );
+  }
+  if (options.exclusive !== undefined) {
+    const [first, ...rest] = options.exclusive;
+    configured = configured.exclusive(first as never, ...rest as never);
+  }
+  for (const group of options.groups ?? []) {
+    configured = configured.group(
+      group.name,
+      group.members as never,
+      {
+        ...(group.required === undefined ? {} : { required: group.required }),
+        ...(group.multiple === undefined ? {} : { multiple: group.multiple }),
+      },
+    ) as unknown as typeof configured;
+    if (group.requires !== undefined && group.requires.length > 0) {
+      const [first, ...rest] = group.requires;
+      configured = configured.groupRequires(
+        group.name as never,
+        first as never,
+        ...rest as never,
+      );
+    }
+    if (group.conflicts !== undefined && group.conflicts.length > 0) {
+      const [first, ...rest] = group.conflicts;
+      configured = configured.groupConflicts(
+        group.name as never,
+        first as never,
+        ...rest as never,
+      );
+    }
+  }
+  if (options.handler !== undefined) {
+    return terminalCommand(configured.handler(options.handler as never));
+  }
+  return terminalCommand(configured);
 }
 
-function validateCommandName(name: string): void {
+interface InternalTerminalCommand {
+  parse(argv: readonly string[]): ParseOutcome<unknown>;
+  tryParse(argv: readonly string[]): ParseResult<unknown>;
+  run(argv?: readonly string[]): Promise<number>;
+  run(options?: RunOptions): Promise<number>;
+  renderHelp(): string;
+  renderUsage(): string;
+}
+
+function terminalCommand(configured: InternalTerminalCommand): HandledCommand {
+  const terminal = Object.freeze({
+    parse: (argv: readonly string[]) => configured.parse(argv),
+    tryParse: (argv: readonly string[]) => configured.tryParse(argv),
+    run: (argvOrOptions?: readonly string[] | RunOptions) =>
+      Array.isArray(argvOrOptions)
+        ? configured.run(argvOrOptions)
+        : configured.run((argvOrOptions ?? {}) as RunOptions),
+    renderHelp: () => configured.renderHelp(),
+    renderUsage: () => configured.renderUsage(),
+  });
+  commandDefinitions.set(
+    terminal,
+    getCommandDefinition(configured as unknown as CommandType),
+  );
+  return terminal as unknown as HandledCommand;
+}
+
+const commandOptionKeys = new Set([
+  'version',
+  'about',
+  'longAbout',
+  'author',
+  'beforeHelp',
+  'afterHelp',
+  'overrideUsage',
+  'overrideHelp',
+  'aliases',
+  'visibleAliases',
+  'args',
+  'subcommands',
+  'inferSubcommands',
+  'subcommandRequired',
+  'defaultToHelp',
+  'disableHelpSubcommand',
+  'disableHelpFlag',
+  'disableVersionFlag',
+  'hide',
+  'requires',
+  'requiresIf',
+  'requiredIfAny',
+  'requiredIfAll',
+  'requiredUnlessPresent',
+  'requiredUnlessAll',
+  'overrides',
+  'conflicts',
+  'exclusive',
+  'groups',
+  'handler',
+]);
+
+const commandStringOptionKeys = [
+  'version',
+  'about',
+  'longAbout',
+  'author',
+  'beforeHelp',
+  'afterHelp',
+  'overrideUsage',
+  'overrideHelp',
+] as const;
+
+const commandBooleanOptionKeys = [
+  'inferSubcommands',
+  'subcommandRequired',
+  'defaultToHelp',
+  'disableHelpSubcommand',
+  'disableHelpFlag',
+  'disableVersionFlag',
+  'hide',
+] as const;
+
+const conditionalSetKeys = new Set(['conditions', 'target']);
+const requiredUnlessKeys = new Set(['alternatives', 'target']);
+const commandGroupKeys = new Set([
+  'name',
+  'members',
+  'required',
+  'multiple',
+  'requires',
+  'conflicts',
+]);
+
+function validateClosedObject(
+  value: unknown,
+  allowedKeys: ReadonlySet<string>,
+  context: string,
+): asserts value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError(`${context} must be an object`);
+  }
+  const unsupported = Object.keys(value).find((key) => !allowedKeys.has(key));
+  if (unsupported !== undefined) {
+    throw new TypeError(`${context} contains unsupported field '${unsupported}'`);
+  }
+}
+
+function validateOptionalString(
+  options: Record<string, unknown>,
+  key: string,
+): void {
+  const value = options[key];
+  if (value !== undefined && typeof value !== 'string') {
+    throw new TypeError(`Command option '${key}' must be a string`);
+  }
+}
+
+function validateOptionalBoolean(
+  options: Record<string, unknown>,
+  key: string,
+): void {
+  const value = options[key];
+  if (value !== undefined && typeof value !== 'boolean') {
+    throw new TypeError(`Command option '${key}' must be a boolean`);
+  }
+}
+
+function validateArray(value: unknown, context: string): readonly unknown[] {
+  if (!Array.isArray(value)) {
+    throw new TypeError(`${context} must be an array`);
+  }
+  return value;
+}
+
+function validateStringArray(
+  value: unknown,
+  context: string,
+  minimum = 0,
+): readonly string[] {
+  const values = validateArray(value, context);
+  if (values.length < minimum) {
+    throw new TypeError(`${context} must contain at least ${minimum} value(s)`);
+  }
+  if (values.some((entry) => typeof entry !== 'string')) {
+    throw new TypeError(`${context} must contain only argument names`);
+  }
+  return values as readonly string[];
+}
+
+function validateTuple(
+  value: unknown,
+  length: number,
+  context: string,
+): readonly unknown[] {
+  const tuple = validateArray(value, context);
+  if (tuple.length !== length) {
+    throw new TypeError(`${context} must contain exactly ${length} values`);
+  }
+  return tuple;
+}
+
+function validateBinaryRelations(value: unknown, context: string): void {
+  for (const relation of validateArray(value, context)) {
+    const tuple = validateTuple(relation, 2, `${context} entry`);
+    if (typeof tuple[0] !== 'string' || typeof tuple[1] !== 'string') {
+      throw new TypeError(`${context} entries must contain argument names`);
+    }
+  }
+}
+
+function validateConditionalRelations(value: unknown, context: string): void {
+  for (const relation of validateArray(value, context)) {
+    const tuple = validateTuple(relation, 3, `${context} entry`);
+    if (typeof tuple[0] !== 'string' || typeof tuple[2] !== 'string') {
+      throw new TypeError(`${context} entries must contain argument names`);
+    }
+  }
+}
+
+function validateConditions(value: unknown, context: string): void {
+  const conditions = validateArray(value, context);
+  if (conditions.length === 0) {
+    throw new TypeError(`${context} must contain a condition`);
+  }
+  for (const condition of conditions) {
+    const tuple = validateTuple(condition, 2, `${context} entry`);
+    if (typeof tuple[0] !== 'string') {
+      throw new TypeError(`${context} entries must start with an argument name`);
+    }
+  }
+}
+
+function validateConditionalSets(value: unknown, context: string): void {
+  for (const relation of validateArray(value, context)) {
+    validateClosedObject(relation, conditionalSetKeys, `${context} entry`);
+    validateConditions(relation.conditions, `${context} conditions`);
+    if (typeof relation.target !== 'string') {
+      throw new TypeError(`${context} target must be an argument name`);
+    }
+  }
+}
+
+function validateRequiredUnless(value: unknown, context: string): void {
+  for (const relation of validateArray(value, context)) {
+    validateClosedObject(relation, requiredUnlessKeys, `${context} entry`);
+    validateStringArray(
+      relation.alternatives,
+      `${context} alternatives`,
+      1,
+    );
+    if (typeof relation.target !== 'string') {
+      throw new TypeError(`${context} target must be an argument name`);
+    }
+  }
+}
+
+function validateConflictSets(value: unknown): void {
+  for (const conflict of validateArray(value, 'Command option \'conflicts\'')) {
+    validateStringArray(conflict, 'Command option \'conflicts\' entry', 2);
+  }
+}
+
+function validateGroups(value: unknown): void {
+  for (const group of validateArray(value, 'Command option \'groups\'')) {
+    validateClosedObject(group, commandGroupKeys, 'Command group');
+    if (typeof group.name !== 'string') {
+      throw new TypeError('Command group name must be a string');
+    }
+    validateStringArray(group.members, `Argument group '${group.name}' members`, 1);
+    if (group.required !== undefined && typeof group.required !== 'boolean') {
+      throw new TypeError(`Argument group '${group.name}' required must be a boolean`);
+    }
+    if (group.multiple !== undefined && typeof group.multiple !== 'boolean') {
+      throw new TypeError(`Argument group '${group.name}' multiple must be a boolean`);
+    }
+    if (group.requires !== undefined) {
+      validateStringArray(group.requires, `Argument group '${group.name}' requirements`);
+    }
+    if (group.conflicts !== undefined) {
+      validateStringArray(group.conflicts, `Argument group '${group.name}' conflicts`);
+    }
+  }
+}
+
+function validateCommandOptions(options: unknown): void {
+  validateClosedObject(options, commandOptionKeys, 'Command configuration');
+  for (const key of commandStringOptionKeys) {
+    validateOptionalString(options, key);
+  }
+  for (const key of commandBooleanOptionKeys) {
+    validateOptionalBoolean(options, key);
+  }
+  for (const key of ['aliases', 'visibleAliases'] as const) {
+    if (options[key] !== undefined) {
+      validateStringArray(options[key], `Command option '${key}'`);
+    }
+  }
+  for (const key of ['args', 'subcommands'] as const) {
+    if (options[key] !== undefined) {
+      validateArray(options[key], `Command option '${key}'`);
+    }
+  }
+  if (
+    options.subcommandRequired === true
+    && (options.subcommands === undefined
+      || (options.subcommands as readonly unknown[]).length === 0)
+  ) {
+    throw new TypeError(
+      'A command with subcommandRequired enabled must define at least one subcommand',
+    );
+  }
+  if (options.requires !== undefined) {
+    validateBinaryRelations(options.requires, 'Command option \'requires\'');
+  }
+  if (options.requiresIf !== undefined) {
+    validateConditionalRelations(options.requiresIf, 'Command option \'requiresIf\'');
+  }
+  if (options.requiredIfAny !== undefined) {
+    validateConditionalSets(options.requiredIfAny, 'Command option \'requiredIfAny\'');
+  }
+  if (options.requiredIfAll !== undefined) {
+    validateConditionalSets(options.requiredIfAll, 'Command option \'requiredIfAll\'');
+  }
+  if (options.requiredUnlessPresent !== undefined) {
+    validateRequiredUnless(
+      options.requiredUnlessPresent,
+      'Command option \'requiredUnlessPresent\'',
+    );
+  }
+  if (options.requiredUnlessAll !== undefined) {
+    validateRequiredUnless(
+      options.requiredUnlessAll,
+      'Command option \'requiredUnlessAll\'',
+    );
+  }
+  if (options.overrides !== undefined) {
+    validateBinaryRelations(options.overrides, 'Command option \'overrides\'');
+  }
+  if (options.conflicts !== undefined) {
+    validateConflictSets(options.conflicts);
+  }
+  if (options.exclusive !== undefined) {
+    validateStringArray(options.exclusive, 'Command option \'exclusive\'', 1);
+  }
+  if (options.groups !== undefined) {
+    validateGroups(options.groups);
+  }
+  if (options.handler !== undefined && typeof options.handler !== 'function') {
+    throw new TypeError('Command option \'handler\' must be a function');
+  }
+}
+
+function validateArgumentReference(
+  names: ReadonlySet<string>,
+  name: string,
+  context: string,
+): void {
+  if (!names.has(name)) {
+    throw new TypeError(`${context} references unknown argument '${name}'`);
+  }
+}
+
+function validateDistinctRelation(
+  names: ReadonlySet<string>,
+  source: string,
+  target: string,
+  context: string,
+): void {
+  validateArgumentReference(names, source, context);
+  validateArgumentReference(names, target, context);
+  if (source === target) {
+    throw new TypeError(`${context} cannot target its source argument '${source}'`);
+  }
+}
+
+function validateNoDuplicateNames(values: readonly string[], context: string): void {
+  if (new Set(values).size !== values.length) {
+    throw new TypeError(`${context} cannot contain duplicate arguments`);
+  }
+}
+
+interface RuntimeConditionalSetRelation {
+  readonly conditions: readonly (readonly [string, unknown])[];
+  readonly target: string;
+}
+
+function validateCommandRelations(
+  options: CommandOptions<
+    readonly AnyArgument[],
+    readonly AnyCommand[],
+    boolean,
+    readonly CommandGroupOptions<string, string>[]
+  >,
+  definition: CommandDefinition,
+): void {
+  const names = new Set(definition.arguments.map(({ name }) => name));
+  for (const [source, target,] of options.requires ?? []) {
+    validateDistinctRelation(names, source, target, 'Command option \'requires\'');
+  }
+  for (const [source, , target,] of options.requiresIf ?? []) {
+    validateDistinctRelation(names, source, target, 'Command option \'requiresIf\'');
+  }
+  for (
+    const { conditions, target } of (options.requiredIfAny ?? []) as readonly RuntimeConditionalSetRelation[]
+  ) {
+    const context = 'Command option \'requiredIfAny\'';
+    validateArgumentReference(names, target, context);
+    for (const [source,] of conditions) {
+      validateDistinctRelation(names, source, target, context);
+    }
+  }
+  for (
+    const { conditions, target } of (options.requiredIfAll ?? []) as readonly RuntimeConditionalSetRelation[]
+  ) {
+    const context = 'Command option \'requiredIfAll\'';
+    validateArgumentReference(names, target, context);
+    for (const [source,] of conditions) {
+      validateDistinctRelation(names, source, target, context);
+    }
+  }
+  for (
+    const [context, relations,] of [
+      ['Command option \'requiredUnlessPresent\'', options.requiredUnlessPresent],
+      ['Command option \'requiredUnlessAll\'', options.requiredUnlessAll],
+    ] as const
+  ) {
+    for (const { alternatives, target } of relations ?? []) {
+      validateArgumentReference(names, target, context);
+      validateNoDuplicateNames(alternatives, context);
+      for (const alternative of alternatives) {
+        validateDistinctRelation(names, alternative, target, context);
+      }
+    }
+  }
+  for (const [source, target,] of options.overrides ?? []) {
+    validateDistinctRelation(names, source, target, 'Command option \'overrides\'');
+  }
+  for (const conflict of options.conflicts ?? []) {
+    validateNoDuplicateNames(conflict, 'Command option \'conflicts\'');
+    for (const name of conflict) {
+      validateArgumentReference(names, name, 'Command option \'conflicts\'');
+    }
+  }
+  if (options.exclusive !== undefined) {
+    validateNoDuplicateNames(options.exclusive, 'Command option \'exclusive\'');
+    for (const name of options.exclusive) {
+      validateArgumentReference(names, name, 'Command option \'exclusive\'');
+    }
+  }
+  for (const group of options.groups ?? []) {
+    validateNoDuplicateNames(group.members, `Argument group '${group.name}'`);
+    for (const member of group.members) {
+      validateArgumentReference(names, member, `Argument group '${group.name}'`);
+    }
+    for (const target of group.requires ?? []) {
+      validateArgumentReference(
+        names,
+        target,
+        `Argument group '${group.name}' requirements`,
+      );
+    }
+    for (const target of group.conflicts ?? []) {
+      validateArgumentReference(
+        names,
+        target,
+        `Argument group '${group.name}' conflicts`,
+      );
+    }
+  }
+}
+
+function validateCommandName(name: unknown): void {
+  if (typeof name !== 'string') {
+    throw new TypeError('Invalid command name: expected a string');
+  }
   if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(name)) {
     throw new TypeError(`Invalid command name: ${JSON.stringify(name)}`);
   }
@@ -2207,15 +2953,6 @@ function validateParsedValues(
       inheritedArguments,
     );
   }
-  if (definition.subcommandRequired && state.subcommand === undefined) {
-    throw commandError(
-      ErrorKind.MissingSubcommand,
-      'a subcommand is required but one was not provided',
-      definition,
-      path,
-      inheritedArguments,
-    );
-  }
   if (
     definition.argRequiredElseHelp
     && state.provided.size === 0
@@ -2227,6 +2964,15 @@ function validateParsedValues(
       kind: DisplayKind.Help,
       output: renderHelp(definition, path, inheritedArguments),
     });
+  }
+  if (definition.subcommandRequired && state.subcommand === undefined) {
+    throw commandError(
+      ErrorKind.MissingSubcommand,
+      'a subcommand is required but one was not provided',
+      definition,
+      path,
+      inheritedArguments,
+    );
   }
 
   for (const { source, target } of definition.requirements) {

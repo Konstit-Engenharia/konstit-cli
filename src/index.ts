@@ -13,9 +13,9 @@ export {
 } from './argument';
 export {
   command,
+  type CommandGroupOptions,
   type CommandHandler,
   type CommandOptions,
-  type GroupOptions,
   type HandledCommand,
   type HandlerContext,
   type HandlerResult,

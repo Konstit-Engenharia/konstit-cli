@@ -22,10 +22,14 @@ const configured = cli.command('validate', {
       cli.parsers.enum(['auto', 'always', 'never']),
       { global: true, default: 'auto' },
     ),
+    cli.option('tag', cli.parsers.string, { repeatable: true }),
   ],
   subcommands: [cli.command('status', { handler: () => 4 })],
   defaultToHelp: true,
 });
+assert.equal(Object.isFrozen(configured), true);
+assert.equal('arg' in configured, false);
+assert.equal('required' in cli.option('value'), false);
 const bash = completion.generateCompletion(configured, 'bash');
 
 assert.match(bash, /# bash completion for validate/);
@@ -43,6 +47,7 @@ if (parsed.type !== 'value') {
 assert.deepEqual(parsed.value, {
   verbose: 2,
   color: 'auto',
+  tag: [],
   subcommand: undefined,
 });
 assert.deepEqual(cli.completionShells, completion.completionShells);

@@ -24,14 +24,17 @@ function parse<Value>(
 }
 
 describe('advanced argument relations', () => {
-  const conditional = command('conditional')
-    .arg(option('format', parsers.enum(['json', 'yaml'])))
-    .arg(option('mode', parsers.enum(['strict', 'relaxed'])))
-    .arg(option('schema'))
-    .requiredIfAny(
-      [['format', 'json'], ['mode', 'strict']],
-      'schema',
-    );
+  const conditional = command('conditional', {
+    args: [
+      option('format', parsers.enum(['json', 'yaml'])),
+      option('mode', parsers.enum(['strict', 'relaxed'])),
+      option('schema'),
+    ],
+    requiredIfAny: [{
+      conditions: [['format', 'json'], ['mode', 'strict']],
+      target: 'schema',
+    }],
+  });
 
   test('requires a target when any value condition matches', () => {
     expect(conditional.tryParse(['--format', 'json'])).toMatchObject({
@@ -52,14 +55,17 @@ describe('advanced argument relations', () => {
   });
 
   test('requires a target only when all value conditions match', () => {
-    const cli = command('all')
-      .arg(option('format', parsers.enum(['json', 'yaml'])))
-      .arg(flag('strict'))
-      .arg(option('schema'))
-      .requiredIfAll(
-        [['format', 'json'], ['strict', true]],
-        'schema',
-      );
+    const cli = command('all', {
+      args: [
+        option('format', parsers.enum(['json', 'yaml'])),
+        flag('strict'),
+        option('schema'),
+      ],
+      requiredIfAll: [{
+        conditions: [['format', 'json'], ['strict', true]],
+        target: 'schema',
+      }],
+    });
 
     expect(parse(cli, ['--format', 'json'])).toMatchObject({
       format: 'json',
@@ -70,19 +76,21 @@ describe('advanced argument relations', () => {
       error: { kind: ErrorKind.MissingDependency },
     });
 
-    const explicitFalse = command('explicit-false')
-      .arg(flag('feature'))
-      .arg(option('reason'))
-      .requiredIfAny([['feature', false]], 'reason');
+    const explicitFalse = command('explicit-false', {
+      args: [flag('feature'), option('reason')],
+      requiredIfAny: [{ conditions: [['feature', false]], target: 'reason' }],
+    });
     expect(parse(explicitFalse, [])).toMatchObject({ reason: undefined });
   });
 
   test('requires a target unless all alternatives are present', () => {
-    const cli = command('unless-all')
-      .arg(option('token'))
-      .arg(option('profile'))
-      .arg(flag('interactive'))
-      .requiredUnlessAll(['profile', 'interactive'], 'token');
+    const cli = command('unless-all', {
+      args: [option('token'), option('profile'), flag('interactive')],
+      requiredUnlessAll: [{
+        alternatives: ['profile', 'interactive'],
+        target: 'token',
+      }],
+    });
 
     expect(cli.tryParse([])).toMatchObject({
       ok: false,
@@ -100,11 +108,10 @@ describe('advanced argument relations', () => {
   });
 
   test('makes an argument exclusive with every other provided argument', () => {
-    const cli = command('input')
-      .arg(flag('stdin'))
-      .arg(option('file'))
-      .arg(flag('force'))
-      .exclusive('stdin');
+    const cli = command('input', {
+      args: [flag('stdin'), option('file'), flag('force')],
+      exclusive: ['stdin'],
+    });
 
     expect(parse(cli, ['--stdin'])).toMatchObject({ stdin: true });
     expect(cli.tryParse(['--stdin', '--file', 'input.txt'])).toMatchObject({
@@ -118,14 +125,21 @@ describe('advanced argument relations', () => {
   });
 
   test('applies requirements and conflicts to argument groups', () => {
-    const cli = command('auth')
-      .arg(option('token'))
-      .arg(option('user'))
-      .arg(option('endpoint'))
-      .arg(flag('anonymous'))
-      .group('credentials', ['token', 'user'], { multiple: true })
-      .groupRequires('credentials', 'endpoint')
-      .groupConflicts('credentials', 'anonymous');
+    const cli = command('auth', {
+      args: [
+        option('token'),
+        option('user'),
+        option('endpoint'),
+        flag('anonymous'),
+      ],
+      groups: [{
+        name: 'credentials',
+        members: ['token', 'user'],
+        multiple: true,
+        requires: ['endpoint'],
+        conflicts: ['anonymous'],
+      }],
+    });
 
     expect(cli.tryParse(['--token', 'secret'])).toMatchObject({
       ok: false,
@@ -151,22 +165,41 @@ describe('advanced argument relations', () => {
 });
 
 void (() => {
-  const typed = command('typed')
-    .arg(option('mode', parsers.enum(['dev', 'prod'])))
-    .arg(flag('strict'))
-    .arg(option('config'))
-    .group('settings', ['mode', 'strict']);
-
-  // @ts-expect-error expected values must match the source argument type
-  typed.requiredIfAny([['mode', 'preview']], 'config');
-  // @ts-expect-error condition argument names must exist
-  typed.requiredIfAll([['missing', true]], 'config');
-  // @ts-expect-error the target cannot also be an alternative
-  typed.requiredUnlessAll(['config'], 'config');
-  // @ts-expect-error exclusive argument names must exist
-  typed.exclusive('missing');
-  // @ts-expect-error group names are inferred from group builders
-  typed.groupRequires('missing', 'config');
-  // @ts-expect-error group relation targets must be declared arguments
-  typed.groupConflicts('settings', 'missing');
+  command('bad-value', {
+    args: [
+      option('mode', parsers.enum(['dev', 'prod'])),
+      option('config'),
+    ],
+    // @ts-expect-error expected values must match the source argument type
+    requiredIfAny: [{ conditions: [['mode', 'preview']], target: 'config' }],
+  });
+  command('bad-condition', {
+    args: [flag('strict'), option('config')],
+    // @ts-expect-error condition argument names must exist
+    requiredIfAll: [{ conditions: [['missing', true]], target: 'config' }],
+  });
+  command('bad-alternative', {
+    args: [option('config')],
+    // @ts-expect-error the target cannot also be an alternative
+    requiredUnlessAll: [{ alternatives: ['config'], target: 'config' }],
+  });
+  command('bad-exclusive', {
+    args: [option('config')],
+    // @ts-expect-error exclusive argument names must exist
+    exclusive: ['missing'],
+  });
+  command('bad-group-member', {
+    args: [option('config')],
+    // @ts-expect-error group members must be declared arguments
+    groups: [{ name: 'settings', members: ['missing'] }],
+  });
+  command('bad-group-conflict', {
+    args: [option('mode')],
+    groups: [{
+      name: 'settings',
+      members: ['mode'],
+      // @ts-expect-error group relation targets must be declared arguments
+      conflicts: ['missing'],
+    }],
+  });
 });

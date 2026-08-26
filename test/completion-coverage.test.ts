@@ -17,9 +17,13 @@ import {
 
 describe('completion edge behavior', () => {
   test('uses the default output writer through Command.run', async () => {
-    const cli = command('packages').arg(
-      option('package').complete(() => ['react', 'redis']),
-    );
+    const cli = command('packages', {
+      args: [
+        option('package', parsers.string, {
+          complete: () => ['react', 'redis'],
+        }),
+      ],
+    });
     let output = '';
     const write = spyOn(process.stdout, 'write').mockImplementation(
       ((chunk: string | Uint8Array) => {
@@ -57,15 +61,17 @@ describe('completion edge behavior', () => {
   });
 
   test('covers shell quoting, path registration, aliases, and positional values', () => {
-    const cli = command('edge')
-      .arg(
-        option('mode', parsers.enum(['dev', 'prod']))
-          .short('m')
-          .alias('build-mode')
-          .describe('Build mode'),
-      )
-      .arg(option('directory').valueHint('directory'))
-      .arg(positional('target', parsers.enum(['web', 'server'])));
+    const cli = command('edge', {
+      args: [
+        option('mode', parsers.enum(['dev', 'prod']), {
+          short: 'm',
+          aliases: ['build-mode'],
+          describe: 'Build mode',
+        }),
+        option('directory', parsers.string, { valueHint: 'directory' }),
+        positional('target', parsers.enum(['web', 'server'])),
+      ],
+    });
 
     const bash = generateCompletion(cli, 'bash', { executable: '1\'tool' });
     expect(bash).toContain('_bun_clap__1_tool');
@@ -82,7 +88,7 @@ describe('completion edge behavior', () => {
     });
     expect(powerShell).toContain('\'edge\'\'tool\'');
 
-    const files = command('files').arg(positional('file'));
+    const files = command('files', { args: [positional('file')] });
     expect(generateCompletion(files, 'bash')).toContain('_allows_files');
     expect(generateCompletion(files, 'zsh')).toContain('_allows_files');
     expect(generateCompletion(files, 'powershell')).toContain('$allowsFiles');

@@ -28,10 +28,29 @@ function parse<Value>(
 }
 
 describe('command coverage', () => {
+  test('rejects invalid command names and empty required subcommands', () => {
+    const createCommand = command as unknown as (
+      name: unknown,
+      options?: Record<string, unknown>,
+    ) => unknown;
+    expect(() => createCommand(123)).toThrow(
+      'Invalid command name: expected a string',
+    );
+
+    const subcommands = [] as ReturnType<typeof command>[];
+    expect(() =>
+      command('tool', {
+        subcommands,
+        subcommandRequired: true,
+      })
+    ).toThrow('must define at least one subcommand');
+  });
+
   test('can disable the generated help subcommand', () => {
-    const cli = command('tool')
-      .subcommand(command('status'))
-      .disableHelpSubcommand();
+    const cli = command('tool', {
+      subcommands: [command('status')],
+      disableHelpSubcommand: true,
+    });
 
     expect(cli.renderHelp()).not.toContain('  help');
     expect(cli.tryParse(['help', 'status'])).toMatchObject({
@@ -40,50 +59,65 @@ describe('command coverage', () => {
     });
   });
 
-  test('rejects every built-in version spelling registered first', () => {
-    expect(() => command('tool').arg(flag('revision').short('V')).version('1'))
-      .toThrow('Version flags conflict');
-    expect(() => command('tool').arg(flag('version')).version('1'))
-      .toThrow('Version flags conflict');
-    expect(() => command('tool').arg(flag('revision').alias('version')).version('1'))
-      .toThrow('Version flags conflict');
+  test('rejects every built-in version spelling', () => {
+    expect(() =>
+      command('tool', {
+        version: '1',
+        args: [flag('revision', { short: 'V' })],
+      })
+    ).toThrow('reserved');
+    expect(() => command('tool', { version: '1', args: [flag('version')] }))
+      .toThrow('reserved');
+    expect(() =>
+      command('tool', {
+        version: '1',
+        args: [flag('revision', { aliases: ['version'] })],
+      })
+    ).toThrow('reserved');
   });
 
   test('validates built-in flag collisions when flags are enabled', () => {
     expect(() =>
-      command('tool')
-        .disableHelpFlag()
-        .arg(flag('help'))
-        .disableHelpFlag(false)
-    ).toThrow('Help flags conflict');
+      command('tool', {
+        disableHelpFlag: false,
+        args: [flag('help')],
+      })
+    ).toThrow('Option \'--help\' is reserved');
 
     expect(() =>
-      command('tool')
-        .disableVersionFlag()
-        .arg(flag('version'))
-        .version('1')
-        .disableVersionFlag(false)
-    ).toThrow('Version flags conflict');
+      command('tool', {
+        version: '1',
+        disableVersionFlag: false,
+        args: [flag('version')],
+      })
+    ).toThrow('Option \'--version\' is reserved');
   });
 
   test('validates built-in collisions with inherited global arguments', () => {
-    const helpGlobal = command('tool')
-      .disableHelpFlag()
-      .arg(flag('help').global());
-    expect(() => helpGlobal.subcommand(command('child')))
+    expect(() =>
+      command('tool', {
+        disableHelpFlag: true,
+        args: [flag('help', { global: true })],
+        subcommands: [command('child')],
+      })
+    )
       .toThrow('Help flags conflict');
 
-    const versionGlobal = command('tool')
-      .disableVersionFlag()
-      .arg(flag('version').global());
-    expect(() => versionGlobal.subcommand(command('child').version('1')))
+    expect(() =>
+      command('tool', {
+        disableVersionFlag: true,
+        args: [flag('version', { global: true })],
+        subcommands: [command('child', { version: '1' })],
+      })
+    )
       .toThrow('Version flags conflict');
   });
 
   test('can require an argument or show help', () => {
-    const cli = command('tool')
-      .arg(flag('verbose'))
-      .argRequiredElseHelp();
+    const cli = command('tool', {
+      args: [flag('verbose')],
+      defaultToHelp: true,
+    });
 
     expect(cli.tryParse([])).toMatchObject({
       ok: true,
@@ -91,6 +125,20 @@ describe('command coverage', () => {
       kind: DisplayKind.Help,
     });
     expect(parse(cli, ['--verbose']).verbose).toBe(true);
+
+    const nested = command('repo', {
+      subcommands: [command('status')],
+      subcommandRequired: true,
+      defaultToHelp: true,
+    });
+    expect(nested.tryParse([])).toMatchObject({
+      ok: true,
+      type: 'display',
+      kind: DisplayKind.Help,
+    });
+    expect(parse(nested, ['status'])).toMatchObject({
+      subcommand: { name: 'status' },
+    });
   });
 
   test('initializes a command from tuple options', async () => {
@@ -139,10 +187,26 @@ describe('command coverage', () => {
     );
   });
 
+  test('exposes only terminal command operations', () => {
+    const cli = command('tool', { args: [flag('verbose')] });
+
+    expect(Object.keys(cli).sort()).toEqual([
+      'parse',
+      'renderHelp',
+      'renderUsage',
+      'run',
+      'tryParse',
+    ]);
+    expect('arg' in cli).toBe(false);
+    expect('handler' in cli).toBe(false);
+    expect('subcommand' in cli).toBe(false);
+    expect(Object.isFrozen(cli)).toBe(true);
+  });
+
   test('suggests close subcommand names and aliases', () => {
-    const cli = command('tool').subcommand(
-      command('clone').alias('copy'),
-    );
+    const cli = command('tool', {
+      subcommands: [command('clone', { aliases: ['copy'] })],
+    });
 
     const name = cli.tryParse(['clne']);
     expect(name).toMatchObject({
@@ -160,26 +224,29 @@ describe('command coverage', () => {
   });
 
   test('rejects duplicate command and argument registrations', () => {
-    const aliased = command('tool').alias('run');
-    expect(() => aliased.alias('run')).toThrow('Duplicate command alias');
-    expect(() => command('tool').alias('tool')).toThrow(
+    expect(() => command('tool', { aliases: ['run', 'run'] })).toThrow(
+      'Duplicate command alias',
+    );
+    expect(() => command('tool', { aliases: ['tool'] })).toThrow(
       'Duplicate command alias',
     );
 
-    const child = command('first').alias('shared');
-    expect(() => command('tool').subcommand(child).subcommand(command('shared')))
-      .toThrow('Duplicate subcommand name or alias');
     expect(() =>
-      command('tool').subcommand(child).subcommand(
-        command('second').alias('shared'),
-      )
+      command('tool', {
+        subcommands: [
+          command('first', { aliases: ['shared'] }),
+          command('shared'),
+        ],
+      })
     ).toThrow('Duplicate subcommand name or alias');
-
-    const argumentsCli = command('tool').arg(flag('first').alias('shared'));
-    expect(() => argumentsCli.arg(flag('second').alias('shared')))
-      .toThrow('Duplicate long option');
-    expect(() => argumentsCli.arg(flag('first') as never))
-      .toThrow('Duplicate argument');
+    expect(() =>
+      command('tool', {
+        subcommands: [
+          command('first', { aliases: ['shared'] }),
+          command('second', { aliases: ['shared'] }),
+        ],
+      })
+    ).toThrow('Duplicate subcommand name or alias');
 
     expect(() =>
       command('tool', {
@@ -189,8 +256,8 @@ describe('command coverage', () => {
     expect(() =>
       command('tool', {
         args: [
-          flag('first').alias('shared'),
-          flag('second').alias('shared'),
+          flag('first', { aliases: ['shared'] }),
+          flag('second', { aliases: ['shared'] }),
         ],
       })
     ).toThrow('Duplicate long option');
@@ -202,7 +269,7 @@ describe('command coverage', () => {
     expect(() =>
       command('tool', {
         subcommands: [
-          command('first').alias('shared'),
+          command('first', { aliases: ['shared'] }),
           command('shared'),
         ],
       })
@@ -210,7 +277,7 @@ describe('command coverage', () => {
     expect(() =>
       command('tool', {
         version: '1',
-        args: [flag('revision').short('V')],
+        args: [flag('revision', { short: 'V' })],
       })
     ).toThrow('Option \'-V\' is reserved');
     expect(() =>
@@ -223,61 +290,80 @@ describe('command coverage', () => {
 
   test('rejects invalid positional and inherited global layouts', () => {
     expect(() =>
-      command('tool')
-        .arg(positional('optional'))
-        .arg(positional('required').required())
+      command('tool', {
+        args: [
+          positional('optional'),
+          positional('required', parsers.string, { required: true }),
+        ],
+      })
     )
       .toThrow('required positional cannot follow');
 
-    const shortConflict = command('tool')
-      .arg(flag('global').short('g').global())
-      .subcommand(command('child').arg(flag('local').short('g')));
+    const shortConflict = command('tool', {
+      args: [flag('global', { short: 'g', global: true })],
+      subcommands: [command('child', {
+        args: [flag('local', { short: 'g' })],
+      })],
+    });
     expect(() => parse(shortConflict, ['child']))
       .toThrow('conflicts with inherited global');
 
-    const longConflict = command('tool')
-      .arg(flag('global').alias('shared').global())
-      .subcommand(command('child').arg(flag('local').alias('shared')));
+    const longConflict = command('tool', {
+      args: [flag('global', { aliases: ['shared'], global: true })],
+      subcommands: [command('child', {
+        args: [flag('local', { aliases: ['shared'] })],
+      })],
+    });
     expect(() => parse(longConflict, ['child']))
       .toThrow('conflicts with inherited global');
   });
 
   test('rejects duplicate conditional and group relations', () => {
-    const conditional = command('tool')
-      .arg(flag('source'))
-      .arg(flag('target'));
     expect(() =>
-      conditional.requiredIfAny(
-        [['source', true], ['source', true]],
-        'target',
-      )
+      command('tool', {
+        args: [flag('source'), flag('target')],
+        requiredIfAny: [{
+          conditions: [['source', true], ['source', true]],
+          target: 'target',
+        }],
+      } as never)
     ).toThrow('duplicate conditions');
 
-    const grouped = conditional.group('choice', ['source']);
-    const registerDuplicateGroup = grouped.group.bind(grouped) as unknown as (
-      name: string,
-      members: readonly ['target'],
-    ) => unknown;
-    expect(() => registerDuplicateGroup('choice', ['target']))
+    expect(() =>
+      command('tool', {
+        args: [flag('source'), flag('target')],
+        groups: [
+          { name: 'choice', members: ['source'] },
+          { name: 'choice', members: ['target'] },
+        ],
+      } as never)
+    )
       .toThrow('Duplicate argument group');
     expect(() =>
-      grouped.groupRequires('choice', 'target')
-        .groupRequires('choice', 'target')
+      command('tool', {
+        args: [flag('source'), flag('target')],
+        groups: [{
+          name: 'choice',
+          members: ['source'],
+          requires: ['target', 'target'],
+        }],
+      } as never)
     )
       .toThrow('duplicate requires');
 
-    const callUnknownGroup = grouped.groupRequires.bind(grouped) as (
-      groupName: string,
-      target: 'target',
-    ) => unknown;
-    expect(() => callUnknownGroup('missing', 'target'))
-      .toThrow('Unknown argument group');
+    expect(() =>
+      command('tool', {
+        args: [flag('source')],
+        groups: [{ name: 'choice', members: ['missing'] }],
+      } as never)
+    ).toThrow('references unknown argument \'missing\'');
   });
 
   test('infers subcommands from aliases', () => {
-    const cli = command('tool')
-      .subcommand(command('download').alias('fetch'))
-      .inferSubcommands();
+    const cli = command('tool', {
+      subcommands: [command('download', { aliases: ['fetch'] })],
+      inferSubcommands: true,
+    });
     expect(parse(cli, ['fet']).subcommand?.name).toBe('download');
   });
 
@@ -287,9 +373,15 @@ describe('command coverage', () => {
     Bun.env.KONSTIT_CLI_TEST_FLAG = 'yes';
     Bun.env.KONSTIT_CLI_TEST_COUNT = '3';
     try {
-      const cli = command('tool')
-        .arg(flag('enabled').env('KONSTIT_CLI_TEST_FLAG'))
-        .arg(count('verbose').short('v').env('KONSTIT_CLI_TEST_COUNT'));
+      const cli = command('tool', {
+        args: [
+          flag('enabled', { env: 'KONSTIT_CLI_TEST_FLAG' }),
+          count('verbose', {
+            short: 'v',
+            env: 'KONSTIT_CLI_TEST_COUNT',
+          }),
+        ],
+      });
       expect(parse(cli, [])).toEqual({ enabled: true, verbose: 3 });
       expect(parse(cli, ['--enabled', '-v'])).toEqual({
         enabled: true,
@@ -334,18 +426,22 @@ describe('command coverage', () => {
     Bun.env[names.pair] = '10,20';
     Bun.env[names.scalar] = 'left,right';
     try {
-      const pairCli = command('tool').arg(
-        option('pair', parsers.integer)
-          .numArgs(2)
-          .valueDelimiter(',')
-          .env(names.pair)
-          .required(),
-      );
+      const pairCli = command('tool', {
+        args: [option('pair', parsers.integer, {
+          numArgs: 2,
+          valueDelimiter: ',',
+          env: names.pair,
+          required: true,
+        })],
+      });
       expect(parse(pairCli, []).pair).toEqual([10, 20]);
 
-      const scalarCli = command('tool').arg(
-        option('value').valueDelimiter(',').env(names.scalar),
-      );
+      const scalarCli = command('tool', {
+        args: [option('value', parsers.string, {
+          valueDelimiter: ',',
+          env: names.scalar,
+        })],
+      });
       expect(scalarCli.tryParse([])).toMatchObject({
         ok: false,
         error: { kind: ErrorKind.TooManyValues },
@@ -376,9 +472,10 @@ describe('command coverage', () => {
         }
         return Number(input);
       });
-      const cli = command('tool')
-        .version('1.0.0')
-        .arg(option('port', secretAwareInteger).env(name));
+      const cli = command('tool', {
+        version: '1.0.0',
+        args: [option('port', secretAwareInteger, { env: name })],
+      });
       expect(cli.tryParse(['--help'])).toMatchObject({
         ok: true,
         type: 'display',
@@ -424,10 +521,13 @@ describe('command coverage', () => {
     Bun.env[names.source] = 'true';
     Bun.env[names.target] = 'secret-environment-value';
     try {
-      const cli = command('tool')
-        .arg(option('port', parsers.integer).env(names.target))
-        .arg(flag('offline').env(names.source))
-        .overrides('offline', 'port');
+      const cli = command('tool', {
+        args: [
+          option('port', parsers.integer, { env: names.target }),
+          flag('offline', { env: names.source }),
+        ],
+        overrides: [['offline', 'port']],
+      });
 
       expect(parse(cli, ['--offline'])).toEqual({
         port: undefined,
@@ -456,9 +556,12 @@ describe('command coverage', () => {
   });
 
   test('accepts option-looking first positional values without hiding declared options', () => {
-    const hyphen = command('tool')
-      .arg(flag('debug'))
-      .arg(positional('value').allowHyphenValues());
+    const hyphen = command('tool', {
+      args: [
+        flag('debug'),
+        positional('value', parsers.string, { allowHyphenValues: true }),
+      ],
+    });
     expect(parse(hyphen, ['--literal'])).toEqual({
       debug: false,
       value: '--literal',
@@ -468,38 +571,53 @@ describe('command coverage', () => {
       value: 'text',
     });
 
-    const negative = command('tool')
-      .arg(flag('one').short('1'))
-      .arg(positional('number', parsers.integer).allowNegativeNumbers());
+    const negative = command('tool', {
+      args: [
+        flag('one', { short: '1' }),
+        positional('number', parsers.integer, { allowNegativeNumbers: true }),
+      ],
+    });
     expect(parse(negative, ['-20'])).toEqual({ one: false, number: -20 });
     expect(parse(negative, ['-1'])).toEqual({ one: true, number: undefined });
 
-    const decimal = command('tool')
-      .arg(option('offset', parsers.float).allowNegativeNumbers())
-      .arg(positional('number', parsers.float).allowNegativeNumbers());
+    const decimal = command('tool', {
+      args: [
+        option('offset', parsers.float, { allowNegativeNumbers: true }),
+        positional('number', parsers.float, { allowNegativeNumbers: true }),
+      ],
+    });
     expect(parse(decimal, ['--offset', '-.5', '-.25'])).toEqual({
       offset: -0.5,
       number: -0.25,
     });
 
-    const trailing = command('tool').arg(positional('args').trailingVarArg());
+    const trailing = command('tool', {
+      args: [positional('args', parsers.string, { trailingVarArg: true })],
+    });
     expect(parse(trailing, ['--literal', '-x'])).toEqual({
       args: ['--literal', '-x'],
     });
   });
 
   test('rejects zero-width positional arguments', () => {
-    expect(() => command('tool').arg(positional('empty').numArgs(0)))
+    expect(() =>
+      command('tool', {
+        args: [positional('empty', parsers.string, { numArgs: 0 })],
+      })
+    )
       .toThrow('Positional \'empty\' must accept at least one value');
   });
 
   test('shows required named options and configured value counts', () => {
-    const cli = command('tool')
-      .disableHelpFlag()
-      .arg(option('pair').numArgs(2).required())
-      .arg(option('range', parsers.integer).numArgs({ min: 1, max: 3 }))
-      .arg(option('equals').numArgs(2).requireEquals())
-      .arg(option('optionalEquals').defaultMissing('auto'));
+    const cli = command('tool', {
+      disableHelpFlag: true,
+      args: [
+        option('pair', parsers.string, { numArgs: 2, required: true }),
+        option('range', parsers.integer, { numArgs: { min: 1, max: 3 } }),
+        option('equals', parsers.string, { numArgs: 2, requireEquals: true }),
+        option('optionalEquals', parsers.string, { defaultMissing: 'auto' }),
+      ],
+    });
 
     expect(cli.renderUsage()).toBe('tool [OPTIONS] --pair <STRING> <STRING>');
     expect(cli.renderHelp()).toContain('  --pair <STRING> <STRING>');
@@ -511,11 +629,19 @@ describe('command coverage', () => {
   });
 
   test('renders very large value counts without expanding every label', () => {
-    const cli = command('tool')
-      .disableHelpFlag()
-      .arg(option('exact').numArgs(1_000_000).required())
-      .arg(option('range').numArgs({ min: 10, max: 1_000_000 }))
-      .arg(positional('values').numArgs({ min: 10 }));
+    const cli = command('tool', {
+      disableHelpFlag: true,
+      args: [
+        option('exact', parsers.string, {
+          numArgs: 1_000_000,
+          required: true,
+        }),
+        option('range', parsers.string, {
+          numArgs: { min: 10, max: 1_000_000 },
+        }),
+        positional('values', parsers.string, { numArgs: { min: 10 } }),
+      ],
+    });
 
     expect(cli.renderUsage()).toBe(
       'tool [OPTIONS] --exact <STRING>{1000000} [VALUES]{10..}',
@@ -525,9 +651,10 @@ describe('command coverage', () => {
   });
 
   test('renders optional and required unbounded positional groups', () => {
-    const optional = command('optional')
-      .disableHelpFlag()
-      .arg(positional('values').numArgs({ min: 3 }));
+    const optional = command('optional', {
+      disableHelpFlag: true,
+      args: [positional('values', parsers.string, { numArgs: { min: 3 } })],
+    });
     expect(optional.renderUsage()).toBe(
       'optional [<VALUES> <VALUES> <VALUES>...]',
     );
@@ -536,9 +663,13 @@ describe('command coverage', () => {
     );
     expect(parse(optional, [])).toEqual({ values: undefined });
 
-    const required = command('required')
-      .disableHelpFlag()
-      .arg(positional('values').numArgs({ min: 3 }).required());
+    const required = command('required', {
+      disableHelpFlag: true,
+      args: [positional('values', parsers.string, {
+        numArgs: { min: 3 },
+        required: true,
+      })],
+    });
     expect(required.renderUsage()).toBe(
       'required <VALUES> <VALUES> <VALUES>...',
     );
@@ -552,10 +683,13 @@ describe('command coverage', () => {
   });
 
   test('stops option value collection for inferred subcommands', () => {
-    const cli = command('tool')
-      .arg(option('values').numArgs({ min: 1, max: 3 }))
-      .subcommand(command('status'))
-      .inferSubcommands();
+    const cli = command('tool', {
+      args: [option('values', parsers.string, {
+        numArgs: { min: 1, max: 3 },
+      })],
+      subcommands: [command('status')],
+      inferSubcommands: true,
+    });
 
     expect(parse(cli, ['--values', 'one', 'sta'])).toEqual({
       values: ['one'],
@@ -567,7 +701,7 @@ describe('command coverage', () => {
     const log = spyOn(console, 'log').mockImplementation(() => {});
     const error = spyOn(console, 'error').mockImplementation(() => {});
     try {
-      const cli = command('tool').handler(() => {});
+      const cli = command('tool', { handler: () => {} });
       expect(await cli.run(['--help'])).toBe(0);
       expect(log.mock.calls[0]?.[0]).toContain('Usage: tool');
 
@@ -582,14 +716,16 @@ describe('command coverage', () => {
   });
 
   test('reports nested errors with inherited global context', () => {
-    const cli = command('tool')
-      .arg(flag('global').global())
-      .subcommand(
-        command('child')
-          .arg(flag('switch').short('s'))
-          .arg(option('config').short('c').requireEquals())
-          .subcommand(command('grand')),
-      );
+    const cli = command('tool', {
+      args: [flag('global', { global: true })],
+      subcommands: [command('child', {
+        args: [
+          flag('switch', { short: 's' }),
+          option('config', parsers.string, { short: 'c', requireEquals: true }),
+        ],
+        subcommands: [command('grand')],
+      })],
+    });
 
     expect(parse(cli, ['child', '--switch', '--config=value', 'grand']))
       .toMatchObject({ subcommand: { name: 'child' } });
@@ -617,10 +753,13 @@ describe('command coverage', () => {
   });
 
   test('matches relation values collected into arrays', () => {
-    const cli = command('tool')
-      .arg(option('mode').repeatable())
-      .arg(option('config'))
-      .requiresIf('mode', 'prod', 'config');
+    const cli = command('tool', {
+      args: [
+        option('mode', parsers.string, { repeatable: true }),
+        option('config'),
+      ],
+      requiresIf: [['mode', 'prod', 'config']],
+    });
 
     expect(cli.tryParse(['--mode', 'dev', '--mode', 'prod']))
       .toMatchObject({
@@ -630,7 +769,9 @@ describe('command coverage', () => {
   });
 
   test('suggests argument aliases', () => {
-    const cli = command('tool').arg(flag('verbose').alias('verbosity'));
+    const cli = command('tool', {
+      args: [flag('verbose', { aliases: ['verbosity'] })],
+    });
     const result = cli.tryParse(['--verbosit']);
     expect(result).toMatchObject({
       ok: false,
@@ -642,10 +783,10 @@ describe('command coverage', () => {
   });
 
   test('reports all members in a non-multiple group conflict', () => {
-    const cli = command('tool')
-      .arg(flag('json'))
-      .arg(flag('yaml'))
-      .group('format', ['json', 'yaml']);
+    const cli = command('tool', {
+      args: [flag('json'), flag('yaml')],
+      groups: [{ name: 'format', members: ['json', 'yaml'] }],
+    });
 
     const result = cli.tryParse(['--json', '--yaml']);
     expect(result).toMatchObject({
@@ -655,5 +796,13 @@ describe('command coverage', () => {
     if (!result.ok) {
       expect(result.error.message).toContain('--json, --yaml');
     }
+  });
+});
+
+void (() => {
+  // @ts-expect-error required subcommands need a non-empty literal tuple
+  command('empty-required', {
+    subcommands: [],
+    subcommandRequired: true,
   });
 });

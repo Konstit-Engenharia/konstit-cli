@@ -9,6 +9,7 @@ import {
   option,
   parsers,
   positional,
+  type CommandGroupOptions,
   type Infer,
   type ValueParser,
 } from '../src';
@@ -29,6 +30,8 @@ import type {
   Command,
   // @ts-expect-error runtime actions and definition plumbing are internal
   CommandDefinition,
+  // @ts-expect-error internal group configuration is not part of the application API
+  GroupOptions,
   // @ts-expect-error custom parsers are created through parsers.custom
   valueParser,
 } from '../src';
@@ -46,6 +49,7 @@ type _InternalExportsStayPrivate = [
   ArgumentAction,
   ArgumentDefinition,
   CommandDefinition,
+  GroupOptions,
   AnyArgument,
   ArgumentCardinality,
   ArgumentPresence,
@@ -57,12 +61,15 @@ test('keeps the small factory surface exactly typed', () => {
     'PERCENTAGE',
     (input) => Number(input),
   );
-  const cli = command('build')
-    .arg(option('percentage', percentage).required())
-    .arg(option('mode', parsers.enum(['fast', 'safe'])).default('safe'))
-    .arg(positional('file'))
-    .arg(flag('cache').negated())
-    .arg(count('verbose'));
+  const cli = command('build', {
+    args: [
+      option('percentage', percentage, { required: true }),
+      option('mode', parsers.enum(['fast', 'safe']), { default: 'safe' }),
+      positional('file'),
+      flag('cache', { negated: true }),
+      count('verbose'),
+    ],
+  });
 
   type Actual = Infer<typeof cli>;
   type Expected = {
@@ -73,12 +80,17 @@ test('keeps the small factory surface exactly typed', () => {
     readonly verbose: number;
   };
   const exact: Expect<Equal<Actual, Expected>> = true;
+  const group: CommandGroupOptions<'format', 'mode' | 'file'> = {
+    name: 'format',
+    members: ['mode', 'file'],
+  };
   expect(exact).toBe(true);
+  expect(group.name).toBe('format');
 });
 
 test('hides runtime definitions and type carriers from factory values', () => {
   const argument = option('output');
-  const cli = command('build').arg(argument);
+  const cli = command('build', { args: [argument] });
 
   type ArgumentPlumbing = Extract<
     Extract<keyof typeof argument, string>,
@@ -88,15 +100,35 @@ test('hides runtime definitions and type carriers from factory values', () => {
     Extract<keyof typeof cli, string>,
     'definition' | `$${string}`
   >;
+  type ArgumentMutation = Extract<
+    Extract<keyof typeof argument, string>,
+    'required' | 'default' | 'repeatable' | 'short'
+  >;
+  type CommandMutation = Extract<
+    Extract<keyof typeof cli, string>,
+    'arg' | 'subcommand' | 'handler' | 'about'
+  >;
   const argumentIsClean: Expect<Equal<ArgumentPlumbing, never>> = true;
   const commandIsClean: Expect<Equal<CommandPlumbing, never>> = true;
+  const argumentIsTerminal: Expect<Equal<ArgumentMutation, never>> = true;
+  const commandIsTerminal: Expect<Equal<CommandMutation, never>> = true;
 
   expect(argumentIsClean).toBe(true);
   expect(commandIsClean).toBe(true);
+  expect(argumentIsTerminal).toBe(true);
+  expect(commandIsTerminal).toBe(true);
   expect('definition' in argument).toBe(false);
   expect('definition' in cli).toBe(false);
+  expect('required' in argument).toBe(false);
+  expect('arg' in cli).toBe(false);
   expect(Reflect.ownKeys(argument)).toEqual([]);
-  expect(Reflect.ownKeys(cli)).toEqual([]);
+  expect(Reflect.ownKeys(cli)).toEqual([
+    'parse',
+    'tryParse',
+    'run',
+    'renderHelp',
+    'renderUsage',
+  ]);
 
   void (() => {
     // @ts-expect-error internal runtime definitions are not public properties
@@ -117,7 +149,6 @@ test('rejects objects that did not come from the command factory', () => {
 });
 
 test('renders the configured long description', () => {
-  expect(command('build').longAbout('Detailed build help.').renderHelp()).toContain(
-    'Detailed build help.',
-  );
+  expect(command('build', { longAbout: 'Detailed build help.' }).renderHelp())
+    .toContain('Detailed build help.');
 });

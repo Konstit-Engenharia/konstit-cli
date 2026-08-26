@@ -20,6 +20,7 @@ import {
   ErrorKind,
   type ParseOutcome,
 } from '../src/error';
+import { parsers } from '../src/parser';
 
 function parse<Value>(
   configured: { parse(argv: readonly string[]): ParseOutcome<Value>; },
@@ -54,11 +55,14 @@ describe('argument actions', () => {
   });
 
   test('infers action output types', () => {
-    const cli = command('actions')
-      .arg(option('tag').repeatable())
-      .arg(flag('enabled'))
-      .arg(flag('quiet').negated())
-      .arg(count('verbose'));
+    const cli = command('actions', {
+      args: [
+        option('tag', parsers.string, { repeatable: true }),
+        flag('enabled'),
+        flag('quiet', { negated: true }),
+        count('verbose'),
+      ],
+    });
 
     type Actual = Infer<typeof cli>;
     type Expected = {
@@ -73,12 +77,15 @@ describe('argument actions', () => {
   });
 
   test('sets, appends, inverts, and counts', () => {
-    const cli = command('actions')
-      .arg(option('name'))
-      .arg(option('tag').repeatable())
-      .arg(flag('enabled'))
-      .arg(flag('quiet').negated())
-      .arg(count('verbose').short('v'));
+    const cli = command('actions', {
+      args: [
+        option('name'),
+        option('tag', parsers.string, { repeatable: true }),
+        flag('enabled'),
+        flag('quiet', { negated: true }),
+        count('verbose', { short: 'v' }),
+      ],
+    });
 
     expect(parse(cli, [
       '--name',
@@ -112,16 +119,16 @@ describe('argument actions', () => {
 
 describe('optional value arity', () => {
   test('allows a zero-or-one value range without a fallback', () => {
-    const color = option('color').numArgs({ min: 0, max: 1 });
+    const color = option('color', parsers.string, {
+      numArgs: { min: 0, max: 1 },
+    });
     expect(getArgumentDefinition(color)).toMatchObject({
       minValues: 0,
       maxValues: 1,
       hasDefaultMissingValue: false,
     });
 
-    const cli = command('paint')
-      .arg(color)
-      .arg(flag('force'));
+    const cli = command('paint', { args: [color, flag('force')] });
     expect(parse(cli, [])).toEqual({ color: undefined, force: false });
     expect(parse(cli, ['--color'])).toEqual({ color: undefined, force: false });
     expect(parse(cli, ['--color', 'always'])).toEqual({
@@ -133,8 +140,12 @@ describe('optional value arity', () => {
       force: true,
     });
 
-    const requiredOccurrence = command('paint')
-      .arg(option('color').numArgs({ min: 0, max: 1 }).required());
+    const requiredOccurrence = command('paint', {
+      args: [option('color', parsers.string, {
+        numArgs: { min: 0, max: 1 },
+        required: true,
+      })],
+    });
     type RequiredValue = Infer<typeof requiredOccurrence>['color'];
     type _ValueStaysOptional = Expect<Equal<RequiredValue, string | undefined>>;
     const provesType: _ValueStaysOptional = true;
@@ -143,7 +154,7 @@ describe('optional value arity', () => {
   });
 
   test('distinguishes optional values from default-missing values', () => {
-    const color = option('color').defaultMissing('auto');
+    const color = option('color', parsers.string, { defaultMissing: 'auto' });
     expect(getArgumentDefinition(color)).toMatchObject({
       minValues: 0,
       maxValues: 1,
@@ -155,15 +166,21 @@ describe('optional value arity', () => {
 
 void (() => {
   const acceptsGlobal = <Global extends AnyGlobalArgument>(argument: Global): Global => argument;
-  acceptsGlobal(option('profile').global());
-  acceptsGlobal(option('profile').global().describe('Profile'));
-  acceptsGlobal(option('profile').global().default('default'));
+  acceptsGlobal(option('profile', parsers.string, { global: true }));
+  acceptsGlobal(option('profile', parsers.string, {
+    global: true,
+    describe: 'Profile',
+  }));
+  acceptsGlobal(option('profile', parsers.string, {
+    global: true,
+    default: 'default',
+  }));
   // @ts-expect-error local arguments do not carry the global brand
   acceptsGlobal(option('profile'));
   // @ts-expect-error positionals cannot be negated switches
-  positional('value').negated();
+  positional('value', parsers.string, { negated: true });
   // @ts-expect-error flags cannot be repeatable values
-  flag('enabled').repeatable();
+  flag('enabled', { repeatable: true });
   // @ts-expect-error flags have factory-defined defaults
-  flag('enabled').default(true);
+  flag('enabled', { default: true });
 });

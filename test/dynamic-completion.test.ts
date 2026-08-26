@@ -18,13 +18,13 @@ import {
 
 describe('dynamic completion', () => {
   test('resolves static values, aliases, inline options, and global options', async () => {
-    const cli = command('tool')
-      .arg(flag('verbose').global())
-      .subcommand(
-        command('deploy')
-          .visibleAlias('push')
-          .arg(option('target', parsers.enum(['preview', 'production']))),
-      );
+    const cli = command('tool', {
+      args: [flag('verbose', { global: true })],
+      subcommands: [command('deploy', {
+        visibleAliases: ['push'],
+        args: [option('target', parsers.enum(['preview', 'production']))],
+      })],
+    });
 
     const value = await resolveDynamicCompletion(cli, ['push', '--target', 'pr']);
     expect(value.commandPath).toEqual(['tool', 'deploy']);
@@ -45,13 +45,13 @@ describe('dynamic completion', () => {
 
   test('awaits a provider and supplies parsed command context', async () => {
     let received: DynamicCompletionContext | undefined;
-    const cli = command('tool')
-      .arg(option('workspace').global())
-      .subcommand(
-        command('deploy')
-          .arg(option('region'))
-          .arg(
-            option('package').complete(async (context) => {
+    const cli = command('tool', {
+      args: [option('workspace', parsers.string, { global: true })],
+      subcommands: [command('deploy', {
+        args: [
+          option('region'),
+          option('package', parsers.string, {
+            complete: async (context) => {
               await Promise.resolve();
               received = context;
               return [
@@ -59,9 +59,11 @@ describe('dynamic completion', () => {
                 'redis',
                 'vue',
               ];
-            }),
-          ),
-      );
+            },
+          }),
+        ],
+      })],
+    });
 
     const result = await resolveDynamicCompletion(cli, [
       '--workspace',
@@ -89,17 +91,18 @@ describe('dynamic completion', () => {
   });
 
   test('supports async iterables and delimiter-aware output', async () => {
-    const cli = command('tool').arg(
-      option('label')
-        .repeatable()
-        .valueDelimiter(',')
-        .complete(async function*() {
+    const cli = command('tool', {
+      args: [option('label', parsers.string, {
+        repeatable: true,
+        valueDelimiter: ',',
+        complete: async function*() {
           yield 'bug';
           await Promise.resolve();
           yield 'build';
           yield 'docs';
-        }),
-    );
+        },
+      })],
+    });
 
     const result = await resolveDynamicCompletion(cli, ['--label=docs,bu']);
     expect(result.current).toBe('bu');
@@ -116,9 +119,12 @@ describe('dynamic completion', () => {
   });
 
   test('tracks option arity before selecting the next completion target', async () => {
-    const cli = command('tool').arg(
-      option('pair').numArgs(2).complete(() => ['first', 'second']),
-    );
+    const cli = command('tool', {
+      args: [option('pair', parsers.string, {
+        numArgs: 2,
+        complete: () => ['first', 'second'],
+      })],
+    });
 
     const second = await resolveDynamicCompletion(cli, ['--pair', 'first', 's']);
     expect(second.argument?.name).toBe('pair');
@@ -132,14 +138,16 @@ describe('dynamic completion', () => {
   });
 
   test('completes positional values and lets a provider replace static values', async () => {
-    const cli = command('search')
-      .arg(option('scope'))
-      .arg(
-        positional('query', parsers.enum(['static']))
-          .complete(({ values }) => {
+    const cli = command('search', {
+      args: [
+        option('scope'),
+        positional('query', parsers.enum(['static']), {
+          complete: ({ values }) => {
             return values.scope === 'docs' ? ['open', 'other'] : ['closed'];
-          }),
-      );
+          },
+        }),
+      ],
+    });
 
     const result = await resolveDynamicCompletion(cli, ['--scope', 'docs', 'op']);
     expect(result.argument?.name).toBe('query');
@@ -147,22 +155,26 @@ describe('dynamic completion', () => {
   });
 
   test('supports cursor-at-end and rejects invalid candidate values', async () => {
-    const cli = command('tool').arg(flag('verbose'));
+    const cli = command('tool', { args: [flag('verbose')] });
     const result = await resolveDynamicCompletion(cli, [], { cursor: 0 });
     expect(result.current).toBe('');
     expect(result.candidates.map(({ value }) => value)).toContain('--verbose');
 
-    const invalid = command('bad').arg(
-      option('value').complete(() => ['bad\nvalue']),
-    );
+    const invalid = command('bad', {
+      args: [option('value', parsers.string, {
+        complete: () => ['bad\nvalue'],
+      })],
+    });
     // oxlint-disable-next-line typescript/await-thenable -- Bun async matchers must be awaited.
     await expect(
       resolveDynamicCompletion(invalid, ['--value', '']),
     ).rejects.toThrow('single-line');
 
-    const invalidTab = command('bad').arg(
-      option('value').complete(() => ['bad\tvalue']),
-    );
+    const invalidTab = command('bad', {
+      args: [option('value', parsers.string, {
+        complete: () => ['bad\tvalue'],
+      })],
+    });
     // oxlint-disable-next-line typescript/await-thenable -- Bun async matchers must be awaited.
     await expect(
       resolveDynamicCompletion(invalidTab, ['--value', '']),
@@ -191,17 +203,24 @@ describe('dynamic completion', () => {
 
     let received: DynamicCompletionContext | undefined;
     try {
-      const cli = command('precedence')
-        .arg(option('scalar').env(names.scalar))
-        .arg(option('items').repeatable().valueDelimiter(',').env(names.repeatable))
-        .arg(flag('enabled').env(names.flag))
-        .arg(count('verbose').short('v').env(names.count))
-        .arg(
-          option('query').complete((context) => {
-            received = context;
-            return ['done'];
+      const cli = command('precedence', {
+        args: [
+          option('scalar', parsers.string, { env: names.scalar }),
+          option('items', parsers.string, {
+            repeatable: true,
+            valueDelimiter: ',',
+            env: names.repeatable,
           }),
-        );
+          flag('enabled', { env: names.flag }),
+          count('verbose', { short: 'v', env: names.count }),
+          option('query', parsers.string, {
+            complete: (context) => {
+              received = context;
+              return ['done'];
+            },
+          }),
+        ],
+      });
 
       await resolveDynamicCompletion(cli, [
         '--scalar=cli',
@@ -235,9 +254,13 @@ describe('dynamic completion', () => {
   });
 
   test('uses runtime minimum arity and negative-number stopping rules', async () => {
-    const requiredBeforeChild = command('tool')
-      .arg(option('values').numArgs({ min: 2, max: 3 }).complete(() => ['next']))
-      .subcommand(command('run'));
+    const requiredBeforeChild = command('tool', {
+      args: [option('values', parsers.string, {
+        numArgs: { min: 2, max: 3 },
+        complete: () => ['next'],
+      })],
+      subcommands: [command('run')],
+    });
     const stillCollecting = await resolveDynamicCompletion(
       requiredBeforeChild,
       ['--values', 'one', 'run', 'n'],
@@ -245,9 +268,15 @@ describe('dynamic completion', () => {
     expect(stillCollecting.commandPath).toEqual(['tool']);
     expect(stillCollecting.argument?.name).toBe('values');
 
-    const canStop = command('tool')
-      .arg(option('values').numArgs({ min: 1, max: 3 }))
-      .subcommand(command('run').visibleAlias('go').arg(flag('force')));
+    const canStop = command('tool', {
+      args: [option('values', parsers.string, {
+        numArgs: { min: 1, max: 3 },
+      })],
+      subcommands: [command('run', {
+        visibleAliases: ['go'],
+        args: [flag('force')],
+      })],
+    });
     const child = await resolveDynamicCompletion(canStop, [
       '--values',
       'one',
@@ -258,14 +287,17 @@ describe('dynamic completion', () => {
     expect(child.candidates.map(({ value }) => value)).toContain('--force');
 
     let received: DynamicCompletionContext | undefined;
-    const numbers = command('numbers')
-      .arg(option('number', parsers.float).allowNegativeNumbers())
-      .arg(
-        option('query').complete((context) => {
-          received = context;
-          return ['done'];
+    const numbers = command('numbers', {
+      args: [
+        option('number', parsers.float, { allowNegativeNumbers: true }),
+        option('query', parsers.string, {
+          complete: (context) => {
+            received = context;
+            return ['done'];
+          },
         }),
-      );
+      ],
+    });
     await resolveDynamicCompletion(numbers, [
       '--number',
       '-.5',
@@ -284,11 +316,14 @@ describe('dynamic completion', () => {
   });
 
   test('consumes option-looking positional values unless an option is declared', async () => {
-    const cli = command('positionals')
-      .version('1.0.0')
-      .arg(positional('literal').allowHyphenValues())
-      .arg(positional('target', parsers.enum(['beta'])))
-      .arg(flag('known').short('k'));
+    const cli = command('positionals', {
+      version: '1.0.0',
+      args: [
+        positional('literal', parsers.string, { allowHyphenValues: true }),
+        positional('target', parsers.enum(['beta'])),
+        flag('known', { short: 'k' }),
+      ],
+    });
 
     const literal = await resolveDynamicCompletion(cli, ['--literal', '']);
     expect(literal.argument?.name).toBe('target');
@@ -309,10 +344,13 @@ describe('dynamic completion', () => {
   });
 
   test('stops option values for a uniquely inferred subcommand', async () => {
-    const cli = command('tool')
-      .inferSubcommands()
-      .arg(option('values').numArgs({ min: 1, max: 3 }))
-      .subcommand(command('status').arg(flag('child')));
+    const cli = command('tool', {
+      inferSubcommands: true,
+      args: [option('values', parsers.string, {
+        numArgs: { min: 1, max: 3 },
+      })],
+      subcommands: [command('status', { args: [flag('child')] })],
+    });
     const result = await resolveDynamicCompletion(cli, [
       '--values',
       'one',
@@ -324,11 +362,16 @@ describe('dynamic completion', () => {
   });
 
   test('prefers an exact inferred subcommand over longer prefixes', async () => {
-    const cli = command('tool')
-      .inferSubcommands()
-      .arg(option('values').numArgs({ min: 1, max: 3 }))
-      .subcommand(command('foo').arg(flag('exact-child')))
-      .subcommand(command('foobar').arg(flag('long-child')));
+    const cli = command('tool', {
+      inferSubcommands: true,
+      args: [option('values', parsers.string, {
+        numArgs: { min: 1, max: 3 },
+      })],
+      subcommands: [
+        command('foo', { args: [flag('exact-child')] }),
+        command('foobar', { args: [flag('long-child')] }),
+      ],
+    });
     const result = await resolveDynamicCompletion(cli, [
       '--values',
       'one',
@@ -340,10 +383,13 @@ describe('dynamic completion', () => {
   });
 
   test('treats only exact built-ins as declared positional blockers', async () => {
-    const cli = command('tool')
-      .version('1.0.0')
-      .arg(positional('literal').allowHyphenValues())
-      .arg(positional('target', parsers.enum(['beta'])));
+    const cli = command('tool', {
+      version: '1.0.0',
+      args: [
+        positional('literal', parsers.string, { allowHyphenValues: true }),
+        positional('target', parsers.enum(['beta'])),
+      ],
+    });
 
     for (const token of ['--help=x', '--version=x', '-hx', '-Vx']) {
       const suffixed = await resolveDynamicCompletion(cli, [token, '']);

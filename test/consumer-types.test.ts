@@ -35,10 +35,10 @@ test('keeps configured defaults sound without exact optional properties', () => 
     option('undefined-default', parsers.string, { default: undefined });
 
     // @ts-expect-error required arguments cannot also have defaults
-    option('conflicting-presence', parsers.string, {
-      required: true,
-      default: undefined,
-    });
+    option('conflicting-presence', parsers.string, { required: true, default: undefined });
+
+    // @ts-expect-error undefined is not a valid string defaultMissing value
+    option('undefined-default-missing', parsers.string, { defaultMissing: undefined });
   `;
   const host = ts.createCompilerHost(compilerOptions);
   const getSourceFile = host.getSourceFile.bind(host);

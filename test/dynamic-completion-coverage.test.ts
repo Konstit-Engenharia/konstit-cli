@@ -51,28 +51,34 @@ describe('dynamic completion coverage', () => {
       [names.broken]: 'bad',
       [names.tags]: 'one,two',
     }, async () => {
-      const cli = command('env')
-        .arg(flag('enabled').env(names.enabled))
-        .arg(flag('disabled').env(names.disabled))
-        .arg(flag('invalidFlag').env(names.invalidFlag))
-        .arg(count('verbose').env(names.count))
-        .arg(count('invalidCount').env(names.invalidCount))
-        .arg(option('port', parsers.integer).env(names.port))
-        .arg(
+      const cli = command('env', {
+        args: [
+          flag('enabled', { env: names.enabled }),
+          flag('disabled', { env: names.disabled }),
+          flag('invalidFlag', { env: names.invalidFlag }),
+          count('verbose', { env: names.count }),
+          count('invalidCount', { env: names.invalidCount }),
+          option('port', parsers.integer, { env: names.port }),
           option(
             'broken',
             parsers.custom('BROKEN', () => {
               throw new Error('invalid');
             }),
-          ).env(names.broken),
-        )
-        .arg(option('tags').repeatable().valueDelimiter(',').env(names.tags))
-        .arg(
-          option('query').complete((received) => {
-            context = received;
-            return ['result'];
+            { env: names.broken },
+          ),
+          option('tags', parsers.string, {
+            repeatable: true,
+            valueDelimiter: ',',
+            env: names.tags,
           }),
-        );
+          option('query', parsers.string, {
+            complete: (received) => {
+              context = received;
+              return ['result'];
+            },
+          }),
+        ],
+      });
 
       await resolveDynamicCompletion(cli, ['--query', '']);
     });
@@ -97,19 +103,25 @@ describe('dynamic completion coverage', () => {
 
   test('scans long and short switches, values, terminators, and stops', async () => {
     let context: DynamicCompletionContext | undefined;
-    const cli = command('scan')
-      .arg(flag('quiet').short('q'))
-      .arg(flag('color').negated())
-      .arg(count('verbose').short('v'))
-      .arg(option('output').short('o').complete(() => ['alpha', 'amber']))
-      .arg(option('equal').short('e').requireEquals())
-      .arg(option('pair').numArgs(2).valueTerminator(';'))
-      .arg(
-        option('query').complete((received) => {
-          context = received;
-          return ['done'];
+    const cli = command('scan', {
+      args: [
+        flag('quiet', { short: 'q' }),
+        flag('color', { negated: true }),
+        count('verbose', { short: 'v' }),
+        option('output', parsers.string, {
+          short: 'o',
+          complete: () => ['alpha', 'amber'],
         }),
-      );
+        option('equal', parsers.string, { short: 'e', requireEquals: true }),
+        option('pair', parsers.string, { numArgs: 2, valueTerminator: ';' }),
+        option('query', parsers.string, {
+          complete: (received) => {
+            context = received;
+            return ['done'];
+          },
+        }),
+      ],
+    });
 
     await resolveDynamicCompletion(cli, [
       '--pair',
@@ -145,15 +157,22 @@ describe('dynamic completion coverage', () => {
 
   test('scans positional terminators, delimiters, and trailing values', async () => {
     let context: DynamicCompletionContext | undefined;
-    const cli = command('positionals')
-      .arg(positional('pair').numArgs(2).valueDelimiter(','))
-      .arg(positional('skip').valueTerminator(';'))
-      .arg(
-        positional('rest').trailingVarArg().complete((received) => {
-          context = received;
-          return ['next'];
+    const cli = command('positionals', {
+      args: [
+        positional('pair', parsers.string, {
+          numArgs: 2,
+          valueDelimiter: ',',
         }),
-      );
+        positional('skip', parsers.string, { valueTerminator: ';' }),
+        positional('rest', parsers.string, {
+          trailingVarArg: true,
+          complete: (received) => {
+            context = received;
+            return ['next'];
+          },
+        }),
+      ],
+    });
 
     const result = await resolveDynamicCompletion(
       cli,
@@ -174,9 +193,9 @@ describe('dynamic completion coverage', () => {
   });
 
   test('handles the option terminator with and without a positional', async () => {
-    const positionalCli = command('literal').arg(
-      positional('value').valueHint('directory'),
-    );
+    const positionalCli = command('literal', {
+      args: [positional('value', parsers.string, { valueHint: 'directory' })],
+    });
     const positionalResult = await resolveDynamicCompletion(
       positionalCli,
       ['--', 'pa'],
@@ -192,18 +211,20 @@ describe('dynamic completion coverage', () => {
   });
 
   test('resolves inferred subcommands and rejects ambiguous prefixes', async () => {
-    const cli = command('tool')
-      .version('1.0.0')
-      .inferSubcommands()
-      .arg(option('config').alias('settings'))
-      .subcommand(
-        command('deploy')
-          .about('Deploy code')
-          .visibleAlias('ship')
-          .alias('d')
-          .arg(flag('force')),
-      )
-      .subcommand(command('destroy'));
+    const cli = command('tool', {
+      version: '1.0.0',
+      inferSubcommands: true,
+      args: [option('config', parsers.string, { aliases: ['settings'] })],
+      subcommands: [
+        command('deploy', {
+          about: 'Deploy code',
+          visibleAliases: ['ship'],
+          aliases: ['d'],
+          args: [flag('force')],
+        }),
+        command('destroy'),
+      ],
+    });
 
     for (const token of ['deploy', 'ship', 'd', 'depl', 'shi']) {
       const result = await resolveDynamicCompletion(cli, [token, '']);
@@ -226,10 +247,16 @@ describe('dynamic completion coverage', () => {
   });
 
   test('completes attached short values and handles non-value clusters', async () => {
-    const cli = command('short')
-      .arg(flag('verbose').short('v'))
-      .arg(option('output').short('o').complete(() => ['alpha', 'amber']))
-      .arg(flag('hidden').short('x').hide());
+    const cli = command('short', {
+      args: [
+        flag('verbose', { short: 'v' }),
+        option('output', parsers.string, {
+          short: 'o',
+          complete: () => ['alpha', 'amber'],
+        }),
+        flag('hidden', { short: 'x', hide: true }),
+      ],
+    });
 
     expect(
       (await resolveDynamicCompletion(cli, ['-oal']))
@@ -252,23 +279,28 @@ describe('dynamic completion coverage', () => {
   test('allows negative and hyphen values while stopping ordinary values', async () => {
     let negative: DynamicCompletionContext | undefined;
     let hyphen: DynamicCompletionContext | undefined;
-    const cli = command('values')
-      .arg(option('number', parsers.integer).allowNegativeNumbers())
-      .arg(option('pattern').allowHyphenValues())
-      .arg(flag('force'))
-      .arg(option('query').complete(() => ['query']))
-      .arg(
-        option('negative').complete((context) => {
-          negative = context;
-          return ['-20'];
-        }).allowNegativeNumbers(),
-      )
-      .arg(
-        option('hyphen').complete((context) => {
-          hyphen = context;
-          return ['--literal'];
-        }).allowHyphenValues(),
-      );
+    const cli = command('values', {
+      args: [
+        option('number', parsers.integer, { allowNegativeNumbers: true }),
+        option('pattern', parsers.string, { allowHyphenValues: true }),
+        flag('force'),
+        option('query', parsers.string, { complete: () => ['query'] }),
+        option('negative', parsers.string, {
+          allowNegativeNumbers: true,
+          complete: (context) => {
+            negative = context;
+            return ['-20'];
+          },
+        }),
+        option('hyphen', parsers.string, {
+          allowHyphenValues: true,
+          complete: (context) => {
+            hyphen = context;
+            return ['--literal'];
+          },
+        }),
+      ],
+    });
 
     await resolveDynamicCompletion(cli, ['--number', '-10', '--query', '']);
     await resolveDynamicCompletion(cli, ['--pattern', '--literal', '--query', '']);
@@ -280,15 +312,16 @@ describe('dynamic completion coverage', () => {
   });
 
   test('can disable filtering and deduplicates by candidate value', async () => {
-    const cli = command('filter').arg(
-      option('value')
-        .valueHint('file')
-        .complete(() => [
+    const cli = command('filter', {
+      args: [option('value', parsers.string, {
+        valueHint: 'file',
+        complete: () => [
           { value: 'alpha', description: 'first' },
           { value: 'alpha', description: 'duplicate' },
           'beta',
-        ]),
-    );
+        ],
+      })],
+    });
     const result = await resolveDynamicCompletion(
       cli,
       ['--value', 'z'],
@@ -304,11 +337,11 @@ describe('dynamic completion coverage', () => {
   test('rejects invalid provider results and candidates', async () => {
     const invalidResults: readonly unknown[] = ['single', null, {}, 42];
     for (const invalidResult of invalidResults) {
-      const cli = command('invalid').arg(
-        option('value').complete(
-          (() => invalidResult) as unknown as DynamicCompletionProvider,
-        ),
-      );
+      const cli = command('invalid', {
+        args: [option('value', parsers.string, {
+          complete: (() => invalidResult) as unknown as DynamicCompletionProvider,
+        })],
+      });
       // oxlint-disable-next-line typescript/await-thenable -- Bun async matchers must be awaited.
       await expect(
         resolveDynamicCompletion(cli, ['--value', '']),
@@ -316,9 +349,11 @@ describe('dynamic completion coverage', () => {
     }
 
     for (const invalidValue of ['', 'nul\0value', 'line\nvalue', 'line\rvalue']) {
-      const cli = command('invalid').arg(
-        option('value').complete(() => [invalidValue]),
-      );
+      const cli = command('invalid', {
+        args: [option('value', parsers.string, {
+          complete: () => [invalidValue],
+        })],
+      });
       // oxlint-disable-next-line typescript/await-thenable -- Bun async matchers must be awaited.
       await expect(
         resolveDynamicCompletion(cli, ['--value', '']),
@@ -331,12 +366,14 @@ describe('dynamic completion coverage', () => {
     const parser = parsers.custom('PATH', (value) => value, {
       completionHint: 'directory',
     });
-    const cli = command('cursor').arg(
-      option('path', parser).complete((received) => {
-        context = received;
-        return ['project'];
-      }),
-    );
+    const cli = command('cursor', {
+      args: [option('path', parser, {
+        complete: (received) => {
+          context = received;
+          return ['project'];
+        },
+      })],
+    });
 
     const result = await resolveDynamicCompletion(
       cli,

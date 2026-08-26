@@ -39,11 +39,18 @@ const clone = command('clone', {
     flag('bare', {
       describe: 'Create a bare repository',
     }),
+    option('config', parsers.string, {
+      short: 'c',
+      repeatable: true,
+      valueName: 'KEY=VALUE',
+      describe: 'Set configuration before fetching',
+    }),
   ],
   handler: ({
     repository,
     directory,
     bare,
+    config,
   }, context) => {
     const verbosity = context.global(verbose);
     const colorMode = context.global(color);
@@ -53,6 +60,9 @@ const clone = command('clone', {
     }
     if (bare) {
       console.log('bare repository');
+    }
+    for (const setting of config) {
+      console.log(`config: ${setting}`);
     }
     if (verbosity > 0) {
       console.log(`verbosity: ${verbosity}; color: ${colorMode}`);
@@ -96,6 +106,7 @@ const cli = command('tiny-git', {
   args: [verbose, color],
   subcommands: [clone, commit, completion],
   inferSubcommands: true,
+  subcommandRequired: true,
   defaultToHelp: true,
 });
 

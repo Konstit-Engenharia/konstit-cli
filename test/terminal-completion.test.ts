@@ -24,11 +24,14 @@ test.skipIf(!supportsTerminal)('Bash completes an option value in a real termina
     return;
   }
 
-  const cli = command('demo').arg(
-    option('mode', parsers.enum(['dev', 'prod'])),
-  ).arg(
-    positional('literal', parsers.enum(['--literal'])).allowHyphenValues(),
-  );
+  const cli = command('demo', {
+    args: [
+      option('mode', parsers.enum(['dev', 'prod'])),
+      positional('literal', parsers.enum(['--literal']), {
+        allowHyphenValues: true,
+      }),
+    ],
+  });
   const directory = await mkdtemp(join(tmpdir(), 'bun-clap-terminal-'));
   const rcFile = join(directory, 'bashrc');
   const prompt = '__BUN_CLAP_PROMPT__ ';
