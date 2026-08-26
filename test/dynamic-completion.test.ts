@@ -5,6 +5,7 @@ import {
 } from 'bun:test';
 import {
   command,
+  count,
   flag,
   option,
   parsers,
@@ -106,6 +107,12 @@ describe('dynamic completion', () => {
       '--label=docs,bug',
       '--label=docs,build',
     ]);
+
+    const firstDelimitedValue = await resolveDynamicCompletion(cli, ['--label=bu']);
+    expect(firstDelimitedValue.candidates.map(({ value }) => value)).toEqual([
+      '--label=bug',
+      '--label=build',
+    ]);
   });
 
   test('tracks option arity before selecting the next completion target', async () => {
@@ -152,5 +159,200 @@ describe('dynamic completion', () => {
     await expect(
       resolveDynamicCompletion(invalid, ['--value', '']),
     ).rejects.toThrow('single-line');
+
+    const invalidTab = command('bad').arg(
+      option('value').complete(() => ['bad\tvalue']),
+    );
+    // oxlint-disable-next-line typescript/await-thenable -- Bun async matchers must be awaited.
+    await expect(
+      resolveDynamicCompletion(invalidTab, ['--value', '']),
+    ).rejects.toThrow('without tabs');
+  });
+
+  test('applies CLI values over environment values for every argument shape', async () => {
+    const names = {
+      scalar: 'KONSTIT_COMPLETION_SCALAR',
+      repeatable: 'KONSTIT_COMPLETION_REPEATABLE',
+      flag: 'KONSTIT_COMPLETION_FLAG',
+      count: 'KONSTIT_COMPLETION_COUNT',
+    } as const;
+    const previous = new Map<string, string | undefined>();
+    for (
+      const [name, value,] of [
+        [names.scalar, 'environment'],
+        [names.repeatable, 'env-one,env-two'],
+        [names.flag, 'false'],
+        [names.count, '4'],
+      ] as const
+    ) {
+      previous.set(name, Bun.env[name]);
+      Bun.env[name] = value;
+    }
+
+    let received: DynamicCompletionContext | undefined;
+    try {
+      const cli = command('precedence')
+        .arg(option('scalar').env(names.scalar))
+        .arg(option('items').repeatable().valueDelimiter(',').env(names.repeatable))
+        .arg(flag('enabled').env(names.flag))
+        .arg(count('verbose').short('v').env(names.count))
+        .arg(
+          option('query').complete((context) => {
+            received = context;
+            return ['done'];
+          }),
+        );
+
+      await resolveDynamicCompletion(cli, [
+        '--scalar=cli',
+        '--items',
+        'cli-one,cli-two',
+        '--enabled',
+        '-vv',
+        '--query',
+        '',
+      ]);
+    } finally {
+      for (const [name, value,] of previous) {
+        if (value === undefined) {
+          delete Bun.env[name];
+        } else {
+          Bun.env[name] = value;
+        }
+      }
+    }
+
+    expect(received?.values).toMatchObject({
+      scalar: 'cli',
+      items: ['cli-one', 'cli-two'],
+      enabled: true,
+      verbose: 2,
+    });
+    expect(received?.rawValues).toMatchObject({
+      scalar: ['cli'],
+      items: ['cli-one', 'cli-two'],
+    });
+  });
+
+  test('uses runtime minimum arity and negative-number stopping rules', async () => {
+    const requiredBeforeChild = command('tool')
+      .arg(option('values').numArgs({ min: 2, max: 3 }).complete(() => ['next']))
+      .subcommand(command('run'));
+    const stillCollecting = await resolveDynamicCompletion(
+      requiredBeforeChild,
+      ['--values', 'one', 'run', 'n'],
+    );
+    expect(stillCollecting.commandPath).toEqual(['tool']);
+    expect(stillCollecting.argument?.name).toBe('values');
+
+    const canStop = command('tool')
+      .arg(option('values').numArgs({ min: 1, max: 3 }))
+      .subcommand(command('run').visibleAlias('go').arg(flag('force')));
+    const child = await resolveDynamicCompletion(canStop, [
+      '--values',
+      'one',
+      'go',
+      '--f',
+    ]);
+    expect(child.commandPath).toEqual(['tool', 'run']);
+    expect(child.candidates.map(({ value }) => value)).toContain('--force');
+
+    let received: DynamicCompletionContext | undefined;
+    const numbers = command('numbers')
+      .arg(option('number', parsers.float).allowNegativeNumbers())
+      .arg(
+        option('query').complete((context) => {
+          received = context;
+          return ['done'];
+        }),
+      );
+    await resolveDynamicCompletion(numbers, [
+      '--number',
+      '-.5',
+      '--query',
+      '',
+    ]);
+    expect(received?.rawValues.number).toEqual(['-.5']);
+
+    await resolveDynamicCompletion(numbers, [
+      '--number',
+      '-2',
+      '--query',
+      '',
+    ]);
+    expect(received?.rawValues.number).toEqual(['-2']);
+  });
+
+  test('consumes option-looking positional values unless an option is declared', async () => {
+    const cli = command('positionals')
+      .version('1.0.0')
+      .arg(positional('literal').allowHyphenValues())
+      .arg(positional('target', parsers.enum(['beta'])))
+      .arg(flag('known').short('k'));
+
+    const literal = await resolveDynamicCompletion(cli, ['--literal', '']);
+    expect(literal.argument?.name).toBe('target');
+    expect(literal.candidates.map(({ value }) => value)).toContain('beta');
+
+    const current = await resolveDynamicCompletion(cli, ['--literal']);
+    expect(current.argument?.name).toBe('literal');
+
+    const declared = await resolveDynamicCompletion(cli, ['--known', '']);
+    expect(declared.argument?.name).toBe('literal');
+
+    for (const token of ['-k', '-h', '-V']) {
+      const shortDeclared = await resolveDynamicCompletion(cli, [token, '']);
+      expect(shortDeclared.argument?.name).toBe('literal');
+    }
+    const shortLiteral = await resolveDynamicCompletion(cli, ['-literal']);
+    expect(shortLiteral.argument?.name).toBe('literal');
+  });
+
+  test('stops option values for a uniquely inferred subcommand', async () => {
+    const cli = command('tool')
+      .inferSubcommands()
+      .arg(option('values').numArgs({ min: 1, max: 3 }))
+      .subcommand(command('status').arg(flag('child')));
+    const result = await resolveDynamicCompletion(cli, [
+      '--values',
+      'one',
+      'sta',
+      '--c',
+    ]);
+    expect(result.commandPath).toEqual(['tool', 'status']);
+    expect(result.candidates.map(({ value }) => value)).toContain('--child');
+  });
+
+  test('prefers an exact inferred subcommand over longer prefixes', async () => {
+    const cli = command('tool')
+      .inferSubcommands()
+      .arg(option('values').numArgs({ min: 1, max: 3 }))
+      .subcommand(command('foo').arg(flag('exact-child')))
+      .subcommand(command('foobar').arg(flag('long-child')));
+    const result = await resolveDynamicCompletion(cli, [
+      '--values',
+      'one',
+      'foo',
+      '--e',
+    ]);
+    expect(result.commandPath).toEqual(['tool', 'foo']);
+    expect(result.candidates.map(({ value }) => value)).toContain('--exact-child');
+  });
+
+  test('treats only exact built-ins as declared positional blockers', async () => {
+    const cli = command('tool')
+      .version('1.0.0')
+      .arg(positional('literal').allowHyphenValues())
+      .arg(positional('target', parsers.enum(['beta'])));
+
+    for (const token of ['--help=x', '--version=x', '-hx', '-Vx']) {
+      const suffixed = await resolveDynamicCompletion(cli, [token, '']);
+      expect(suffixed.argument?.name).toBe('target');
+      expect(suffixed.candidates.map(({ value }) => value)).toContain('beta');
+    }
+    for (const token of ['--help', '--version', '-h', '-V']) {
+      const exact = await resolveDynamicCompletion(cli, [token, '']);
+      expect(exact.argument?.name).toBe('literal');
+    }
   });
 });

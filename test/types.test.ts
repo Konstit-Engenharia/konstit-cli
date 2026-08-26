@@ -42,6 +42,13 @@ type Expected = {
 
 type _ResultIsExact = Expect<Equal<Actual, Expected>>;
 
+const envScalarCli = command('env').arg(
+  option('port', parsers.integer).env('PORT'),
+);
+type _EnvScalarIsExact = Expect<
+  Equal<Infer<typeof envScalarCli>['port'], number | undefined>
+>;
+
 const parsedOutcome = typedCli.parse(['--port', '3000', 'init']);
 if (parsedOutcome.type !== 'value') {
   throw new Error('expected parsed arguments');
@@ -72,7 +79,7 @@ const completionScript: string = generateCompletion(typedCli, shell);
 void completionScript;
 
 const advanced = command('advanced')
-  .arg(option('pair').numArgs(2).required())
+  .arg(option('pair').numArgs(2).env('ADVANCED_PAIR').required())
   .arg(option('points', parsers.integer).numArgs(2).repeatable())
   .arg(option('values', parsers.integer).numArgs({ min: 1, max: 3 }))
   .arg(option('mode', parsers.enum(['fast', 'safe'])).defaultMissing('safe'))

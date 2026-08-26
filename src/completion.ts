@@ -158,15 +158,50 @@ function childEntries(
 ): readonly (readonly [string, CommandDefinition, CompletionNode])[] {
   const children = node.definition.subcommands.filter(({ hidden }) => !hidden);
   return children.flatMap((child) => {
-    const target = nodes.find(({ definition }) => definition === child);
-    if (target === undefined) {
-      throw new Error(`Missing completion node for subcommand '${child.name}'`);
-    }
+    const target = nodes.find(({ definition }) => definition === child) as CompletionNode;
     return [
       child.name,
       ...child.aliases.filter(({ visible }) => visible).map(({ name }) => name),
     ].map((token) => [token, child, target] as const);
   });
+}
+
+function childScanEntries(
+  node: CompletionNode,
+  nodes: readonly CompletionNode[],
+): readonly (readonly [string, CompletionNode])[] {
+  const entries = node.definition.subcommands.flatMap((child) => {
+    const target = nodes.find(({ definition }) => definition === child);
+    if (target === undefined) {
+      return [];
+    }
+    return [child.name, ...child.aliases.map(({ name }) => name)].map(
+      (token) => [token, target] as const,
+    );
+  });
+  if (!node.definition.inferSubcommands) {
+    return uniqueBy(entries, ([token,]) => token);
+  }
+  const prefixes = new Map<string, Set<CompletionNode>>();
+  for (const [token, target,] of entries) {
+    const characters = Array.from(token);
+    for (let length = 1; length <= characters.length; length += 1) {
+      const prefix = characters.slice(0, length).join('');
+      const targets = prefixes.get(prefix) ?? new Set<CompletionNode>();
+      targets.add(target);
+      prefixes.set(prefix, targets);
+    }
+  }
+  const resolved = new Map<string, CompletionNode>();
+  for (const [prefix, targets,] of prefixes) {
+    if (targets.size === 1) {
+      resolved.set(prefix, [...targets][0] as CompletionNode);
+    }
+  }
+  for (const [token, target,] of entries) {
+    resolved.set(token, target);
+  }
+  return [...resolved];
 }
 
 function optionTokens(argument: ArgumentDefinition): readonly string[] {
@@ -211,22 +246,37 @@ function valueCompletions(node: CompletionNode): readonly ValueCompletion[] {
     }
   }
 
-  const positionals = visibleArguments(node).filter(
-    ({ kind }) => kind === 'positional',
-  );
-  if (positionals.length > 0) {
-    const completion = completionForArguments(positionals);
+  for (const [index, positional,] of parsePositionals(node).entries()) {
+    if (positional.hidden) {
+      continue;
+    }
+    const completion = completionForArguments([positional]);
     if (completion.values.length > 0 || completion.hint !== undefined) {
-      definitions.push({ tokens: ['@positional'], ...completion });
+      definitions.push({ tokens: [`@positional:${index}`], ...completion });
     }
   }
   return definitions;
+}
+
+function parsePositionals(node: CompletionNode): readonly ArgumentDefinition[] {
+  return node.arguments.filter(({ kind }) => kind === 'positional');
 }
 
 function valueOptionTokens(node: CompletionNode): readonly string[] {
   return visibleArguments(node)
     .filter(({ kind }) => kind === 'option')
     .flatMap(optionTokens);
+}
+
+function declaredOptionTokens(node: CompletionNode): readonly string[] {
+  return node.arguments.filter(({ kind }) => kind !== 'positional').flatMap(optionTokens);
+}
+
+function builtinOptionTokens(node: CompletionNode): readonly string[] {
+  return [
+    ...(node.definition.disableHelpFlag ? [] : ['-h', '--help']),
+    ...(node.definition.version === undefined || node.definition.disableVersionFlag ? [] : ['-V', '--version']),
+  ];
 }
 
 function candidates(
@@ -263,11 +313,35 @@ function hasVisiblePositionals(node: CompletionNode): boolean {
   return visibleArguments(node).some(({ kind }) => kind === 'positional');
 }
 
-function hasFallbackFilePositionals(node: CompletionNode): boolean {
-  if (!hasVisiblePositionals(node)) {
-    return false;
-  }
-  return !valueCompletions(node).some(({ tokens }) => tokens.includes('@positional'));
+function shellMaximum(argument: ArgumentDefinition): number {
+  return argument.maxValues ?? -1;
+}
+
+function shellOptionSpec(argument: ArgumentDefinition): string {
+  return [
+    argument.minValues,
+    shellMaximum(argument),
+    argument.requireEquals ? 1 : 0,
+    encodeShellDelimiter(argument.valueDelimiter),
+    argument.allowHyphenValues ? 1 : 0,
+    argument.allowNegativeNumbers ? 1 : 0,
+    argument.repeatable && argument.maxValues === 1 ? 1 : 0,
+  ].join('\t');
+}
+
+function shellPositionalSpec(argument: ArgumentDefinition): string {
+  return [
+    shellMaximum(argument),
+    encodeShellDelimiter(argument.valueDelimiter),
+    argument.allowHyphenValues ? 1 : 0,
+    argument.allowNegativeNumbers ? 1 : 0,
+    argument.repeatable ? 1 : 0,
+    encodeShellDelimiter(argument.valueTerminator),
+  ].join('\t');
+}
+
+function encodeShellDelimiter(delimiter: string | undefined): string {
+  return delimiter === undefined ? '-' : Buffer.from(delimiter).toString('hex');
 }
 
 function unique<Value>(values: readonly Value[]): readonly Value[] {
@@ -278,15 +352,7 @@ function uniqueBy<Value>(
   values: readonly Value[],
   key: (value: Value) => string,
 ): readonly Value[] {
-  const seen = new Set<string>();
-  return values.filter((value) => {
-    const current = key(value);
-    if (seen.has(current)) {
-      return false;
-    }
-    seen.add(current);
-    return true;
-  });
+  return [...new Map(values.map((value) => [key(value), value])).values()];
 }
 
 function shellIdentifier(executable: string): string {
@@ -317,10 +383,21 @@ function generateDynamicCompletion(
     case 'bash':
       return [
         `# dynamic bash completion for ${executable}`,
+        `${name}_decode() {`,
+        '  local hex="$1" byte result=""',
+        '  while [[ -n "$hex" ]]; do',
+        `    printf -v byte '%b' "\\x\${hex:0:2}"`,
+        '    result+="$byte"',
+        `    hex="\${hex:2}"`,
+        '  done',
+        '  REPLY="$result"',
+        '}',
         `${name}() {`,
-        '  local candidate',
+        '  local encoded description candidate',
         '  COMPREPLY=()',
-        '  while IFS= read -r candidate; do',
+        '  while IFS=$\'\\t\' read -r encoded description; do',
+        `    ${name}_decode "$encoded"`,
+        '    candidate="$REPLY"',
         '    [[ -n "$candidate" ]] && COMPREPLY+=("$candidate")',
         `  done < <(${dynamicCompletionEnvironment}=1 ${executableQuoted} "\${COMP_WORDS[@]:1:$((COMP_CWORD))}")`,
         '}',
@@ -331,11 +408,26 @@ function generateDynamicCompletion(
       return [
         `#compdef ${executable}`,
         `# dynamic zsh completion for ${executable}`,
+        `${name}_decode() {`,
+        '  local hex="$1" byte result=""',
+        '  while [[ -n "$hex" ]]; do',
+        `    printf -v byte '%b' "\\x\${hex[1,2]}"`,
+        '    result+="$byte"',
+        `    hex="\${hex[3,-1]}"`,
+        '  done',
+        '  REPLY="$result"',
+        '}',
         `${name}() {`,
-        '  local -a candidates',
-        `  candidates=("\${(@f)$(${dynamicCompletionEnvironment}=1 ${executableQuoted} "\${words[@]:1}")}")`,
+        '  local encoded description',
+        '  local -a candidates descriptions',
+        `  while IFS=$'\\t' read -r encoded description; do`,
+        `    ${name}_decode "$encoded"`,
+        '    candidates+=("$REPLY")',
+        `    ${name}_decode "$description"`,
+        '    descriptions+=("$REPLY")',
+        `  done < <(${dynamicCompletionEnvironment}=1 ${executableQuoted} "\${words[@]:1}")`,
         `  if (( \${#candidates[@]} )); then`,
-        `    compadd -Q -- "\${candidates[@]}"`,
+        `    compadd -Q -d descriptions -- "\${candidates[@]}"`,
         '  else',
         '    _files',
         '  fi',
@@ -349,10 +441,24 @@ function generateDynamicCompletion(
         : `complete -c ${fishQuote(executable)}`;
       return [
         `# dynamic fish completion for ${executable}`,
+        `function ${name}_decode --argument-names hex`,
+        '    set -l result',
+        '    while test (string length -- "$hex") -gt 0',
+        '        set -l pair (string sub -s 1 -l 2 -- "$hex")',
+        '        set -a result (printf "\\x$pair")',
+        '        set hex (string sub -s 3 -- "$hex")',
+        '    end',
+        '    string join \'\' -- $result',
+        'end',
         `function ${name}`,
         '    set -l tokens (commandline -opc)',
         '    set -l current (commandline -ct)',
-        `    env ${dynamicCompletionEnvironment}=1 command ${fishQuote(executable)} $tokens[2..-1] "$current"`,
+        `    env ${dynamicCompletionEnvironment}=1 command ${fishQuote(executable)} $tokens[2..-1] "$current" | while read -l line`,
+        '        set -l fields (string split -m 1 \\t -- "$line")',
+        `        set -l value (${name}_decode "$fields[1]")`,
+        `        set -l description (${name}_decode "$fields[2]")`,
+        '        printf \'%s\\t%s\\n\' "$value" "$description"',
+        '    end',
         'end',
         `${commandPrefix} -a '(${name})'`,
         '',
@@ -365,6 +471,14 @@ function generateDynamicCompletion(
         `# dynamic PowerShell completion for ${executable}`,
         `Register-ArgumentCompleter -Native -CommandName ${powerExecutable} -ScriptBlock {`,
         '  param($wordToComplete, $commandAst, $cursorPosition)',
+        '  $decodeHex = {',
+        '    param([string]$hex)',
+        '    $bytes = New-Object byte[] ($hex.Length / 2)',
+        '    for ($byteIndex = 0; $byteIndex -lt $bytes.Length; $byteIndex++) {',
+        '      $bytes[$byteIndex] = [Convert]::ToByte($hex.Substring($byteIndex * 2, 2), 16)',
+        '    }',
+        '    return [Text.Encoding]::UTF8.GetString($bytes)',
+        '  }',
         '  $arguments = @($commandAst.CommandElements | Select-Object -Skip 1 | ForEach-Object { [string]$_.Value })',
         '  if ([string]::IsNullOrEmpty($wordToComplete)) { $arguments += \'\' }',
         `  $previous = [Environment]::GetEnvironmentVariable(${environmentQuoted}, 'Process')`,
@@ -375,7 +489,12 @@ function generateDynamicCompletion(
         `    [Environment]::SetEnvironmentVariable(${environmentQuoted}, $previous, 'Process')`,
         '  }',
         '  foreach ($value in $values) {',
-        '    [System.Management.Automation.CompletionResult]::new($value, $value, \'ParameterValue\', $value)',
+        '    $fields = $value -split "`t", 2',
+        '    if ($fields.Count -ne 2) { continue }',
+        '    $completion = & $decodeHex $fields[0]',
+        '    $description = & $decodeHex $fields[1]',
+        '    if ([string]::IsNullOrEmpty($description)) { $description = $completion }',
+        '    [System.Management.Automation.CompletionResult]::new($completion, $completion, \'ParameterValue\', $description)',
         '  }',
         '}',
         '',
@@ -426,8 +545,35 @@ function generateBash(
         ? []
         : [`    ${casePatterns(node.id, tokens)}) return 0 ;;`];
     }).join('\n'),
+    OPTION_SPEC_CASES: nodes.flatMap((node) =>
+      node.arguments
+        .filter(({ kind }) => kind === 'option')
+        .flatMap((argument) => {
+          const tokens = optionTokens(argument);
+          return tokens.length === 0 ? [] : [
+            `    ${casePatterns(node.id, tokens)}) printf '%s\\n' ${shellQuote(shellOptionSpec(argument))} ;;`,
+          ];
+        })
+    ).join('\n'),
+    POSITIONAL_SPEC_CASES: nodes.flatMap((node) =>
+      parsePositionals(node).map((argument, index) =>
+        `    ${shellQuote(`${node.id}:${index}`)}) printf '%s\\n' ${shellQuote(shellPositionalSpec(argument))} ;;`
+      )
+    ).join('\n'),
+    DECLARED_OPTION_CASES: nodes.flatMap((node) => {
+      const tokens = declaredOptionTokens(node);
+      return tokens.length === 0 ? [] : [
+        `    ${casePatterns(node.id, tokens)}) return 0 ;;`,
+      ];
+    }).join('\n'),
+    BUILTIN_OPTION_CASES: nodes.flatMap((node) => {
+      const tokens = builtinOptionTokens(node);
+      return tokens.length === 0 ? [] : [
+        `    ${casePatterns(node.id, tokens)}) return 0 ;;`,
+      ];
+    }).join('\n'),
     SUBCOMMAND_CASES: nodes.flatMap((node) =>
-      childEntries(node, nodes).map(([token, _child, target,]) =>
+      childScanEntries(node, nodes).map(([token, target,]) =>
         `    ${shellQuote(`${node.id}:${token}`)}) printf '%s\\n' ${shellQuote(target.id)} ;;`
       )
     ).join('\n'),
@@ -437,8 +583,17 @@ function generateBash(
     }).join('\n'),
     STATIC_VALUE_CASES: staticValueCases.join('\n'),
     VALUE_HINT_CASES: valueHintCases.join('\n'),
-    ALLOWS_FILES_CASES: nodes.filter(hasFallbackFilePositionals)
-      .map((node) => `    ${shellQuote(node.id)}) return 0 ;;`)
+    ALLOWS_FILES_CASES: nodes.flatMap((node) =>
+      parsePositionals(node).flatMap((argument, index) => {
+        if (argument.hidden) {
+          return [];
+        }
+        const completion = completionForArguments([argument]);
+        return completion.values.length === 0 && completion.hint === undefined
+          ? [`    ${shellQuote(`${node.id}:${index}`)}) return 0 ;;`]
+          : [];
+      })
+    )
       .join('\n'),
   });
 }
@@ -480,8 +635,35 @@ function generateZsh(
         ? []
         : [`    ${casePatterns(node.id, tokens)}) return 0 ;;`];
     }).join('\n'),
+    OPTION_SPEC_CASES: nodes.flatMap((node) =>
+      node.arguments
+        .filter(({ kind }) => kind === 'option')
+        .flatMap((argument) => {
+          const tokens = optionTokens(argument);
+          return tokens.length === 0 ? [] : [
+            `    ${casePatterns(node.id, tokens)}) print -r -- ${shellQuote(shellOptionSpec(argument))} ;;`,
+          ];
+        })
+    ).join('\n'),
+    POSITIONAL_SPEC_CASES: nodes.flatMap((node) =>
+      parsePositionals(node).map((argument, index) =>
+        `    ${shellQuote(`${node.id}:${index}`)}) print -r -- ${shellQuote(shellPositionalSpec(argument))} ;;`
+      )
+    ).join('\n'),
+    DECLARED_OPTION_CASES: nodes.flatMap((node) => {
+      const tokens = declaredOptionTokens(node);
+      return tokens.length === 0 ? [] : [
+        `    ${casePatterns(node.id, tokens)}) return 0 ;;`,
+      ];
+    }).join('\n'),
+    BUILTIN_OPTION_CASES: nodes.flatMap((node) => {
+      const tokens = builtinOptionTokens(node);
+      return tokens.length === 0 ? [] : [
+        `    ${casePatterns(node.id, tokens)}) return 0 ;;`,
+      ];
+    }).join('\n'),
     SUBCOMMAND_CASES: nodes.flatMap((node) =>
-      childEntries(node, nodes).map(([token, _child, target,]) =>
+      childScanEntries(node, nodes).map(([token, target,]) =>
         `    ${shellQuote(`${node.id}:${token}`)}) print -r -- ${shellQuote(target.id)} ;;`
       )
     ).join('\n'),
@@ -491,8 +673,17 @@ function generateZsh(
     }).join('\n'),
     STATIC_VALUE_CASES: staticValueCases.join('\n'),
     VALUE_HINT_CASES: valueHintCases.join('\n'),
-    ALLOWS_FILES_CASES: nodes.filter(hasFallbackFilePositionals)
-      .map((node) => `    ${shellQuote(node.id)}) return 0 ;;`)
+    ALLOWS_FILES_CASES: nodes.flatMap((node) =>
+      parsePositionals(node).flatMap((argument, index) => {
+        if (argument.hidden) {
+          return [];
+        }
+        const completion = completionForArguments([argument]);
+        return completion.values.length === 0 && completion.hint === undefined
+          ? [`    ${shellQuote(`${node.id}:${index}`)}) return 0 ;;`]
+          : [];
+      })
+    )
       .join('\n'),
   });
 }
@@ -508,7 +699,7 @@ function generateFish(
   const registrations: string[] = [];
 
   for (const node of nodes) {
-    const condition = fishQuote(`test (${name}) = ${node.id}`);
+    const condition = fishQuote(`string match -q '${node.id}:*' (${name})`);
     for (const argument of visibleArguments(node)) {
       if (argument.kind === 'positional') {
         continue;
@@ -562,18 +753,19 @@ function generateFish(
         }`,
       );
     }
-    const positionals = visibleArguments(node).filter(
-      ({ kind }) => kind === 'positional',
-    );
-    if (positionals.length > 0) {
-      const completion = completionForArguments(positionals);
+    for (const [index, positional,] of parsePositionals(node).entries()) {
+      if (positional.hidden) {
+        continue;
+      }
+      const positionalCondition = fishQuote(`test (${name}) = '${node.id}:${index}'`);
+      const completion = completionForArguments([positional]);
       if (completion.values.length > 0) {
         registrations.push(
-          `${commandPrefix} -f -n ${condition} -a ${fishWordList(completion.values)}`,
+          `${commandPrefix} -f -n ${positionalCondition} -a ${fishWordList(completion.values)}`,
         );
       } else if (completion.hint === 'directory') {
         registrations.push(
-          `${commandPrefix} -f -n ${condition} -a ${fishQuote('(__fish_complete_directories)')}`,
+          `${commandPrefix} -f -n ${positionalCondition} -a ${fishQuote('(__fish_complete_directories)')}`,
         );
       }
     }
@@ -584,22 +776,68 @@ function generateFish(
     renderTemplate('fish', {
       EXECUTABLE: executable,
       NAME: name,
-      TAKES_VALUE_CASES: nodes.flatMap((node) => {
-        const tokens = valueOptionTokens(node);
-        return tokens.length === 0
-          ? []
-          : [
-            `            case ${tokens.map((token) => fishQuote(`${node.id}:${token}`)).join(' ')}`,
-            '                set expect_value 1',
-            '                continue',
-          ];
+      OPTION_SPEC_CASES: nodes.flatMap((node) => {
+        return node.arguments
+          .filter(({ kind }) => kind === 'option')
+          .flatMap((argument) => {
+            const tokens = optionTokens(argument);
+            return tokens.length === 0 ? [] : [
+              `                case ${tokens.map((token) => fishQuote(`${node.id}:${token}`)).join(' ')}`,
+              '                    set new_option $option_word',
+              `                    set pending_min ${argument.minValues}`,
+              `                    set pending_max ${shellMaximum(argument)}`,
+              `                    set pending_require_equals ${argument.requireEquals ? 1 : 0}`,
+              `                    set pending_delimiter_hex ${fishQuote(encodeShellDelimiter(argument.valueDelimiter))}`,
+              `                    set pending_allow_hyphen ${argument.allowHyphenValues ? 1 : 0}`,
+              `                    set pending_allow_negative ${argument.allowNegativeNumbers ? 1 : 0}`,
+              `                    set pending_single_raw ${argument.repeatable && argument.maxValues === 1 ? 1 : 0}`,
+            ];
+          });
       }).join('\n'),
-      SUBCOMMAND_CASES: nodes.flatMap((node) =>
-        childEntries(node, nodes).flatMap(([token, _child, target,]) => [
-          `            case ${fishQuote(`${node.id}:${token}`)}`,
-          `                set context ${fishQuote(target.id)}`,
+      PENDING_SUBCOMMAND_CASES: nodes.flatMap((node) =>
+        childScanEntries(node, nodes).flatMap(([token, target,]) => [
+          `                    case ${fishQuote(`${node.id}:${token}`)}`,
+          `                        set context ${fishQuote(target.id)}`,
+          '                        set positional_index 0',
+          '                        set positional_remaining 0',
+          '                        set pending_option',
+          '                        continue',
         ])
       ).join('\n'),
+      SUBCOMMAND_CASES: nodes.flatMap((node) =>
+        childScanEntries(node, nodes).flatMap(([token, target,]) => [
+          `                case ${fishQuote(`${node.id}:${token}`)}`,
+          `                    set context ${fishQuote(target.id)}`,
+          '                    set positional_index 0',
+          '                    set positional_remaining 0',
+          '                    continue',
+        ])
+      ).join('\n'),
+      POSITIONAL_SPEC_CASES: nodes.flatMap((node) =>
+        parsePositionals(node).flatMap((argument, index) => [
+          `                case ${fishQuote(`${node.id}:${index}`)}`,
+          `                    set positional_remaining ${shellMaximum(argument)}`,
+          `                    set positional_delimiter_hex ${fishQuote(encodeShellDelimiter(argument.valueDelimiter))}`,
+          `                    set positional_allow_hyphen ${argument.allowHyphenValues ? 1 : 0}`,
+          `                    set positional_allow_negative ${argument.allowNegativeNumbers ? 1 : 0}`,
+          `                    set positional_repeatable ${argument.repeatable ? 1 : 0}`,
+          `                    set positional_terminator_hex ${fishQuote(encodeShellDelimiter(argument.valueTerminator))}`,
+        ])
+      ).join('\n'),
+      DECLARED_OPTION_CASES: nodes.flatMap((node) => {
+        const tokens = declaredOptionTokens(node);
+        return tokens.length === 0 ? [] : [
+          `                case ${tokens.map((token) => fishQuote(`${node.id}:${token}`)).join(' ')}`,
+          '                    set declared_option 1',
+        ];
+      }).join('\n'),
+      BUILTIN_OPTION_CASES: nodes.flatMap((node) => {
+        const tokens = builtinOptionTokens(node);
+        return tokens.length === 0 ? [] : [
+          `                case ${tokens.map((token) => fishQuote(`${node.id}:${token}`)).join(' ')}`,
+          '                    set declared_option 1',
+        ];
+      }).join('\n'),
       REGISTRATIONS: registrations.join('\n').trimEnd(),
     }).trimEnd()
   }\n`;
@@ -630,6 +868,10 @@ function generatePowerShell(
   executable: string,
 ): string {
   const takesValueCases: string[] = [];
+  const optionSpecCases: string[] = [];
+  const positionalSpecCases: string[] = [];
+  const declaredOptionCases: string[] = [];
+  const builtinOptionCases: string[] = [];
   const subcommandCases: string[] = [];
   const valueModeCases: string[] = [];
   const staticValueCases: string[] = [];
@@ -641,7 +883,41 @@ function generatePowerShell(
         `      ${powerShellQuote(`${node.id}:${token}`)} { return $true }`,
       );
     }
-    for (const [token, _child, target,] of childEntries(node, nodes)) {
+    for (const argument of node.arguments.filter(({ kind }) => kind === 'option')) {
+      for (const token of optionTokens(argument)) {
+        optionSpecCases.push(
+          `      ${powerShellQuote(`${node.id}:${token}`)} { return [pscustomobject]@{ Minimum = ${argument.minValues}; Maximum = ${
+            shellMaximum(argument)
+          }; RequireEquals = $${argument.requireEquals}; DelimiterHex = ${
+            powerShellQuote(encodeShellDelimiter(argument.valueDelimiter))
+          }; AllowHyphen = $${argument.allowHyphenValues}; AllowNegative = $${argument.allowNegativeNumbers}; SingleRaw = $${
+            argument.repeatable && argument.maxValues === 1
+          } } }`,
+        );
+      }
+    }
+    for (const [index, argument,] of parsePositionals(node).entries()) {
+      positionalSpecCases.push(
+        `      ${powerShellQuote(`${node.id}:${index}`)} { return [pscustomobject]@{ Maximum = ${shellMaximum(argument)}; DelimiterHex = ${
+          powerShellQuote(encodeShellDelimiter(argument.valueDelimiter))
+        }; AllowHyphen = $${argument.allowHyphenValues}; AllowNegative = $${argument.allowNegativeNumbers}; Repeatable = $${argument.repeatable}; TerminatorHex = ${
+          powerShellQuote(encodeShellDelimiter(argument.valueTerminator))
+        } } }`,
+      );
+    }
+    const declared = declaredOptionTokens(node);
+    for (const token of declared) {
+      declaredOptionCases.push(
+        `      ${powerShellQuote(`${node.id}:${token}`)} { return $true }`,
+      );
+    }
+    const builtins = builtinOptionTokens(node);
+    for (const token of builtins) {
+      builtinOptionCases.push(
+        `      ${powerShellQuote(`${node.id}:${token}`)} { return $true }`,
+      );
+    }
+    for (const [token, target,] of childScanEntries(node, nodes)) {
       subcommandCases.push(
         `      ${powerShellQuote(`${node.id}:${token}`)} { return ${powerShellQuote(target.id)} }`,
       );
@@ -677,12 +953,25 @@ function generatePowerShell(
     EXECUTABLE: executable,
     EXECUTABLE_QUOTED: powerShellQuote(executable),
     TAKES_VALUE_CASES: takesValueCases.join('\n'),
+    OPTION_SPEC_CASES: optionSpecCases.join('\n'),
+    POSITIONAL_SPEC_CASES: positionalSpecCases.join('\n'),
+    DECLARED_OPTION_CASES: declaredOptionCases.join('\n'),
+    BUILTIN_OPTION_CASES: builtinOptionCases.join('\n'),
     SUBCOMMAND_CASES: subcommandCases.join('\n'),
     VALUE_MODE_CASES: valueModeCases.join('\n'),
     STATIC_VALUE_CASES: staticValueCases.join('\n'),
     CANDIDATE_CASES: candidateCases.join('\n'),
-    ALLOWS_FILES_CASES: nodes.filter(hasFallbackFilePositionals)
-      .map((node) => `      ${powerShellQuote(node.id)} { return $true }`)
+    ALLOWS_FILES_CASES: nodes.flatMap((node) =>
+      parsePositionals(node).flatMap((argument, index) => {
+        if (argument.hidden) {
+          return [];
+        }
+        const completion = completionForArguments([argument]);
+        return completion.values.length === 0 && completion.hint === undefined
+          ? [`      ${powerShellQuote(`${node.id}:${index}`)} { return $true }`]
+          : [];
+      })
+    )
       .join('\n'),
   });
 }

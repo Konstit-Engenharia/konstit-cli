@@ -97,6 +97,7 @@ interface ScanState {
   pending: PendingValue | undefined;
   readonly values: Record<string, unknown>;
   readonly rawValues: Record<string, string[]>;
+  readonly cliProvided: Set<string>;
 }
 
 interface ValueTarget {
@@ -180,7 +181,11 @@ export async function runDynamicCompletionRequest(
     options.cursor === undefined ? {} : { cursor: options.cursor },
   );
   if (result.candidates.length > 0) {
-    const output = `${result.candidates.map(({ value }) => value).join('\n')}\n`;
+    const output = `${
+      result.candidates.map(({ value, description }) => `${encodeProtocolField(value)}\t${encodeProtocolField(description ?? '')}`).join(
+        '\n',
+      )
+    }\n`;
     (options.stdout ?? ((text: string) => process.stdout.write(text)))(output);
   }
   return 0;
@@ -202,6 +207,7 @@ function createScanState(root: CommandDefinition): ScanState {
     pending: undefined,
     values: {},
     rawValues: {},
+    cliProvided: new Set(),
   };
   initializeArguments(root.arguments, state);
   return state;
@@ -237,7 +243,12 @@ function initializeArguments(
           state.values[argument.name] = count;
         }
       } else {
-        storeArgumentValues(argument, splitValue(argument, environmentValue), state);
+        storeArgumentValues(
+          argument,
+          splitValue(argument, environmentValue),
+          state,
+          false,
+        );
       }
     }
   }
@@ -258,7 +269,7 @@ function scanWords(state: ScanState, words: readonly string[]): void {
         continue;
       }
       if (!stopsValueCollection(state, state.pending.argument, word)) {
-        consumePending(state, word);
+        consumePending(state, state.pending, word);
         index += 1;
         continue;
       }
@@ -270,18 +281,30 @@ function scanWords(state: ScanState, words: readonly string[]): void {
       index += 1;
       continue;
     }
-    if (state.optionsEnabled && word.startsWith('--') && word.length > 2) {
+    const consumeAsPositional = state.optionsEnabled
+      && acceptsOptionLookingPositional(state, word);
+    if (
+      state.optionsEnabled
+      && !consumeAsPositional
+      && word.startsWith('--')
+      && word.length > 2
+    ) {
       scanLongOption(state, word);
       index += 1;
       continue;
     }
-    if (state.optionsEnabled && word.startsWith('-') && word !== '-') {
+    if (
+      state.optionsEnabled
+      && !consumeAsPositional
+      && word.startsWith('-')
+      && word !== '-'
+    ) {
       scanShortOptions(state, word);
       index += 1;
       continue;
     }
 
-    if (state.optionsEnabled) {
+    if (state.optionsEnabled && !consumeAsPositional) {
       const child = resolveSubcommand(state.command, word);
       if (child !== undefined) {
         enterSubcommand(state, child);
@@ -405,11 +428,11 @@ function setPending(
   }
 }
 
-function consumePending(state: ScanState, word: string): void {
-  const pending = state.pending;
-  if (pending === undefined) {
-    return;
-  }
+function consumePending(
+  state: ScanState,
+  pending: PendingValue,
+  word: string,
+): void {
   const values = splitValue(pending.argument, word);
   storeArgumentValues(pending.argument, values, state);
   pending.consumed += values.length;
@@ -430,11 +453,53 @@ function stopsValueCollection(
     word.startsWith('-')
     && word !== '-'
     && !argument.allowHyphenValues
-    && !(argument.allowNegativeNumbers && /^[+-](?:\d|\.\d)/.test(word))
+    && !(argument.allowNegativeNumbers && /^-(?:\d|\.\d)/.test(word))
   ) {
     return true;
   }
-  return state.optionsEnabled && resolveSubcommand(state.command, word) !== undefined;
+  return state.optionsEnabled
+    && argument.minValues <= (state.pending?.consumed ?? 0)
+    && resolveSubcommand(state.command, word) !== undefined;
+}
+
+function acceptsOptionLookingPositional(state: ScanState, token: string): boolean {
+  const argument = currentPositional(state);
+  if (
+    argument === undefined
+    || token === '--'
+    || token === '-'
+    || !token.startsWith('-')
+    || hasDeclaredOption(state, token)
+  ) {
+    return false;
+  }
+  return argument.allowHyphenValues
+    || (argument.allowNegativeNumbers && /^-(?:\d|\.\d)/.test(token));
+}
+
+function hasDeclaredOption(state: ScanState, token: string): boolean {
+  if (token.startsWith('--')) {
+    const equalsIndex = token.indexOf('=');
+    const name = token.slice(2, equalsIndex < 0 ? undefined : equalsIndex);
+    return activeNamedArgument(state, name) !== undefined
+      || (!state.command.disableHelpFlag && token === '--help')
+      || (
+        !state.command.disableVersionFlag
+        && state.command.version !== undefined
+        && token === '--version'
+      );
+  }
+  const short = token[1];
+  return short !== undefined
+    && (
+      activeShortArgument(state, short) !== undefined
+      || (!state.command.disableHelpFlag && token === '-h')
+      || (
+        !state.command.disableVersionFlag
+        && state.command.version !== undefined
+        && token === '-V'
+      )
+    );
 }
 
 function splitValue(
@@ -450,7 +515,13 @@ function storeArgumentValues(
   argument: ArgumentDefinition,
   rawValues: readonly string[],
   state: ScanState,
+  cliProvided = true,
 ): number {
+  if (cliProvided && !state.cliProvided.has(argument.name)) {
+    state.cliProvided.add(argument.name);
+    state.rawValues[argument.name] = [];
+    state.values[argument.name] = collectsValues(argument) ? [] : undefined;
+  }
   const storedRaw = state.rawValues[argument.name] ?? [];
   storedRaw.push(...rawValues);
   state.rawValues[argument.name] = storedRaw;
@@ -467,11 +538,7 @@ function storeArgumentValues(
     return storedRaw.length;
   }
 
-  const collection = argument.repeatable
-    || argument.trailingVarArg
-    || argument.maxValues === null
-    || argument.maxValues !== 1;
-  if (collection) {
+  if (collectsValues(argument)) {
     const current = state.values[argument.name];
     state.values[argument.name] = [
       ...(Array.isArray(current) ? current : []),
@@ -483,12 +550,23 @@ function storeArgumentValues(
   return storedRaw.length;
 }
 
+function collectsValues(argument: ArgumentDefinition): boolean {
+  return argument.repeatable
+    || argument.trailingVarArg
+    || argument.maxValues === null
+    || argument.maxValues !== 1;
+}
+
 function storeSwitch(argument: ArgumentDefinition, state: ScanState): void {
+  const firstCliValue = !state.cliProvided.has(argument.name);
+  state.cliProvided.add(argument.name);
   if (argument.kind === 'flag') {
     state.values[argument.name] = argument.action !== 'setFalse';
   } else {
     const current = state.values[argument.name];
-    state.values[argument.name] = typeof current === 'number' ? current + 1 : 1;
+    state.values[argument.name] = !firstCliValue && typeof current === 'number'
+      ? current + 1
+      : 1;
   }
 }
 
@@ -540,6 +618,9 @@ function findValueTarget(
     return valueTarget(state.pending.argument, currentWord, '');
   }
   if (!state.optionsEnabled) {
+    return currentPositionalTarget(state, currentWord);
+  }
+  if (acceptsOptionLookingPositional(state, currentWord)) {
     return currentPositionalTarget(state, currentWord);
   }
 
@@ -687,8 +768,11 @@ function normalizeCandidates(
       || normalized.value.includes('\0')
       || normalized.value.includes('\n')
       || normalized.value.includes('\r')
+      || normalized.value.includes('\t')
     ) {
-      throw new TypeError('A completion candidate must be a non-empty single-line value');
+      throw new TypeError(
+        'A completion candidate must be a non-empty single-line value without tabs',
+      );
     }
     return Object.freeze({
       value: normalized.value,
@@ -784,4 +868,8 @@ function freezeResult(result: DynamicCompletionResult): DynamicCompletionResult 
     candidates: Object.freeze([...result.candidates]),
     commandPath: Object.freeze([...result.commandPath]),
   });
+}
+
+function encodeProtocolField(value: string): string {
+  return Buffer.from(value).toString('hex');
 }

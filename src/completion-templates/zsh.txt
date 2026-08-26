@@ -8,6 +8,56 @@
   esac
 }
 
+{{NAME}}_option_spec() {
+  case "$1:$2" in
+{{OPTION_SPEC_CASES}}
+    *) return 1 ;;
+  esac
+}
+
+{{NAME}}_value_count() {
+  local rest="$1" delimiter="$2"
+  integer count=1
+  if [[ "$delimiter" != __NONE__ ]]; then
+    while [[ "$rest" == *"$delimiter"* ]]; do
+      rest="${rest#*"$delimiter"}"
+      ((count++))
+    done
+  fi
+  REPLY="$count"
+}
+
+{{NAME}}_decode_hex() {
+  local hex="$1" byte result=""
+  if [[ "$hex" == - || "$hex" == 00 ]]; then REPLY=""; return; fi
+  while [[ -n "$hex" ]]; do
+    printf -v byte '%b' "\\x${hex[1,2]}"
+    result+="$byte"
+    hex="${hex[3,-1]}"
+  done
+  REPLY="$result"
+}
+
+{{NAME}}_positional_spec() {
+  case "$1:$2" in
+{{POSITIONAL_SPEC_CASES}}
+    *) return 1 ;;
+  esac
+}
+
+{{NAME}}_declared_option() {
+  local token="$2"
+  case "$1:$token" in
+{{BUILTIN_OPTION_CASES}}
+  esac
+  [[ "$token" == --*=* ]] && token="${token%%=*}"
+  [[ "$token" == -?* && "$token" != --* ]] && token="${token[1,2]}"
+  case "$1:$token" in
+{{DECLARED_OPTION_CASES}}
+    *) return 1 ;;
+  esac
+}
+
 {{NAME}}_subcommand() {
   case "$1:$2" in
 {{SUBCOMMAND_CASES}}
@@ -47,23 +97,155 @@
 }
 
 {{NAME}}() {
-  local context="0" word child current previous option suffix prefix=""
-  integer index expect_value=0 options_enabled=1 positional_handled=1
+  local context="0" word child current previous option suffix prefix="" spec
+  local pending_option="" pending_delimiter="__NONE__" pending_delimiter_hex positional_key maximum cluster short attached output_prefix
+  local positional_delimiter="__NONE__" positional_delimiter_hex positional_terminator="" positional_terminator_hex positional_spec
+  integer index short_index pending_min=0 pending_max=0 pending_consumed=0 pending_require_equals=0
+  integer pending_allow_hyphen=0 pending_allow_negative=0 pending_single_raw=0 pending_raw_count=0
+  integer options_enabled=1 positional_handled=1 positional_index=0 positional_remaining=0 stop_pending=0 consume_as_positional=0 positional_allow_hyphen=0 positional_allow_negative=0 positional_repeatable=0
   local -a reply
   for ((index = 2; index < CURRENT; index++)); do
     word="${words[index]}"
-    if (( expect_value )); then expect_value=0; continue; fi
+    if [[ -n "$pending_option" ]]; then
+      stop_pending=0
+      if (( pending_allow_hyphen == 0 )) && [[ "$word" == -- || ( "$word" == -* && "$word" != - ) ]]; then
+        if (( pending_allow_negative == 0 )) || [[ "$word" != -[0-9]* && "$word" != -.[0-9]* ]]; then stop_pending=1; fi
+      fi
+      child=""
+      if (( stop_pending == 0 && options_enabled && pending_consumed >= pending_min )); then
+        child="$({{NAME}}_subcommand "$context" "$word")" || child=""
+        [[ -n "$child" ]] && stop_pending=1
+      fi
+      if (( stop_pending == 0 )); then
+        {{NAME}}_value_count "$word" "$pending_delimiter"
+        ((pending_consumed += REPLY, pending_raw_count++))
+        if (( (pending_max >= 0 && pending_consumed >= pending_max) || (pending_single_raw && pending_raw_count >= 1) )); then pending_option=""; fi
+        continue
+      fi
+      pending_option=""
+    fi
     if [[ "$word" == "--" ]]; then options_enabled=0; continue; fi
-    (( options_enabled )) || continue
-    [[ "$word" == --*=* ]] && continue
-    if {{NAME}}_takes_value "$context" "$word"; then expect_value=1; continue; fi
-    child="$({{NAME}}_subcommand "$context" "$word")" && context="$child"
+    consume_as_positional=0
+    if (( options_enabled )) && [[ "$word" == -?* && "$word" != -- ]]; then
+      if positional_spec="$({{NAME}}_positional_spec "$context" "$positional_index")"; then
+        IFS=$'\t' read maximum positional_delimiter_hex positional_allow_hyphen positional_allow_negative positional_repeatable positional_terminator_hex <<< "$positional_spec"
+        if ! {{NAME}}_declared_option "$context" "$word"; then
+          if (( positional_allow_hyphen )) || { (( positional_allow_negative )) && [[ "$word" == -[0-9]* || "$word" == -.[0-9]* ]]; }; then consume_as_positional=1; fi
+        fi
+      fi
+    fi
+    if (( options_enabled && consume_as_positional == 0 )) && [[ "$word" == --*=* ]]; then
+      option="${word%%=*}"
+      if spec="$({{NAME}}_option_spec "$context" "$option")"; then
+        IFS=$'\t' read pending_min pending_max pending_require_equals pending_delimiter_hex pending_allow_hyphen pending_allow_negative pending_single_raw <<< "$spec"
+        {{NAME}}_decode_hex "$pending_delimiter_hex"; pending_delimiter="$REPLY"
+        [[ -z "$pending_delimiter" ]] && pending_delimiter="__NONE__"
+        suffix="${word#*=}"
+        {{NAME}}_value_count "$suffix" "$pending_delimiter"
+        pending_consumed="$REPLY"
+        pending_raw_count=1
+        if (( (pending_max < 0 || pending_consumed < pending_max) && !(pending_single_raw && pending_raw_count >= 1) )); then pending_option="$option"; fi
+      fi
+      continue
+    fi
+    if (( options_enabled && consume_as_positional == 0 )) && spec="$({{NAME}}_option_spec "$context" "$word")"; then
+      IFS=$'\t' read pending_min pending_max pending_require_equals pending_delimiter_hex pending_allow_hyphen pending_allow_negative pending_single_raw <<< "$spec"
+      {{NAME}}_decode_hex "$pending_delimiter_hex"; pending_delimiter="$REPLY"
+      [[ -z "$pending_delimiter" ]] && pending_delimiter="__NONE__"
+      if (( pending_require_equals == 0 )); then
+        pending_option="$word"
+        pending_consumed=0
+        pending_raw_count=0
+      fi
+      continue
+    fi
+    if (( options_enabled && consume_as_positional == 0 )) && [[ "$word" == -?* && "$word" != --* ]]; then
+      cluster="${word[2,-1]}"
+      for ((short_index = 1; short_index <= ${#cluster}; short_index++)); do
+        short="-${cluster[short_index]}"
+        if spec="$({{NAME}}_option_spec "$context" "$short")"; then
+          IFS=$'\t' read pending_min pending_max pending_require_equals pending_delimiter_hex pending_allow_hyphen pending_allow_negative pending_single_raw <<< "$spec"
+          {{NAME}}_decode_hex "$pending_delimiter_hex"; pending_delimiter="$REPLY"
+          [[ -z "$pending_delimiter" ]] && pending_delimiter="__NONE__"
+          attached="${cluster[short_index+1,-1]}"
+          [[ "$attached" == =* ]] && attached="${attached[2,-1]}"
+          pending_consumed=0
+          pending_raw_count=0
+          if [[ -n "$attached" ]]; then
+            {{NAME}}_value_count "$attached" "$pending_delimiter"
+            pending_consumed="$REPLY"
+            pending_raw_count=1
+          fi
+          if [[ -n "$attached" || "$pending_require_equals" == 0 ]] && (( (pending_max < 0 || pending_consumed < pending_max) && !(pending_single_raw && pending_raw_count >= 1) )); then pending_option="$short"; fi
+          break
+        fi
+      done
+      continue
+    fi
+    if (( options_enabled && consume_as_positional == 0 )); then
+      child="$({{NAME}}_subcommand "$context" "$word")" && { context="$child"; positional_index=0; positional_remaining=0; continue; }
+    fi
+    [[ "$word" == -* && "$word" != - ]] && (( options_enabled && consume_as_positional == 0 )) && continue
+    if (( positional_remaining == 0 )); then
+      positional_spec="$({{NAME}}_positional_spec "$context" "$positional_index")" || continue
+      IFS=$'\t' read maximum positional_delimiter_hex positional_allow_hyphen positional_allow_negative positional_repeatable positional_terminator_hex <<< "$positional_spec"
+      {{NAME}}_decode_hex "$positional_delimiter_hex"; positional_delimiter="$REPLY"
+      [[ -z "$positional_delimiter" ]] && positional_delimiter="__NONE__"
+      {{NAME}}_decode_hex "$positional_terminator_hex"; positional_terminator="$REPLY"
+      positional_remaining="$maximum"
+    fi
+    if [[ -n "$positional_terminator" && "$word" == "$positional_terminator" ]]; then ((positional_index++)); positional_remaining=0; continue; fi
+    {{NAME}}_value_count "$word" "$positional_delimiter"
+    if (( positional_remaining > 0 )); then
+      ((positional_remaining -= REPLY))
+      if (( positional_remaining <= 0 )); then
+        (( positional_repeatable == 0 )) && ((positional_index++))
+        positional_remaining=0
+      fi
+    fi
   done
   current="${words[CURRENT]}"
   previous="${words[CURRENT-1]}"
-  if (( options_enabled )) && {{NAME}}_takes_value "$context" "$previous"; then
-    {{NAME}}_complete_value "$context" "$previous" "$current" "" || _files
-    return
+  if [[ -n "$pending_option" ]]; then
+    stop_pending=0
+    if (( pending_allow_hyphen == 0 )) && [[ "$current" == -- || ( "$current" == -* && "$current" != - ) ]]; then
+      if (( pending_allow_negative == 0 )) || [[ "$current" != -[0-9]* && "$current" != -.[0-9]* ]]; then stop_pending=1; fi
+    fi
+    if (( stop_pending == 0 && options_enabled && pending_consumed >= pending_min )); then
+      child="$({{NAME}}_subcommand "$context" "$current")" && stop_pending=1
+    fi
+    if (( stop_pending == 0 )); then
+      {{NAME}}_complete_value "$context" "$pending_option" "$current" "" || _files
+      return
+    fi
+    pending_option=""
+  fi
+  consume_as_positional=0
+  if (( options_enabled == 0 )) || [[ "$current" != -* ]]; then
+    consume_as_positional=1
+  elif (( options_enabled )) && [[ "$current" != -- ]]; then
+    if positional_spec="$({{NAME}}_positional_spec "$context" "$positional_index")"; then
+      IFS=$'\t' read maximum positional_delimiter_hex positional_allow_hyphen positional_allow_negative positional_repeatable positional_terminator_hex <<< "$positional_spec"
+      if ! {{NAME}}_declared_option "$context" "$current"; then
+        if (( positional_allow_hyphen )) || { (( positional_allow_negative )) && [[ "$current" == -[0-9]* || "$current" == -.[0-9]* ]]; }; then consume_as_positional=1; fi
+      fi
+    fi
+  fi
+  if (( options_enabled )) && [[ "$current" == -?* && "$current" != --* ]]; then
+    cluster="${current[2,-1]}"
+    for ((short_index = 1; short_index <= ${#cluster}; short_index++)); do
+      short="-${cluster[short_index]}"
+      if {{NAME}}_takes_value "$context" "$short"; then
+        attached="${cluster[short_index+1,-1]}"
+        output_prefix="-${cluster[1,short_index]}"
+        if [[ "$attached" == =* ]]; then attached="${attached[2,-1]}"; output_prefix+="="; fi
+        if [[ -n "$attached" ]]; then
+          {{NAME}}_complete_value "$context" "$short" "$attached" "$output_prefix"
+          return
+        fi
+        break
+      fi
+    done
   fi
   if (( options_enabled )) && [[ "$current" == --*=* ]]; then
     option="${current%%=*}"
@@ -74,15 +256,16 @@
       return
     fi
   fi
-  if [[ "$current" != -* ]]; then
-    {{NAME}}_complete_value "$context" "@positional" "$current" ""
+  if (( consume_as_positional )); then
+    positional_key="@positional:$positional_index"
+    {{NAME}}_complete_value "$context" "$positional_key" "$current" ""
     positional_handled=$?
   fi
-  if (( options_enabled )); then
+  if (( options_enabled && consume_as_positional == 0 )); then
     {{NAME}}_candidates "$context"
     (( ${#reply[@]} )) && compadd -Q -- "${reply[@]}"
   fi
-  if (( positional_handled != 0 )) && [[ "$current" != -* ]] && {{NAME}}_allows_files "$context"; then
+  if (( positional_handled != 0 && consume_as_positional )) && {{NAME}}_allows_files "$context:$positional_index"; then
     _files
   fi
 }

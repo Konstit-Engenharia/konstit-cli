@@ -82,11 +82,10 @@ export const parsers = Object.freeze({
   float: createValueParser('NUMBER', finiteNumber),
 
   bigint: createValueParser('INTEGER', (input) => {
-    try {
-      return BigInt(input);
-    } catch {
+    if (!/^[+-]?\d+$/.test(input)) {
       throw new Error('expected an integer');
     }
+    return BigInt(input);
   }),
 
   boolean: createValueParser(

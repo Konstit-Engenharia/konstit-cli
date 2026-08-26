@@ -47,6 +47,9 @@ describe('built-in value parsers', () => {
       'expected a finite number',
     );
     expect(() => parsers.bigint.parse('1.5')).toThrow('expected an integer');
+    for (const input of ['', '   ', '0x10', '1e3']) {
+      expect(() => parsers.bigint.parse(input)).toThrow('expected an integer');
+    }
     expect(() => parsers.boolean.parse('sometimes')).toThrow(
       'expected true or false',
     );

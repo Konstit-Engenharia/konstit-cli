@@ -236,7 +236,7 @@ function copyCommand(
   patch: Partial<CommandDefinition>,
 ): CommandDefinition {
   const merged = { ...definition, ...patch };
-  return Object.freeze({
+  const copied = Object.freeze({
     ...merged,
     aliases: Object.freeze(
       merged.aliases.map((alias) => Object.freeze({ ...alias })),
@@ -293,6 +293,8 @@ function copyCommand(
       ),
     ),
   });
+  validateBuiltInCollisions(copied, []);
+  return copied;
 }
 
 function toValueConditions(
@@ -436,17 +438,6 @@ export class Command<
   }
 
   version(version: string): Command<Name, Fields, Subcommands, SubcommandRequired, Groups> {
-    const definition = getCommandDefinition(this);
-    if (
-      definition.arguments.some(
-        (argument) =>
-          argument.short === 'V'
-          || argument.long === 'version'
-          || argument.aliases.includes('version'),
-      )
-    ) {
-      throw new TypeError('Version flags conflict with an existing argument');
-    }
     return this.with({ version });
   }
 
@@ -919,6 +910,9 @@ function validateArgument(
       throw new TypeError(`Positional '${argument.name}' cannot have option names`);
     }
     const positionals = all.filter(({ kind }) => kind === 'positional');
+    if (argument.maxValues === 0) {
+      throw new TypeError(`Positional '${argument.name}' must accept at least one value`);
+    }
     const previous = positionals.at(-1);
     if (
       previous !== undefined
@@ -979,6 +973,43 @@ function validateArgument(
   }
 }
 
+function validateBuiltInCollisions(
+  definition: CommandDefinition,
+  inheritedGlobals: readonly ArgumentDefinition[],
+): void {
+  const available = [...definition.arguments, ...inheritedGlobals];
+  if (
+    !definition.disableHelpFlag && available.some(
+      (argument) =>
+        argument.short === 'h'
+        || argument.long === 'help'
+        || argument.aliases.includes('help'),
+    )
+  ) {
+    throw new TypeError('Help flags conflict with an existing argument');
+  }
+  if (
+    definition.version !== undefined
+    && !definition.disableVersionFlag
+    && available.some(
+      (argument) =>
+        argument.short === 'V'
+        || argument.long === 'version'
+        || argument.aliases.includes('version'),
+    )
+  ) {
+    throw new TypeError('Version flags conflict with an existing argument');
+  }
+
+  const globals = [
+    ...inheritedGlobals,
+    ...definition.arguments.filter(({ global }) => global),
+  ];
+  for (const child of definition.subcommands) {
+    validateBuiltInCollisions(child, globals);
+  }
+}
+
 interface ParseState {
   readonly values: Record<string, unknown>;
   readonly provided: Set<string>;
@@ -1007,7 +1038,7 @@ function parseDefinition(
     positionalIndex: 0,
   };
   const positionals = definition.arguments.filter(({ kind }) => kind === 'positional');
-  initializeValues(definition, state, path);
+  initializeValues(definition, state);
   validateGlobalArguments(definition, inheritedGlobals);
   const localGlobals = definition.arguments
     .filter(({ global }) => global)
@@ -1056,7 +1087,22 @@ function parseDefinition(
         output: `${definition.name} ${definition.version}\n`,
       });
     }
-    if (optionsEnabled && token.startsWith('--') && token.length > 2) {
+    const positionalArgument = currentPositional(positionals, state);
+    const consumeAsPositional = optionsEnabled
+      && positionalArgument !== undefined
+      && acceptsOptionLookingPositional(
+        positionalArgument,
+        token,
+        definition,
+        state,
+        inheritedGlobals,
+      );
+    if (
+      optionsEnabled
+      && !consumeAsPositional
+      && token.startsWith('--')
+      && token.length > 2
+    ) {
       index = parseLongOption(
         definition,
         argv,
@@ -1068,7 +1114,12 @@ function parseDefinition(
       );
       continue;
     }
-    if (optionsEnabled && token.startsWith('-') && token !== '-') {
+    if (
+      optionsEnabled
+      && !consumeAsPositional
+      && token.startsWith('-')
+      && token !== '-'
+    ) {
       index = parseShortOptions(
         definition,
         argv,
@@ -1081,7 +1132,7 @@ function parseDefinition(
       continue;
     }
 
-    if (optionsEnabled) {
+    if (optionsEnabled && !consumeAsPositional) {
       if (
         token === 'help'
         && definition.subcommands.length > 0
@@ -1116,7 +1167,6 @@ function parseDefinition(
       }
     }
 
-    const positionalArgument = currentPositional(positionals, state);
     if (positionalArgument === undefined) {
       const suggestion = suggestToken(
         token,
@@ -1154,6 +1204,7 @@ function parseDefinition(
     index += 1;
   }
 
+  applyEnvironmentFallbacks(definition, state, path);
   applyOverrides(definition, state);
   validateParsedValues(
     definition,
@@ -1175,7 +1226,6 @@ function parseDefinition(
 function initializeValues(
   definition: CommandDefinition,
   state: ParseState,
-  path: readonly string[],
 ): void {
   for (const argument of definition.arguments) {
     if (argument.repeatable || argument.trailingVarArg) {
@@ -1185,29 +1235,119 @@ function initializeValues(
     } else {
       state.values[argument.name] = undefined;
     }
-
-    if (argument.env !== undefined) {
-      const raw = Bun.env[argument.env];
-      if (raw !== undefined) {
-        if (argument.kind === 'flag') {
-          state.values[argument.name] = parseWith(argument, raw, `env:${argument.env}`, definition, path, parsers.boolean);
-        } else if (argument.kind === 'count') {
-          state.values[argument.name] = parseWith(argument, raw, `env:${argument.env}`, definition, path, parsers.integer);
-        } else {
-          storeRawValues(
-            argument,
-            splitRawValue(argument, raw),
-            `env:${argument.env}`,
-            definition,
-            path,
-            state,
-          );
-          state.cliProvided.delete(argument.name);
-        }
-        state.provided.add(argument.name);
-      }
-    }
   }
+}
+
+function applyEnvironmentFallbacks(
+  definition: CommandDefinition,
+  state: ParseState,
+  path: readonly string[],
+): void {
+  const overriddenTargets = new Set(
+    definition.overrides
+      .filter(({ source }) => state.cliProvided.has(source))
+      .map(({ target }) => target),
+  );
+  for (const argument of definition.arguments) {
+    if (
+      argument.env === undefined
+      || state.cliProvided.has(argument.name)
+      || overriddenTargets.has(argument.name)
+    ) {
+      continue;
+    }
+    const raw = Bun.env[argument.env];
+    if (raw === undefined) {
+      continue;
+    }
+    const display = `env:${argument.env}`;
+    if (argument.kind === 'flag') {
+      state.values[argument.name] = parseWith(
+        argument,
+        raw,
+        display,
+        definition,
+        path,
+        parsers.boolean,
+        true,
+      );
+      state.provided.add(argument.name);
+      continue;
+    }
+    if (argument.kind === 'count') {
+      const count = parseWith(
+        argument,
+        raw,
+        display,
+        definition,
+        path,
+        parsers.integer,
+        true,
+      );
+      if (typeof count !== 'number' || count < 0) {
+        throw commandError(
+          ErrorKind.InvalidValue,
+          `invalid value for '${display}'`,
+          definition,
+          path,
+        );
+      }
+      state.values[argument.name] = count;
+      state.provided.add(argument.name);
+      continue;
+    }
+
+    const values = splitRawValue(argument, raw);
+    const delimiterCanExpandSingle = argument.repeatable && argument.maxValues === 1;
+    if (
+      !delimiterCanExpandSingle
+      && argument.maxValues !== null
+      && values.length > argument.maxValues
+    ) {
+      throw commandError(
+        ErrorKind.TooManyValues,
+        `argument '${display}' accepts at most ${argument.maxValues} value(s)`,
+        definition,
+        path,
+      );
+    }
+    storeRawValues(argument, values, display, definition, path, state, true);
+    state.cliProvided.delete(argument.name);
+  }
+}
+
+function acceptsOptionLookingPositional(
+  argument: ArgumentDefinition,
+  token: string,
+  definition: CommandDefinition,
+  state: ParseState,
+  inheritedGlobals: readonly GlobalBinding[],
+): boolean {
+  if (token === '--' || token === '-' || !token.startsWith('-')) {
+    return false;
+  }
+  if (hasDeclaredOption(token, definition, state, inheritedGlobals)) {
+    return false;
+  }
+  return argument.allowHyphenValues
+    || (argument.allowNegativeNumbers && isNegativeNumberToken(token));
+}
+
+function hasDeclaredOption(
+  token: string,
+  definition: CommandDefinition,
+  state: ParseState,
+  inheritedGlobals: readonly GlobalBinding[],
+): boolean {
+  const bindings = availableArgumentBindings(definition, state, inheritedGlobals);
+  if (token.startsWith('--')) {
+    const name = token.slice(2).split('=', 1)[0];
+    return bindings.some(
+      ({ argument }) => argument.long === name || argument.aliases.includes(name ?? ''),
+    );
+  }
+  const short = Array.from(token.slice(1))[0];
+  return short !== undefined && bindings.some(({ argument }) => argument.short === short);
 }
 
 function currentPositional(
@@ -1603,7 +1743,15 @@ function consumeOptionValues(
     }
     if (
       shouldStopOptionValues(argument, raw)
-      || (values.length >= argument.minValues && hasExactSubcommand(definition, raw))
+      || (
+        values.length >= argument.minValues
+        && resolveSubcommandWithArguments(
+            definition,
+            raw,
+            path,
+            inheritedArguments,
+          ) !== undefined
+      )
     ) {
       break;
     }
@@ -1627,10 +1775,14 @@ function shouldStopOptionValues(argument: ArgumentDefinition, token: string): bo
   if (argument.allowHyphenValues) {
     return false;
   }
-  if (argument.allowNegativeNumbers && /^-\d/.test(token)) {
+  if (argument.allowNegativeNumbers && isNegativeNumberToken(token)) {
     return false;
   }
   return token === '--' || (token.startsWith('-') && token !== '-');
+}
+
+function isNegativeNumberToken(token: string): boolean {
+  return /^-(?:\d|\.\d)/.test(token);
 }
 
 function splitRawValue(argument: ArgumentDefinition, raw: string): readonly string[] {
@@ -1670,10 +1822,21 @@ function storeRawValues(
   definition: CommandDefinition,
   path: readonly string[],
   state: ParseState,
+  redactRaw = false,
 ): void {
   storeParsedValues(
     argument,
-    rawValues.map((raw) => parseWith(argument, raw, display, definition, path)),
+    rawValues.map((raw) =>
+      parseWith(
+        argument,
+        raw,
+        display,
+        definition,
+        path,
+        argument.parser,
+        redactRaw,
+      )
+    ),
     display,
     definition,
     path,
@@ -1807,6 +1970,7 @@ function parseWith(
   definition: CommandDefinition,
   path: readonly string[],
   overrideParser = argument.parser,
+  redactRaw = false,
 ): unknown {
   if (overrideParser === undefined) {
     throw new Error(`Argument '${argument.name}' has no value parser`);
@@ -1817,7 +1981,9 @@ function parseWith(
     const detail = cause instanceof Error ? cause.message : String(cause);
     throw commandError(
       ErrorKind.InvalidValue,
-      `invalid value '${raw}' for '${display}': ${detail}`,
+      redactRaw
+        ? `invalid value for '${display}'`
+        : `invalid value '${raw}' for '${display}': ${detail}`,
       definition,
       path,
     );
@@ -2153,19 +2319,29 @@ function renderUsageText(
     return definition.overrideUsage;
   }
   const allArguments = [...definition.arguments, ...inheritedArguments];
-  const options = allArguments.some(({ kind, hidden }) => kind !== 'positional' && !hidden);
+  const requiredOptions = allArguments.filter(
+    (argument) =>
+      argument.kind !== 'positional'
+      && argument.presence === 'required'
+      && !argument.hidden,
+  );
+  const options = allArguments.some(
+    ({ kind, presence, hidden }) =>
+      kind !== 'positional'
+      && presence !== 'required'
+      && !hidden,
+  );
+  const requiredOptionUsage = requiredOptions.map((argument) => `${displayArgument(argument)}${renderValueCount(argument)}`);
   const positionalUsage = definition.arguments
     .filter(({ kind, hidden }) => kind === 'positional' && !hidden)
     .map((argument) => {
       const name = argument.valueName ?? argument.name.toUpperCase();
-      const rendered = argument.presence === 'required' ? `<${name}>` : `[${name}]`;
-      return argument.repeatable || argument.trailingVarArg || argument.maxValues !== 1
-        ? `${rendered}...`
-        : rendered;
+      return renderPositionalCount(argument, name);
     });
   return [
     path.join(' '),
     ...(options ? ['[OPTIONS]'] : []),
+    ...requiredOptionUsage,
     ...positionalUsage,
     ...(definition.subcommands.some(({ hidden }) => !hidden) ? ['<COMMAND>'] : []),
   ].join(' ');
@@ -2208,10 +2384,7 @@ function renderHelp(
     lines.push('', 'Arguments:');
     const entries: Array<readonly [string, string]> = positionals.map((argument) => {
       const name = argument.valueName ?? argument.name.toUpperCase();
-      const base = argument.presence === 'required' ? `<${name}>` : `[${name}]`;
-      const label = argument.repeatable || argument.trailingVarArg || argument.maxValues !== 1
-        ? `${base}...`
-        : base;
+      const label = renderPositionalCount(argument, name);
       return [`  ${label}`, annotateHelp(argument)] as const;
     });
     pushAligned(lines, entries);
@@ -2225,13 +2398,11 @@ function renderHelp(
       ...(argument.short === undefined ? [] : [`-${argument.short}`]),
       ...(argument.long === undefined ? [] : [`--${argument.long}`]),
     ].join(', ');
-    const valueName = argument.valueName ?? argument.parser?.label ?? 'VALUE';
-    const repeatedValue = argument.repeatable || argument.maxValues !== 1 ? '...' : '';
     const value = argument.kind !== 'option'
       ? ''
       : argument.requireEquals
-      ? `${argument.minValues === 0 ? '[' : ''}=<${valueName}>${repeatedValue}${argument.minValues === 0 ? ']' : ''}`
-      : ` <${valueName}>${repeatedValue}`;
+      ? renderEqualsValueCount(argument)
+      : renderValueCount(argument);
     return [`  ${names}${value}`, annotateHelp(argument)] as const;
   });
   if (!definition.disableHelpFlag) {
@@ -2269,6 +2440,97 @@ function renderHelp(
     lines.push('', definition.afterHelp);
   }
   return `${lines.join('\n')}\n`;
+}
+
+function valueLabel(argument: ArgumentDefinition): string {
+  return argument.valueName ?? argument.parser?.label ?? 'VALUE';
+}
+
+const expandedValueCountLimit = 8;
+
+function compactValueCount(
+  minimum: number,
+  maximum: number | null,
+): string | undefined {
+  if (
+    minimum <= expandedValueCountLimit
+    && (maximum === null || maximum <= expandedValueCountLimit)
+  ) {
+    return undefined;
+  }
+  if (maximum === null) {
+    return `{${minimum}..}`;
+  }
+  return minimum === maximum ? `{${minimum}}` : `{${minimum}..${maximum}}`;
+}
+
+function renderValueCount(
+  argument: ArgumentDefinition,
+  minimum = argument.minValues,
+): string {
+  if (argument.kind !== 'option' || argument.maxValues === 0) {
+    return '';
+  }
+  const label = `<${valueLabel(argument)}>`;
+  const compact = compactValueCount(minimum, argument.maxValues);
+  if (compact !== undefined) {
+    return ` ${label}${compact}${argument.repeatable ? '...' : ''}`;
+  }
+  if (argument.maxValues === null) {
+    if (minimum === 0) {
+      return ` [${label}...]`;
+    }
+    const required = Array<string>(Math.max(0, minimum - 1)).fill(label);
+    return ` ${[...required, `${label}...`].join(' ')}`;
+  }
+  const required = Array<string>(minimum).fill(label);
+  const optional = Array<string>(argument.maxValues - minimum).fill(
+    `[${label}]`,
+  );
+  const values = [...required, ...optional];
+  const repeated = argument.repeatable ? '...' : '';
+  return values.length === 0 ? '' : ` ${values.join(' ')}${repeated}`;
+}
+
+function renderEqualsValueCount(argument: ArgumentDefinition): string {
+  const minimum = argument.minValues === 0 && argument.maxValues !== 0
+    ? 1
+    : argument.minValues;
+  const values = renderValueCount(argument, minimum).trimStart();
+  return argument.minValues === 0 ? `[=${values}]` : `=${values}`;
+}
+
+function renderPositionalCount(
+  argument: ArgumentDefinition,
+  name: string,
+): string {
+  const label = `<${name}>`;
+  const optionalLabel = `[${name}]`;
+  const compact = compactValueCount(argument.minValues, argument.maxValues);
+  if (compact !== undefined) {
+    const compactLabel = argument.presence === 'required' ? label : optionalLabel;
+    return `${compactLabel}${compact}${argument.repeatable ? '...' : ''}`;
+  }
+  if (argument.maxValues === null) {
+    if (argument.presence !== 'required') {
+      if (argument.minValues <= 1) {
+        return `${optionalLabel}...`;
+      }
+      const values = Array<string>(argument.minValues - 1).fill(label);
+      return `[${[...values, `${label}...`].join(' ')}]`;
+    }
+    const required = Array<string>(
+      Math.max(0, argument.minValues - 1),
+    ).fill(label);
+    return [...required, `${label}...`].join(' ');
+  }
+  const requiredCount = argument.presence === 'required' ? argument.minValues : 0;
+  const required = Array<string>(requiredCount).fill(label);
+  const optional = Array<string>(
+    argument.maxValues - requiredCount,
+  ).fill(optionalLabel);
+  const repeated = argument.repeatable ? '...' : '';
+  return `${[...required, ...optional].join(' ')}${repeated}`;
 }
 
 function annotateHelp(argument: ArgumentDefinition): string {

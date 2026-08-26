@@ -12,6 +12,7 @@ import {
   command,
   option,
   parsers,
+  positional,
 } from '../src';
 import { generateCompletion } from '../src/completion';
 
@@ -25,6 +26,8 @@ test.skipIf(!supportsTerminal)('Bash completes an option value in a real termina
 
   const cli = command('demo').arg(
     option('mode', parsers.enum(['dev', 'prod'])),
+  ).arg(
+    positional('literal', parsers.enum(['--literal'])).allowHyphenValues(),
   );
   const directory = await mkdtemp(join(tmpdir(), 'bun-clap-terminal-'));
   const rcFile = join(directory, 'bashrc');
@@ -82,6 +85,12 @@ test.skipIf(!supportsTerminal)('Bash completes an option value in a real termina
     await waitFor('demo --mode dev ');
 
     expect(output).toContain('demo --mode dev ');
+
+    output = '';
+    terminal.write('\x15demo -- --l\t');
+    await waitFor('demo -- --literal ');
+
+    expect(output).toContain('demo -- --literal ');
   } finally {
     terminal.close();
     await subprocess.exited;

@@ -1,28 +1,179 @@
 # fish completion for {{EXECUTABLE}}
+function {{NAME}}_decode --argument-names hex
+    if test "$hex" = -; or test "$hex" = 00
+        return
+    end
+    set -l result
+    while test (string length -- "$hex") -gt 0
+        set -l pair (string sub -s 1 -l 2 -- "$hex")
+        set -a result (printf "\\x$pair")
+        set hex (string sub -s 3 -- "$hex")
+    end
+    string join '' -- $result
+end
+
 function {{NAME}}
     set -l tokens (commandline -opc)
     set -l context 0
-    set -l expect_value 0
+    set -l pending_option
+    set -l pending_min 0
+    set -l pending_max 0
+    set -l pending_consumed 0
+    set -l pending_raw_count 0
+    set -l pending_delimiter
+    set -l pending_delimiter_hex
+    set -l pending_allow_hyphen 0
+    set -l pending_allow_negative 0
+    set -l pending_single_raw 0
     set -l options_enabled 1
+    set -l positional_index 0
+    set -l positional_remaining 0
+    set -l positional_delimiter
+    set -l positional_delimiter_hex
+    set -l positional_allow_hyphen 0
+    set -l positional_allow_negative 0
+    set -l positional_repeatable 0
+    set -l positional_terminator
+    set -l positional_terminator_hex
     for word in $tokens[2..-1]
-        if test $expect_value -eq 1
-            set expect_value 0
-            continue
+        if test -n "$pending_option"
+            set -l stop_pending 0
+            if test $pending_allow_hyphen -eq 0; and string match -qr '^-.+' -- "$word"
+                if test $pending_allow_negative -eq 0; or not string match -qr '^-(?:[0-9]|\.[0-9])' -- "$word"
+                    set stop_pending 1
+                end
+            end
+            if test $stop_pending -eq 0; and test $pending_consumed -ge $pending_min
+                switch "$context:$word"
+{{PENDING_SUBCOMMAND_CASES}}
+                end
+            end
+            if test $stop_pending -eq 0
+                set -l value_count 1
+                if test -n "$pending_delimiter"
+                    set value_count (count (string split -- "$pending_delimiter" "$word"))
+                end
+                set pending_consumed (math $pending_consumed + $value_count)
+                set pending_raw_count (math $pending_raw_count + 1)
+                if test $pending_max -ge 0; and test $pending_consumed -ge $pending_max; or test $pending_single_raw -eq 1; and test $pending_raw_count -ge 1
+                    set pending_option
+                end
+                continue
+            end
+            set pending_option
         end
         if test "$word" = --
             set options_enabled 0
             continue
         end
-        test $options_enabled -eq 1; or continue
-        string match -qr '^--[^=]+=' -- "$word"; and continue
-        switch "$context:$word"
-{{TAKES_VALUE_CASES}}
+        set -l consume_as_positional 0
+        if test $options_enabled -eq 1; and string match -qr '^-.+' -- "$word"
+            if test $positional_remaining -eq 0
+                switch "$context:$positional_index"
+{{POSITIONAL_SPEC_CASES}}
+                end
+                set positional_delimiter ({{NAME}}_decode "$positional_delimiter_hex")
+                set positional_terminator ({{NAME}}_decode "$positional_terminator_hex")
+            end
+            set -l declared_option 0
+            switch "$context:$word"
+{{BUILTIN_OPTION_CASES}}
+            end
+            set -l declared_word "$word"
+            if string match -qr '^--[^=]+=' -- "$word"
+                set declared_word (string split -m 1 = -- "$word")[1]
+            else if string match -qr '^-[^-]' -- "$word"
+                set declared_word (string sub -s 1 -l 2 -- "$word")
+            end
+            switch "$context:$declared_word"
+{{DECLARED_OPTION_CASES}}
+            end
+            if test $declared_option -eq 0
+                if test $positional_allow_hyphen -eq 1
+                    set consume_as_positional 1
+                else if test $positional_allow_negative -eq 1
+                    string match -qr '^-(?:[0-9]|\\.[0-9])' -- "$word"; and set consume_as_positional 1
+                end
+            end
         end
-        switch "$context:$word"
+        if test $options_enabled -eq 1; and test $consume_as_positional -eq 0
+            set -l option_word "$word"
+            set -l attached
+            if string match -qr '^--[^=]+=' -- "$word"
+                set -l parts (string split -m 1 = -- "$word")
+                set option_word $parts[1]
+                set attached $parts[2]
+            end
+            set -l new_option
+            if string match -qr '^-[^-]' -- "$word"
+                set -l cluster (string sub -s 2 -- "$word")
+                set -l characters (string split '' -- "$cluster")
+                for short_index in (seq (count $characters))
+                    set option_word -$characters[$short_index]
+                    set attached (string join '' -- $characters[(math $short_index + 1)..-1])
+                    string match -qr '^=' -- "$attached"; and set attached (string sub -s 2 -- "$attached")
+                    switch "$context:$option_word"
+{{OPTION_SPEC_CASES}}
+                    end
+                    test -n "$new_option"; and break
+                end
+            else
+                switch "$context:$option_word"
+{{OPTION_SPEC_CASES}}
+                end
+            end
+            if test -n "$new_option"
+                set pending_delimiter ({{NAME}}_decode "$pending_delimiter_hex")
+                set pending_option $new_option
+                set pending_consumed 0
+                set pending_raw_count 0
+                if test -n "$attached"
+                    set -l value_count 1
+                    if test -n "$pending_delimiter"
+                        set value_count (count (string split -- "$pending_delimiter" "$attached"))
+                    end
+                    set pending_consumed $value_count
+                    set pending_raw_count 1
+                end
+                if test $pending_require_equals -eq 1; and test -z "$attached"
+                    set pending_option
+                else if test $pending_max -ge 0; and test $pending_consumed -ge $pending_max; or test $pending_single_raw -eq 1; and test $pending_raw_count -ge 1
+                    set pending_option
+                end
+                continue
+            end
+        end
+        if test $options_enabled -eq 1; and test $consume_as_positional -eq 0
+            switch "$context:$word"
 {{SUBCOMMAND_CASES}}
+            end
+        end
+        string match -qr '^-' -- "$word"; and test $options_enabled -eq 1; and test $consume_as_positional -eq 0; and continue
+        if test $positional_remaining -eq 0
+            switch "$context:$positional_index"
+{{POSITIONAL_SPEC_CASES}}
+            end
+            set positional_delimiter ({{NAME}}_decode "$positional_delimiter_hex")
+            set positional_terminator ({{NAME}}_decode "$positional_terminator_hex")
+        end
+        if test -n "$positional_terminator"; and test "$word" = "$positional_terminator"
+            set positional_index (math $positional_index + 1)
+            set positional_remaining 0
+            continue
+        end
+        if test $positional_remaining -gt 0
+            set -l positional_count 1
+            if test -n "$positional_delimiter"
+                set positional_count (count (string split -- "$positional_delimiter" "$word"))
+            end
+            set positional_remaining (math $positional_remaining - $positional_count)
+        end
+        if test $positional_remaining -le 0; and test $positional_remaining -ne -1
+            test $positional_repeatable -eq 0; and set positional_index (math $positional_index + 1)
+            set positional_remaining 0
         end
     end
-    echo $context
+    echo "$context:$positional_index"
 end
 
 {{REGISTRATIONS}}

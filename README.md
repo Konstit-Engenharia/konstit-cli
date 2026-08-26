@@ -34,10 +34,11 @@ Requires Bun 1.4 or newer.
 bun add @konstit/cli
 ```
 
-This repository can be used directly while the package is not published:
+To use a local checkout before the package is published, pass the checkout's
+absolute path from the project where you install it:
 
 ```sh
-bun add ./bun-clap
+bun add /absolute/path/to/konstit-cli
 ```
 
 ## Quick start
@@ -426,5 +427,3 @@ bun run examples/gitlike.ts --help
 ```
 
 The Bun configuration requires 100% line and function coverage.
-
-The reference Rust repository is cloned in the sibling `clap/` directory.

@@ -302,7 +302,7 @@ describe('validation and errors', () => {
     if (!missing.ok) {
       expect(missing.error).toBeInstanceOf(CliError);
       expect(missing.error.kind).toBe(ErrorKind.MissingRequiredArgument);
-      expect(missing.error.output).toContain('Usage: serve [OPTIONS]');
+      expect(missing.error.output).toContain('Usage: serve --port <1..65535>');
     }
 
     const invalid = cli.tryParse(['--port', '70000']);

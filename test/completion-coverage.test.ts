@@ -38,7 +38,7 @@ describe('completion edge behavior', () => {
     } finally {
       write.mockRestore();
     }
-    expect(output).toBe('react\nredis\n');
+    expect(output).toBe('7265616374\t\n7265646973\t\n');
   });
 
   test('writes nothing when a request has no candidates', async () => {
