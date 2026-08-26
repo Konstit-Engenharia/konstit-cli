@@ -1,4 +1,4 @@
-declare module "*.txt" {
+declare module '*.txt' {
   const contents: string;
   export default contents;
 }

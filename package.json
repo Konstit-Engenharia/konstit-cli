@@ -30,7 +30,12 @@
     "test": "bun test --parallel",
     "coverage": "bun test --coverage",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "check": "bun run --parallel typecheck coverage build"
+    "check": "bun run --parallel typecheck coverage build",
+    "format": "dprint fmt",
+    "tsc": "bunx --bun tsc --noEmit --skipLibCheck",
+    "lint": "bun run --parallel tsc lint:biome lint:oxlint",
+    "lint:biome": "bunx @biomejs/biome check",
+    "lint:oxlint": "bunx oxlint --type-aware"
   },
   "keywords": [
     "bun",
@@ -48,7 +53,12 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "typescript": "^5.9.0"
+    "typescript": "^5.9.0",
+    "@biomejs/biome": "2.5.10",
+    "dprint": "0.56.1",
+    "mitata": "1.0.34",
+    "oxlint": "1.80.0",
+    "oxlint-tsgolint": "7.0.2001"
   },
   "peerDependencies": {
     "typescript": ">=5.5"

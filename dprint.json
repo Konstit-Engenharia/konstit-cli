@@ -28,6 +28,7 @@
   "markdown": {},
   "toml": {},
   "excludes": [
+    "**/dist",
     "**/.cache",
     "**/.vscode",
     "**/bin",

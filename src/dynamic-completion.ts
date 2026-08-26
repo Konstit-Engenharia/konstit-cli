@@ -1,10 +1,10 @@
-import type { ArgumentDefinition } from "./argument";
+import type { ArgumentDefinition } from './argument';
 import {
   getCommandDefinition,
   type CommandDefinition,
   type CommandType,
-} from "./command";
-import type { CompletionValueHint } from "./parser";
+} from './command';
+import type { CompletionValueHint } from './parser';
 
 /** A completion returned by a dynamic provider. */
 export interface DynamicCompletionCandidate {
@@ -118,7 +118,7 @@ export async function resolveDynamicCompletion(
   validateCursor(cursor, argv.length);
 
   const input = Object.freeze([...argv]);
-  const currentWord = input[cursor] ?? "";
+  const currentWord = input[cursor] ?? '';
   const filter = options.filter ?? true;
   const state = createScanState(getCommandDefinition(configuredCommand));
   scanWords(state, input.slice(0, cursor));
@@ -135,16 +135,16 @@ export async function resolveDynamicCompletion(
   }
 
   const candidates: DynamicCompletionCandidate[] = [];
-  if (currentWord.length === 0 || currentWord.startsWith("-")) {
+  if (currentWord.length === 0 || currentWord.startsWith('-')) {
     candidates.push(...namedCandidates(state));
   }
-  if (!currentWord.startsWith("-")) {
+  if (!currentWord.startsWith('-')) {
     candidates.push(...subcommandCandidates(state));
     const positional = currentPositional(state);
     if (positional !== undefined) {
       const positionalResult = await completeArgument(
         state,
-        { argument: positional, current: currentWord, outputPrefix: "" },
+        { argument: positional, current: currentWord, outputPrefix: '' },
         input,
         cursor,
         filter,
@@ -180,7 +180,7 @@ export async function runDynamicCompletionRequest(
     options.cursor === undefined ? {} : { cursor: options.cursor },
   );
   if (result.candidates.length > 0) {
-    const output = `${result.candidates.map(({ value }) => value).join("\n")}\n`;
+    const output = `${result.candidates.map(({ value }) => value).join('\n')}\n`;
     (options.stdout ?? ((text: string) => process.stdout.write(text)))(output);
   }
   return 0;
@@ -188,7 +188,7 @@ export async function runDynamicCompletionRequest(
 
 function validateCursor(cursor: number, argvLength: number): void {
   if (!Number.isSafeInteger(cursor) || cursor < 0 || cursor > argvLength) {
-    throw new RangeError("The completion cursor must be an argv index or argv.length");
+    throw new RangeError('The completion cursor must be an argv index or argv.length');
   }
 }
 
@@ -214,7 +214,7 @@ function initializeArguments(
   for (const argument of argumentsToInitialize) {
     if (argument.repeatable || argument.trailingVarArg) {
       state.values[argument.name] = [];
-    } else if (argument.presence === "default") {
+    } else if (argument.presence === 'default') {
       state.values[argument.name] = argument.defaultValue;
     } else {
       state.values[argument.name] = undefined;
@@ -224,14 +224,14 @@ function initializeArguments(
       ? undefined
       : Bun.env[argument.env];
     if (environmentValue !== undefined) {
-      if (argument.kind === "flag") {
+      if (argument.kind === 'flag') {
         const normalized = environmentValue.toLowerCase();
-        if (["1", "true", "yes", "on"].includes(normalized)) {
+        if (['1', 'true', 'yes', 'on'].includes(normalized)) {
           state.values[argument.name] = true;
-        } else if (["0", "false", "no", "off"].includes(normalized)) {
+        } else if (['0', 'false', 'no', 'off'].includes(normalized)) {
           state.values[argument.name] = false;
         }
-      } else if (argument.kind === "count") {
+      } else if (argument.kind === 'count') {
         const count = Number(environmentValue);
         if (Number.isSafeInteger(count) && count >= 0) {
           state.values[argument.name] = count;
@@ -247,7 +247,9 @@ function scanWords(state: ScanState, words: readonly string[]): void {
   let index = 0;
   while (index < words.length) {
     const word = words[index];
-    if (word === undefined) break;
+    if (word === undefined) {
+      break;
+    }
 
     if (state.pending !== undefined) {
       if (word === state.pending.argument.valueTerminator) {
@@ -263,17 +265,17 @@ function scanWords(state: ScanState, words: readonly string[]): void {
       state.pending = undefined;
     }
 
-    if (state.optionsEnabled && word === "--") {
+    if (state.optionsEnabled && word === '--') {
       state.optionsEnabled = false;
       index += 1;
       continue;
     }
-    if (state.optionsEnabled && word.startsWith("--") && word.length > 2) {
+    if (state.optionsEnabled && word.startsWith('--') && word.length > 2) {
       scanLongOption(state, word);
       index += 1;
       continue;
     }
-    if (state.optionsEnabled && word.startsWith("-") && word !== "-") {
+    if (state.optionsEnabled && word.startsWith('-') && word !== '-') {
       scanShortOptions(state, word);
       index += 1;
       continue;
@@ -295,13 +297,15 @@ function scanWords(state: ScanState, words: readonly string[]): void {
       } else {
         const count = storeArgumentValues(positional, splitValue(positional, word), state);
         if (
-          !positional.repeatable &&
-          positional.maxValues !== null &&
-          count >= positional.maxValues
+          !positional.repeatable
+          && positional.maxValues !== null
+          && count >= positional.maxValues
         ) {
           state.positionalIndex += 1;
         }
-        if (positional.trailingVarArg) state.optionsEnabled = false;
+        if (positional.trailingVarArg) {
+          state.optionsEnabled = false;
+        }
       }
     }
     index += 1;
@@ -318,8 +322,8 @@ function activeNamedArgument(
 ): ArgumentDefinition | undefined {
   return activeArguments(state).find(
     (argument) =>
-      argument.kind !== "positional" &&
-      (argument.long === long || argument.aliases.includes(long)),
+      argument.kind !== 'positional'
+      && (argument.long === long || argument.aliases.includes(long)),
   );
 }
 
@@ -328,24 +332,30 @@ function activeShortArgument(
   short: string,
 ): ArgumentDefinition | undefined {
   return activeArguments(state).find(
-    (argument) => argument.kind !== "positional" && argument.short === short,
+    (argument) => argument.kind !== 'positional' && argument.short === short,
   );
 }
 
 function scanLongOption(state: ScanState, word: string): void {
-  const equalsIndex = word.indexOf("=");
+  const equalsIndex = word.indexOf('=');
   const long = word.slice(2, equalsIndex < 0 ? undefined : equalsIndex);
   const argument = activeNamedArgument(state, long);
-  if (argument === undefined) return;
-  if (argument.kind === "flag" || argument.kind === "count") {
+  if (argument === undefined) {
+    return;
+  }
+  if (argument.kind === 'flag' || argument.kind === 'count') {
     storeSwitch(argument, state);
     return;
   }
 
   const inline = equalsIndex < 0 ? undefined : word.slice(equalsIndex + 1);
-  if (inline === undefined && argument.requireEquals) return;
+  if (inline === undefined && argument.requireEquals) {
+    return;
+  }
   const inlineValues = inline === undefined ? [] : splitValue(argument, inline);
-  if (inlineValues.length > 0) storeArgumentValues(argument, inlineValues, state);
+  if (inlineValues.length > 0) {
+    storeArgumentValues(argument, inlineValues, state);
+  }
   const consumed = inlineValues.length;
   setPending(state, argument, consumed);
 }
@@ -354,19 +364,29 @@ function scanShortOptions(state: ScanState, word: string): void {
   const cluster = word.slice(1);
   for (let index = 0; index < cluster.length; index += 1) {
     const short = cluster[index];
-    if (short === undefined) break;
+    if (short === undefined) {
+      break;
+    }
     const argument = activeShortArgument(state, short);
-    if (argument === undefined) return;
-    if (argument.kind === "flag" || argument.kind === "count") {
+    if (argument === undefined) {
+      return;
+    }
+    if (argument.kind === 'flag' || argument.kind === 'count') {
       storeSwitch(argument, state);
       continue;
     }
 
     let inline = cluster.slice(index + 1);
-    if (inline.startsWith("=")) inline = inline.slice(1);
-    if (inline.length === 0 && argument.requireEquals) return;
+    if (inline.startsWith('=')) {
+      inline = inline.slice(1);
+    }
+    if (inline.length === 0 && argument.requireEquals) {
+      return;
+    }
     const inlineValues = inline.length === 0 ? [] : splitValue(argument, inline);
-    if (inlineValues.length > 0) storeArgumentValues(argument, inlineValues, state);
+    if (inlineValues.length > 0) {
+      storeArgumentValues(argument, inlineValues, state);
+    }
     const consumed = inlineValues.length;
     setPending(state, argument, consumed);
     return;
@@ -387,13 +407,15 @@ function setPending(
 
 function consumePending(state: ScanState, word: string): void {
   const pending = state.pending;
-  if (pending === undefined) return;
+  if (pending === undefined) {
+    return;
+  }
   const values = splitValue(pending.argument, word);
   storeArgumentValues(pending.argument, values, state);
   pending.consumed += values.length;
   if (
-    pending.argument.maxValues !== null &&
-    pending.consumed >= pending.argument.maxValues
+    pending.argument.maxValues !== null
+    && pending.consumed >= pending.argument.maxValues
   ) {
     state.pending = undefined;
   }
@@ -405,10 +427,10 @@ function stopsValueCollection(
   word: string,
 ): boolean {
   if (
-    word.startsWith("-") &&
-    word !== "-" &&
-    !argument.allowHyphenValues &&
-    !(argument.allowNegativeNumbers && /^[+-](?:\d|\.\d)/.test(word))
+    word.startsWith('-')
+    && word !== '-'
+    && !argument.allowHyphenValues
+    && !(argument.allowNegativeNumbers && /^[+-](?:\d|\.\d)/.test(word))
   ) {
     return true;
   }
@@ -441,13 +463,14 @@ function storeArgumentValues(
       continue;
     }
   }
-  if (parsed.length === 0) return storedRaw.length;
+  if (parsed.length === 0) {
+    return storedRaw.length;
+  }
 
-  const collection =
-    argument.repeatable ||
-    argument.trailingVarArg ||
-    argument.maxValues === null ||
-    argument.maxValues !== 1;
+  const collection = argument.repeatable
+    || argument.trailingVarArg
+    || argument.maxValues === null
+    || argument.maxValues !== 1;
   if (collection) {
     const current = state.values[argument.name];
     state.values[argument.name] = [
@@ -461,11 +484,11 @@ function storeArgumentValues(
 }
 
 function storeSwitch(argument: ArgumentDefinition, state: ScanState): void {
-  if (argument.kind === "flag") {
-    state.values[argument.name] = argument.action === "setFalse" ? false : true;
+  if (argument.kind === 'flag') {
+    state.values[argument.name] = argument.action === 'setFalse' ? false : true;
   } else {
     const current = state.values[argument.name];
-    state.values[argument.name] = typeof current === "number" ? current + 1 : 1;
+    state.values[argument.name] = typeof current === 'number' ? current + 1 : 1;
   }
 }
 
@@ -474,15 +497,16 @@ function resolveSubcommand(
   token: string,
 ): CommandDefinition | undefined {
   const exact = definition.subcommands.find(
-    (child) =>
-      child.name === token || child.aliases.some(({ name }) => name === token),
+    (child) => child.name === token || child.aliases.some(({ name }) => name === token),
   );
-  if (exact !== undefined || !definition.inferSubcommands) return exact;
+  if (exact !== undefined || !definition.inferSubcommands) {
+    return exact;
+  }
 
   const matches = definition.subcommands.filter(
     (child) =>
-      child.name.startsWith(token) ||
-      child.aliases.some(({ name }) => name.startsWith(token)),
+      child.name.startsWith(token)
+      || child.aliases.some(({ name }) => name.startsWith(token)),
   );
   return matches.length === 1 ? matches[0] : undefined;
 }
@@ -501,7 +525,7 @@ function enterSubcommand(state: ScanState, child: CommandDefinition): void {
 
 function currentPositional(state: ScanState): ArgumentDefinition | undefined {
   return state.command.arguments.filter(
-    ({ kind }) => kind === "positional",
+    ({ kind }) => kind === 'positional',
   )[state.positionalIndex];
 }
 
@@ -510,18 +534,20 @@ function findValueTarget(
   currentWord: string,
 ): ValueTarget | undefined {
   if (
-    state.pending !== undefined &&
-    !stopsValueCollection(state, state.pending.argument, currentWord)
+    state.pending !== undefined
+    && !stopsValueCollection(state, state.pending.argument, currentWord)
   ) {
-    return valueTarget(state.pending.argument, currentWord, "");
+    return valueTarget(state.pending.argument, currentWord, '');
   }
-  if (!state.optionsEnabled) return currentPositionalTarget(state, currentWord);
+  if (!state.optionsEnabled) {
+    return currentPositionalTarget(state, currentWord);
+  }
 
-  if (currentWord.startsWith("--")) {
-    const equalsIndex = currentWord.indexOf("=");
+  if (currentWord.startsWith('--')) {
+    const equalsIndex = currentWord.indexOf('=');
     if (equalsIndex >= 0) {
       const argument = activeNamedArgument(state, currentWord.slice(2, equalsIndex));
-      if (argument?.kind === "option") {
+      if (argument?.kind === 'option') {
         return valueTarget(
           argument,
           currentWord.slice(equalsIndex + 1),
@@ -532,15 +558,21 @@ function findValueTarget(
     return undefined;
   }
 
-  if (currentWord.startsWith("-") && currentWord !== "-") {
+  if (currentWord.startsWith('-') && currentWord !== '-') {
     const cluster = currentWord.slice(1);
     for (let index = 0; index < cluster.length; index += 1) {
       const short = cluster[index];
-      if (short === undefined) break;
+      if (short === undefined) {
+        break;
+      }
       const argument = activeShortArgument(state, short);
-      if (argument === undefined) break;
-      if (argument.kind !== "option") continue;
-      const prefixEnd = cluster[index + 1] === "=" ? index + 3 : index + 2;
+      if (argument === undefined) {
+        break;
+      }
+      if (argument.kind !== 'option') {
+        continue;
+      }
+      const prefixEnd = cluster[index + 1] === '=' ? index + 3 : index + 2;
       const outputPrefix = currentWord.slice(0, prefixEnd);
       return valueTarget(argument, currentWord.slice(prefixEnd), outputPrefix);
     }
@@ -555,7 +587,7 @@ function currentPositionalTarget(
   currentWord: string,
 ): ValueTarget | undefined {
   const argument = currentPositional(state);
-  return argument === undefined ? undefined : valueTarget(argument, currentWord, "");
+  return argument === undefined ? undefined : valueTarget(argument, currentWord, '');
 }
 
 function valueTarget(
@@ -567,7 +599,9 @@ function valueTarget(
     return { argument, current, outputPrefix };
   }
   const delimiterIndex = current.lastIndexOf(argument.valueDelimiter);
-  if (delimiterIndex < 0) return { argument, current, outputPrefix };
+  if (delimiterIndex < 0) {
+    return { argument, current, outputPrefix };
+  }
   return {
     argument,
     current: current.slice(delimiterIndex + argument.valueDelimiter.length),
@@ -596,12 +630,14 @@ async function completeArgument(
   const inputs = provider === undefined
     ? target.argument.parser?.completions ?? []
     : await collectProvider(provider, context);
-  const candidates = normalizeCandidates(inputs).map((candidate) => Object.freeze({
-    ...candidate,
-    value: `${target.outputPrefix}${candidate.value}`,
-  }));
-  const hint = target.argument.completionHint ??
-    target.argument.parser?.completionHint;
+  const candidates = normalizeCandidates(inputs).map((candidate) =>
+    Object.freeze({
+      ...candidate,
+      value: `${target.outputPrefix}${candidate.value}`,
+    })
+  );
+  const hint = target.argument.completionHint
+    ?? target.argument.parser?.completionHint;
 
   return freezeResult({
     candidates: filterAndDedupe(
@@ -621,16 +657,20 @@ async function collectProvider(
   context: DynamicCompletionContext,
 ): Promise<readonly DynamicCompletionCandidateInput[]> {
   const result = await provider(context);
-  if (typeof result === "string" || result === null || typeof result !== "object") {
-    throw new TypeError("A completion provider must return an iterable of candidates");
+  if (typeof result === 'string' || result === null || typeof result !== 'object') {
+    throw new TypeError('A completion provider must return an iterable of candidates');
   }
   const candidates: DynamicCompletionCandidateInput[] = [];
   if (Symbol.asyncIterator in result) {
-    for await (const candidate of result) candidates.push(candidate);
+    for await (const candidate of result) {
+      candidates.push(candidate);
+    }
   } else if (Symbol.iterator in result) {
-    for (const candidate of result) candidates.push(candidate);
+    for (const candidate of result) {
+      candidates.push(candidate);
+    }
   } else {
-    throw new TypeError("A completion provider must return an iterable of candidates");
+    throw new TypeError('A completion provider must return an iterable of candidates');
   }
   return candidates;
 }
@@ -639,16 +679,16 @@ function normalizeCandidates(
   candidates: readonly DynamicCompletionCandidateInput[],
 ): readonly DynamicCompletionCandidate[] {
   return candidates.map((candidate) => {
-    const normalized = typeof candidate === "string"
+    const normalized = typeof candidate === 'string'
       ? { value: candidate }
       : candidate;
     if (
-      normalized.value.length === 0 ||
-      normalized.value.includes("\0") ||
-      normalized.value.includes("\n") ||
-      normalized.value.includes("\r")
+      normalized.value.length === 0
+      || normalized.value.includes('\0')
+      || normalized.value.includes('\n')
+      || normalized.value.includes('\r')
     ) {
-      throw new TypeError("A completion candidate must be a non-empty single-line value");
+      throw new TypeError('A completion candidate must be a non-empty single-line value');
     }
     return Object.freeze({
       value: normalized.value,
@@ -661,22 +701,24 @@ function normalizeCandidates(
 
 function namedCandidates(state: ScanState): readonly DynamicCompletionCandidate[] {
   const candidates = activeArguments(state)
-    .filter(({ hidden, kind }) => !hidden && kind !== "positional")
-    .flatMap((argument) => [
-      ...(argument.short === undefined ? [] : [`-${argument.short}`]),
-      ...(argument.long === undefined ? [] : [`--${argument.long}`]),
-      ...argument.aliases.map((alias) => `--${alias}`),
-    ].map((value) => ({
-      value,
-      ...(argument.help === undefined ? {} : { description: argument.help }),
-    })));
+    .filter(({ hidden, kind }) => !hidden && kind !== 'positional')
+    .flatMap((argument) =>
+      [
+        ...(argument.short === undefined ? [] : [`-${argument.short}`]),
+        ...(argument.long === undefined ? [] : [`--${argument.long}`]),
+        ...argument.aliases.map((alias) => `--${alias}`),
+      ].map((value) => ({
+        value,
+        ...(argument.help === undefined ? {} : { description: argument.help }),
+      }))
+    );
   if (!state.command.disableHelpFlag) {
-    candidates.push({ value: "-h", description: "Print help" });
-    candidates.push({ value: "--help", description: "Print help" });
+    candidates.push({ value: '-h', description: 'Print help' });
+    candidates.push({ value: '--help', description: 'Print help' });
   }
   if (state.command.version !== undefined && !state.command.disableVersionFlag) {
-    candidates.push({ value: "-V", description: "Print version" });
-    candidates.push({ value: "--version", description: "Print version" });
+    candidates.push({ value: '-V', description: 'Print version' });
+    candidates.push({ value: '--version', description: 'Print version' });
   }
   return candidates;
 }
@@ -686,13 +728,15 @@ function subcommandCandidates(
 ): readonly DynamicCompletionCandidate[] {
   return state.command.subcommands
     .filter(({ hidden }) => !hidden)
-    .flatMap((child) => [
-      child.name,
-      ...child.aliases.filter(({ visible }) => visible).map(({ name }) => name),
-    ].map((value) => ({
-      value,
-      ...(child.about === undefined ? {} : { description: child.about }),
-    })));
+    .flatMap((child) =>
+      [
+        child.name,
+        ...child.aliases.filter(({ visible }) => visible).map(({ name }) => name),
+      ].map((value) => ({
+        value,
+        ...(child.about === undefined ? {} : { description: child.about }),
+      }))
+    );
 }
 
 function filterAndDedupe(
@@ -701,19 +745,25 @@ function filterAndDedupe(
   filter: boolean,
 ): readonly DynamicCompletionCandidate[] {
   const seen = new Set<string>();
-  return Object.freeze(candidates.filter(({ value }) => {
-    if (filter && !value.startsWith(current)) return false;
-    if (seen.has(value)) return false;
-    seen.add(value);
-    return true;
-  }).map((candidate) => Object.freeze({ ...candidate })));
+  return Object.freeze(
+    candidates.filter(({ value }) => {
+      if (filter && !value.startsWith(current)) {
+        return false;
+      }
+      if (seen.has(value)) {
+        return false;
+      }
+      seen.add(value);
+      return true;
+    }).map((candidate) => Object.freeze({ ...candidate })),
+  );
 }
 
 function freezeValues(
   values: Readonly<Record<string, unknown>>,
 ): DynamicCompletionValues {
   return Object.freeze(Object.fromEntries(
-    Object.entries(values).map(([name, value]) => [
+    Object.entries(values).map(([name, value,]) => [
       name,
       Array.isArray(value) ? Object.freeze([...value]) : value,
     ]),
@@ -724,7 +774,7 @@ function freezeRawValues(
   values: Readonly<Record<string, readonly string[]>>,
 ): DynamicCompletionRawValues {
   return Object.freeze(Object.fromEntries(
-    Object.entries(values).map(([name, value]) => [name, Object.freeze([...value])]),
+    Object.entries(values).map(([name, value,]) => [name, Object.freeze([...value])]),
   ));
 }
 

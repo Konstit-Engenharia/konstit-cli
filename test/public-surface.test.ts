@@ -1,4 +1,7 @@
-import { expect, test } from "bun:test";
+import {
+  expect,
+  test,
+} from 'bun:test';
 import {
   command,
   count,
@@ -8,40 +11,51 @@ import {
   positional,
   type Infer,
   type ValueParser,
-} from "../src";
+} from '../src';
 // @ts-expect-error builder classes are internal
-import type { Argument, Command } from "../src";
+import type {
+  Argument,
+  Command,
+} from '../src';
 // @ts-expect-error runtime actions and definition plumbing are internal
-import type { ArgumentAction, ArgumentDefinition, CommandDefinition } from "../src";
+import type {
+  ArgumentAction,
+  ArgumentDefinition,
+  CommandDefinition,
+} from '../src';
 // @ts-expect-error internal shape types are not part of the application API
-import type { AnyArgument, ArgumentCardinality, ArgumentPresence } from "../src";
+import type {
+  AnyArgument,
+  ArgumentCardinality,
+  ArgumentPresence,
+} from '../src';
 // @ts-expect-error custom parsers are created through parsers.custom
-import type { valueParser } from "../src";
-import { getCommandDefinition, type CommandType } from "../src/command";
+import type { valueParser } from '../src';
+import {
+  getCommandDefinition,
+  type CommandType,
+} from '../src/command';
 
-type Equal<Left, Right> =
-  (<Value>() => Value extends Left ? 1 : 2) extends
-  (<Value>() => Value extends Right ? 1 : 2)
-    ? true
-    : false;
+type Equal<Left, Right> = (<Value>() => Value extends Left ? 1 : 2) extends (<Value>() => Value extends Right ? 1 : 2) ? true
+  : false;
 type Expect<Value extends true> = Value;
 
-test("keeps the small factory surface exactly typed", () => {
+test('keeps the small factory surface exactly typed', () => {
   const percentage: ValueParser<number> = parsers.custom(
-    "PERCENTAGE",
+    'PERCENTAGE',
     (input) => Number(input),
   );
-  const cli = command("build")
-    .arg(option("percentage", percentage).required())
-    .arg(option("mode", parsers.enum(["fast", "safe"])).default("safe"))
-    .arg(positional("file"))
-    .arg(flag("cache").negated())
-    .arg(count("verbose"));
+  const cli = command('build')
+    .arg(option('percentage', percentage).required())
+    .arg(option('mode', parsers.enum(['fast', 'safe'])).default('safe'))
+    .arg(positional('file'))
+    .arg(flag('cache').negated())
+    .arg(count('verbose'));
 
   type Actual = Infer<typeof cli>;
   type Expected = {
     readonly percentage: number;
-    readonly mode: "fast" | "safe";
+    readonly mode: 'fast' | 'safe';
     readonly file: string | undefined;
     readonly cache: boolean;
     readonly verbose: number;
@@ -50,25 +64,25 @@ test("keeps the small factory surface exactly typed", () => {
   expect(exact).toBe(true);
 });
 
-test("hides runtime definitions and type carriers from factory values", () => {
-  const argument = option("output");
-  const cli = command("build").arg(argument);
+test('hides runtime definitions and type carriers from factory values', () => {
+  const argument = option('output');
+  const cli = command('build').arg(argument);
 
   type ArgumentPlumbing = Extract<
     Extract<keyof typeof argument, string>,
-    "definition" | `$${string}`
+    'definition' | `$${string}`
   >;
   type CommandPlumbing = Extract<
     Extract<keyof typeof cli, string>,
-    "definition" | `$${string}`
+    'definition' | `$${string}`
   >;
   const argumentIsClean: Expect<Equal<ArgumentPlumbing, never>> = true;
   const commandIsClean: Expect<Equal<CommandPlumbing, never>> = true;
 
   expect(argumentIsClean).toBe(true);
   expect(commandIsClean).toBe(true);
-  expect("definition" in argument).toBe(false);
-  expect("definition" in cli).toBe(false);
+  expect('definition' in argument).toBe(false);
+  expect('definition' in cli).toBe(false);
   expect(Reflect.ownKeys(argument)).toEqual([]);
   expect(Reflect.ownKeys(cli)).toEqual([]);
 
@@ -84,14 +98,14 @@ test("hides runtime definitions and type carriers from factory values", () => {
   }
 });
 
-test("rejects objects that did not come from the command factory", () => {
+test('rejects objects that did not come from the command factory', () => {
   expect(() => getCommandDefinition({} as CommandType)).toThrow(
-    "Expected a command created by command()",
+    'Expected a command created by command()',
   );
 });
 
-test("renders the configured long description", () => {
-  expect(command("build").longAbout("Detailed build help.").renderHelp()).toContain(
-    "Detailed build help.",
+test('renders the configured long description', () => {
+  expect(command('build').longAbout('Detailed build help.').renderHelp()).toContain(
+    'Detailed build help.',
   );
 });

@@ -1,29 +1,41 @@
-import { expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { command, option, parsers } from "../src";
-import { generateCompletion } from "../src/completion";
+import {
+  expect,
+  test,
+} from 'bun:test';
+import {
+  mkdtemp,
+  rm,
+} from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  command,
+  option,
+  parsers,
+} from '../src';
+import { generateCompletion } from '../src/completion';
 
-const bash = Bun.which("bash");
-const supportsTerminal = process.platform !== "win32" && bash !== null;
+const bash = Bun.which('bash');
+const supportsTerminal = process.platform !== 'win32' && bash !== null;
 
-test.skipIf(!supportsTerminal)("Bash completes an option value in a real terminal", async () => {
-  if (bash === null) return;
+test.skipIf(!supportsTerminal)('Bash completes an option value in a real terminal', async () => {
+  if (bash === null) {
+    return;
+  }
 
-  const cli = command("demo").arg(
-    option("mode", parsers.enum(["dev", "prod"])),
+  const cli = command('demo').arg(
+    option('mode', parsers.enum(['dev', 'prod'])),
   );
-  const directory = await mkdtemp(join(tmpdir(), "bun-clap-terminal-"));
-  const rcFile = join(directory, "bashrc");
-  const prompt = "__BUN_CLAP_PROMPT__ ";
+  const directory = await mkdtemp(join(tmpdir(), 'bun-clap-terminal-'));
+  const rcFile = join(directory, 'bashrc');
+  const prompt = '__BUN_CLAP_PROMPT__ ';
   await Bun.write(
     rcFile,
-    `${generateCompletion(cli, "bash")}\nPS1='${prompt}'\nPS2=''\n`,
+    `${generateCompletion(cli, 'bash')}\nPS1='${prompt}'\nPS2=''\n`,
   );
 
   const decoder = new TextDecoder();
-  let output = "";
+  let output = '';
   let waiter: Waiter | undefined;
   const terminal = new Bun.Terminal({
     cols: 80,
@@ -38,15 +50,17 @@ test.skipIf(!supportsTerminal)("Bash completes an option value in a real termina
     },
   });
   const subprocess = Bun.spawn(
-    [bash, "--noprofile", "--rcfile", rcFile, "-i"],
+    [bash, '--noprofile', '--rcfile', rcFile, '-i'],
     {
-      env: { ...process.env, TERM: "xterm-256color" },
+      env: { ...process.env, TERM: 'xterm-256color' },
       terminal,
     },
   );
 
   const waitFor = (text: string): Promise<void> => {
-    if (output.includes(text)) return Promise.resolve();
+    if (output.includes(text)) {
+      return Promise.resolve();
+    }
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         waiter = undefined;
@@ -62,12 +76,12 @@ test.skipIf(!supportsTerminal)("Bash completes an option value in a real termina
 
   try {
     await waitFor(prompt);
-    output = "";
+    output = '';
 
-    terminal.write("demo --mode d\t");
-    await waitFor("demo --mode dev ");
+    terminal.write('demo --mode d\t');
+    await waitFor('demo --mode dev ');
 
-    expect(output).toContain("demo --mode dev ");
+    expect(output).toContain('demo --mode dev ');
   } finally {
     terminal.close();
     await subprocess.exited;

@@ -51,16 +51,16 @@ import {
   parsers,
   positional,
   type Infer,
-} from "@konstit/cli";
+} from '@konstit/cli';
 
-const serve = command("serve")
-  .about("Serve static files")
-  .version("1.0.0")
-  .arg(option("port", parsers.range(1, 65_535)).short("p").default(3000))
-  .arg(option("host").default("127.0.0.1"))
-  .arg(flag("open").short("o"))
-  .arg(count("verbose").short("v"))
-  .arg(positional("root").required())
+const serve = command('serve')
+  .about('Serve static files')
+  .version('1.0.0')
+  .arg(option('port', parsers.range(1, 65_535)).short('p').default(3000))
+  .arg(option('host').default('127.0.0.1'))
+  .arg(flag('open').short('o'))
+  .arg(count('verbose').short('v'))
+  .arg(positional('root').required())
   .handler(async ({ port, host, open, verbose, root }) => {
     // port: number; host: string; open: boolean
     // verbose: number; root: string
@@ -91,9 +91,9 @@ successful display request for help or version. It throws `CliError` only for a
 user-facing parse failure:
 
 ```ts
-const outcome = serve.parse(["--port", "8080", "."]);
+const outcome = serve.parse(['--port', '8080', '.']);
 
-if (outcome.type === "value") {
+if (outcome.type === 'value') {
   console.log(outcome.value.port); // number
 } else {
   process.stdout.write(outcome.output); // help or version
@@ -109,21 +109,21 @@ explicit array to `run(argv)` when needed.
 ## Subcommands
 
 ```ts
-const cli = command("repo")
+const cli = command('repo')
   .subcommand(
-    command("clone")
-      .visibleAlias("copy")
-      .alias("cp")
-      .arg(positional("url").required())
-      .arg(flag("bare"))
+    command('clone')
+      .visibleAlias('copy')
+      .alias('cp')
+      .arg(positional('url').required())
+      .arg(flag('bare'))
       .handler(({ url, bare }) => {
         // url: string; bare: boolean
-        console.log(`clone ${url}${bare ? " --bare" : ""}`);
+        console.log(`clone ${url}${bare ? ' --bare' : ''}`);
       }),
   )
   .subcommand(
-    command("commit")
-      .arg(option("message").short("m").required())
+    command('commit')
+      .arg(option('message').short('m').required())
       .handler(({ message }) => {
         // message: string
         console.log(`commit: ${message}`);
@@ -153,20 +153,20 @@ import {
   completionShells,
   parsers,
   positional,
-} from "@konstit/cli";
+} from '@konstit/cli';
 
-const completion = command("completion")
-  .about("Generate a shell completion script")
-  .arg(positional("shell", parsers.enum(completionShells)).required())
+const completion = command('completion')
+  .about('Generate a shell completion script')
+  .arg(positional('shell', parsers.enum(completionShells)).required())
   .handler(async ({ shell }) => {
-    const { generateCompletion } = await import("@konstit/cli/completion");
+    const { generateCompletion } = await import('@konstit/cli/completion');
     process.stdout.write(generateCompletion(cli, shell, {
-      executable: "tiny-git",
+      executable: 'tiny-git',
       dynamic: true,
     }));
   });
 
-const cli = command("tiny-git")
+const cli = command('tiny-git')
   // Add the application's other arguments and subcommands here.
   .subcommand(completion)
   .requireSubcommand();
@@ -184,27 +184,27 @@ subcommands, and static parser values. Hidden arguments and commands are omitted
 Enum and Boolean parser values are completed automatically:
 
 ```ts
-option("mode", parsers.enum(["dev", "prod"]));
-option("enabled", parsers.boolean);
+option('mode', parsers.enum(['dev', 'prod']));
+option('enabled', parsers.boolean);
 ```
 
 Add custom static values or path completion metadata:
 
 ```ts
-const region = parsers.custom("REGION", parseRegion, {
-  completions: ["us-east-1", "eu-west-1"],
+const region = parsers.custom('REGION', parseRegion, {
+  completions: ['us-east-1', 'eu-west-1'],
 });
 
-option("region", region);
-option("config").valueHint("file");
-positional("output").valueHint("directory");
+option('region', region);
+option('config').valueHint('file');
+positional('output').valueHint('directory');
 ```
 
 Use `.complete()` when candidates depend on the current command line. Providers
 can return an array, a promise, or an async iterable:
 
 ```ts
-const packageOption = option("package").complete(async ({
+const packageOption = option('package').complete(async ({
   current,
   commandPath,
   rawValues,
@@ -213,7 +213,7 @@ const packageOption = option("package").complete(async ({
   const packages = await findWorkspacePackages(workspace, current);
   return packages.map((name) => ({
     value: name,
-    description: `Package in ${commandPath.join(" ")}`,
+    description: `Package in ${commandPath.join(' ')}`,
   }));
 });
 ```
@@ -221,11 +221,11 @@ const packageOption = option("package").complete(async ({
 You can also generate a script directly:
 
 ```ts
-import { generateCompletion } from "@konstit/cli/completion";
+import { generateCompletion } from '@konstit/cli/completion';
 
 await Bun.write(
-  "./tiny-git.bash",
-  generateCompletion(cli, "bash", { executable: "tiny-git" }),
+  './tiny-git.bash',
+  generateCompletion(cli, 'bash', { executable: 'tiny-git' }),
 );
 ```
 
@@ -273,27 +273,27 @@ Add the dot-source command to `$PROFILE` for persistent loading.
 ## Arguments
 
 ```ts
-option("port", parsers.integer) // number | undefined
-  .short("p")
-  .long("port")
-  .alias("listen-port")
-  .required()                   // number
-  .describe("Port to listen on")
-  .valueName("PORT")
-  .env("PORT");
+option('port', parsers.integer) // number | undefined
+  .short('p')
+  .long('port')
+  .alias('listen-port')
+  .required() // number
+  .describe('Port to listen on')
+  .valueName('PORT')
+  .env('PORT');
 
-option("tag").repeatable();    // readonly string[], empty when absent
-option("color").numArgs({ min: 0, max: 1 }); // string | undefined
-option("pair").numArgs(2);     // readonly [string, string] | undefined
-option("level", parsers.integer)
+option('tag').repeatable(); // readonly string[], empty when absent
+option('color').numArgs({ min: 0, max: 1 }); // string | undefined
+option('pair').numArgs(2); // readonly [string, string] | undefined
+option('level', parsers.integer)
   .numArgs({ min: 1, max: 3 }); // readonly number[] | undefined
-option("point", parsers.integer)
+option('point', parsers.integer)
   .numArgs(2)
-  .repeatable();                // readonly number[]
-positional("file").required(); // string
-flag("force");                 // boolean, false when absent
-flag("cache").negated();       // boolean, true when absent and false when present
-count("verbose").short("v");  // number, supports -vvv
+  .repeatable(); // readonly number[]
+positional('file').required(); // string
+flag('force'); // boolean, false when absent
+flag('cache').negated(); // boolean, true when absent and false when present
+count('verbose').short('v'); // number, supports -vvv
 ```
 
 Use `.repeatable()` to collect option values, `count()` for occurrences, and
@@ -304,10 +304,10 @@ Built-in parsers include `string`, `integer`, `float`, `bigint`, `boolean`,
 `url`, and `date`. Factory parsers include:
 
 ```ts
-parsers.enum(["dev", "prod"]);       // "dev" | "prod"
-parsers.range(1, 10);                 // number
-parsers.json(isMyConfig);             // MyConfig, inferred from the type guard
-parsers.custom("PORT", parsePort);   // inferred from parsePort
+parsers.enum(['dev', 'prod']); // "dev" | "prod"
+parsers.range(1, 10); // number
+parsers.json(isMyConfig); // MyConfig, inferred from the type guard
+parsers.custom('PORT', parsePort); // inferred from parsePort
 ```
 
 A custom parser can throw an `Error`. `@konstit/cli` converts it to a structured
@@ -316,14 +316,14 @@ A custom parser can throw an `Error`. `@konstit/cli` converts it to a structured
 ### Value collection
 
 ```ts
-const cli = command("run")
-  .arg(option("features").repeatable().valueDelimiter(","))
-  .arg(option("define").numArgs({ min: 1, max: 4 }).valueTerminator(";"))
-  .arg(option("config").requireEquals())
-  .arg(option("color").defaultMissing("auto"))
-  .arg(option("offset", parsers.integer).allowNegativeNumbers())
-  .arg(option("pattern").allowHyphenValues())
-  .arg(positional("command").trailingVarArg());
+const cli = command('run')
+  .arg(option('features').repeatable().valueDelimiter(','))
+  .arg(option('define').numArgs({ min: 1, max: 4 }).valueTerminator(';'))
+  .arg(option('config').requireEquals())
+  .arg(option('color').defaultMissing('auto'))
+  .arg(option('offset', parsers.integer).allowNegativeNumbers())
+  .arg(option('pattern').allowHyphenValues())
+  .arg(positional('command').trailingVarArg());
 ```
 
 - `--features a,b --features c` returns `["a", "b", "c"]`.
@@ -336,28 +336,28 @@ const cli = command("run")
 Relation names use the command's accumulated argument-name union:
 
 ```ts
-const release = command("release")
-  .arg(flag("major"))
-  .arg(flag("minor"))
-  .arg(flag("dry-run"))
-  .arg(flag("offline"))
-  .arg(flag("quiet"))
-  .arg(count("verbose"))
-  .arg(option("format", parsers.enum(["text", "json"])))
-  .arg(option("schema"))
-  .arg(option("token"))
-  .conflicts("major", "minor")
-  .requires("token", "dry-run")
-  .requiresIf("format", "json", "schema")
-  .requiredIfAny([["format", "json"], ["dry-run", true]], "schema")
-  .requiredIfAll([["format", "json"], ["offline", false]], "token")
-  .requiredUnlessPresent(["offline"], "token")
-  .requiredUnlessAll(["offline", "dry-run"], "schema")
-  .overrides("quiet", "verbose")
-  .exclusive("offline")
-  .group("level", ["major", "minor"], { required: true })
-  .groupRequires("level", "format")
-  .groupConflicts("level", "quiet");
+const release = command('release')
+  .arg(flag('major'))
+  .arg(flag('minor'))
+  .arg(flag('dry-run'))
+  .arg(flag('offline'))
+  .arg(flag('quiet'))
+  .arg(count('verbose'))
+  .arg(option('format', parsers.enum(['text', 'json'])))
+  .arg(option('schema'))
+  .arg(option('token'))
+  .conflicts('major', 'minor')
+  .requires('token', 'dry-run')
+  .requiresIf('format', 'json', 'schema')
+  .requiredIfAny([['format', 'json'], ['dry-run', true]], 'schema')
+  .requiredIfAll([['format', 'json'], ['offline', false]], 'token')
+  .requiredUnlessPresent(['offline'], 'token')
+  .requiredUnlessAll(['offline', 'dry-run'], 'schema')
+  .overrides('quiet', 'verbose')
+  .exclusive('offline')
+  .group('level', ['major', 'minor'], { required: true })
+  .groupRequires('level', 'format')
+  .groupConflicts('level', 'quiet');
 ```
 
 Relations put their source or source list before the target. `requiredIfAny`
@@ -370,19 +370,19 @@ exclusive unless `{ multiple: true }` is set. Group names are checked after
 ## Global arguments and custom help
 
 ```ts
-const verbose = count("verbose").short("v").global();
-const profile = option("profile").global();
+const verbose = count('verbose').short('v').global();
+const profile = option('profile').global();
 
-const cli = command("tool")
-  .about("Manage services")
-  .author("Example team")
-  .beforeHelp("Run this command from a project directory.")
-  .afterHelp("See https://example.test/docs for more help.")
+const cli = command('tool')
+  .about('Manage services')
+  .author('Example team')
+  .beforeHelp('Run this command from a project directory.')
+  .afterHelp('See https://example.test/docs for more help.')
   .arg(verbose)
   .arg(profile)
   .subcommand(
-    command("serve")
-      .arg(option("port", parsers.integer).required())
+    command('serve')
+      .arg(option('port', parsers.integer).required())
       .handler(({ port }, context) => {
         const verbosity = context.global(verbose);
         const selectedProfile = context.global(profile);

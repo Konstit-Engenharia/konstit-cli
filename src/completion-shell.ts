@@ -1,9 +1,11 @@
-export const completionShells = Object.freeze([
-  "bash",
-  "zsh",
-  "fish",
-  "powershell",
-] as const);
+export const completionShells = Object.freeze(
+  [
+    'bash',
+    'zsh',
+    'fish',
+    'powershell',
+  ] as const,
+);
 
 export type CompletionShell = (typeof completionShells)[number];
 

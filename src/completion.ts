@@ -1,26 +1,21 @@
-import type { ArgumentDefinition } from "./argument";
-import {
-  completionShells,
-  type CompletionShell,
-} from "./completion-shell";
-import bashTemplate from "./completion-templates/bash.txt" with { type: "text" };
-import fishTemplate from "./completion-templates/fish.txt" with { type: "text" };
-import powerShellTemplate from "./completion-templates/powershell.txt" with { type: "text" };
-import zshTemplate from "./completion-templates/zsh.txt" with { type: "text" };
+import type { ArgumentDefinition } from './argument';
 import {
   getCommandDefinition,
   type CommandDefinition,
   type CommandType,
-} from "./command";
-import type { CompletionValueHint } from "./parser";
-
-export {
+} from './command';
+import {
   completionShells,
-  isCompletionShell,
   type CompletionShell,
-} from "./completion-shell";
+} from './completion-shell';
+import bashTemplate from './completion-templates/bash.txt' with { type: 'text' };
+import fishTemplate from './completion-templates/fish.txt' with { type: 'text' };
+import powerShellTemplate from './completion-templates/powershell.txt' with { type: 'text' };
+import zshTemplate from './completion-templates/zsh.txt' with { type: 'text' };
+import type { CompletionValueHint } from './parser';
+
+export { type CompletionShell, completionShells, isCompletionShell } from './completion-shell';
 export {
-  resolveDynamicCompletion,
   type DynamicCompletionCandidate,
   type DynamicCompletionCandidateInput,
   type DynamicCompletionContext,
@@ -30,7 +25,8 @@ export {
   type DynamicCompletionRawValues,
   type DynamicCompletionResult,
   type DynamicCompletionValues,
-} from "./dynamic-completion";
+  resolveDynamicCompletion,
+} from './dynamic-completion';
 
 export interface CompletionOptions {
   /** Command name or path users enter in the shell. Defaults to Command.name. */
@@ -40,7 +36,7 @@ export interface CompletionOptions {
 }
 
 /** Environment marker set by generated dynamic completion scripts. */
-export const dynamicCompletionEnvironment = "KONSTIT_CLI_COMPLETE";
+export const dynamicCompletionEnvironment = 'KONSTIT_CLI_COMPLETE';
 
 interface CompletionNode {
   readonly id: string;
@@ -83,13 +79,13 @@ export function generateCompletion(
   const nodes = flattenCommands(definition);
 
   switch (shell) {
-    case "bash":
+    case 'bash':
       return generateBash(nodes, executable);
-    case "zsh":
+    case 'zsh':
       return generateZsh(nodes, executable);
-    case "fish":
+    case 'fish':
       return generateFish(nodes, executable);
-    case "powershell":
+    case 'powershell':
       return generatePowerShell(nodes, executable);
     default:
       throw new RangeError(`Unsupported completion shell: ${String(shell)}`);
@@ -111,7 +107,7 @@ function renderTemplate(
     blockTemplatePlaceholder,
     (placeholder, name: string) => {
       const replacement = replace(placeholder, name);
-      return replacement.length === 0 ? "" : `${replacement}\n`;
+      return replacement.length === 0 ? '' : `${replacement}\n`;
     },
   );
   return blocksRendered.replace(templatePlaceholder, replace);
@@ -119,11 +115,11 @@ function renderTemplate(
 
 function validateExecutable(executable: string): void {
   if (
-    executable.length === 0 ||
-    executable.startsWith("-") ||
-    executable.includes("\0") ||
-    executable.includes("\n") ||
-    executable.includes("\r")
+    executable.length === 0
+    || executable.startsWith('-')
+    || executable.includes('\0')
+    || executable.includes('\n')
+    || executable.includes('\r')
   ) {
     throw new TypeError(`Invalid completion executable: ${JSON.stringify(executable)}`);
   }
@@ -149,7 +145,7 @@ function flattenCommands(root: CommandDefinition): readonly CompletionNode[] {
       .filter(({ hidden }) => !hidden)
       .forEach((child, index) => visit(child, `${id}.${index}`, globalsForChildren));
   };
-  visit(root, "0", []);
+  visit(root, '0', []);
   return nodes;
 }
 
@@ -181,7 +177,7 @@ function optionTokens(argument: ArgumentDefinition): readonly string[] {
 
 function completionForArguments(
   argumentsToCombine: readonly ArgumentDefinition[],
-): Omit<ValueCompletion, "tokens"> {
+): Omit<ValueCompletion, 'tokens'> {
   const values = unique(
     argumentsToCombine.flatMap((argument) => argument.parser?.completions ?? []),
   );
@@ -200,9 +196,13 @@ function completionForArguments(
 function valueCompletions(node: CompletionNode): readonly ValueCompletion[] {
   const definitions: ValueCompletion[] = [];
   for (const argument of visibleArguments(node)) {
-    if (argument.kind !== "option") continue;
+    if (argument.kind !== 'option') {
+      continue;
+    }
     const tokens = optionTokens(argument);
-    if (tokens.length === 0) continue;
+    if (tokens.length === 0) {
+      continue;
+    }
     const completion = completionForArguments([argument]);
     if (completion.values.length > 0 || completion.hint !== undefined) {
       definitions.push({ tokens, ...completion });
@@ -210,12 +210,12 @@ function valueCompletions(node: CompletionNode): readonly ValueCompletion[] {
   }
 
   const positionals = visibleArguments(node).filter(
-    ({ kind }) => kind === "positional",
+    ({ kind }) => kind === 'positional',
   );
   if (positionals.length > 0) {
     const completion = completionForArguments(positionals);
     if (completion.values.length > 0 || completion.hint !== undefined) {
-      definitions.push({ tokens: ["@positional"], ...completion });
+      definitions.push({ tokens: ['@positional'], ...completion });
     }
   }
   return definitions;
@@ -223,7 +223,7 @@ function valueCompletions(node: CompletionNode): readonly ValueCompletion[] {
 
 function valueOptionTokens(node: CompletionNode): readonly string[] {
   return visibleArguments(node)
-    .filter(({ kind }) => kind === "option")
+    .filter(({ kind }) => kind === 'option')
     .flatMap(optionTokens);
 }
 
@@ -233,35 +233,39 @@ function candidates(
 ): readonly CompletionCandidate[] {
   const result: CompletionCandidate[] = [];
   for (const argument of visibleArguments(node)) {
-    if (argument.kind === "positional") continue;
+    if (argument.kind === 'positional') {
+      continue;
+    }
     for (const token of optionTokens(argument)) {
-      result.push({ value: token, description: argument.help ?? "" });
+      result.push({ value: token, description: argument.help ?? '' });
     }
   }
   if (!node.definition.disableHelpFlag) {
-    result.push({ value: "-h", description: "Print help" });
-    result.push({ value: "--help", description: "Print help" });
+    result.push({ value: '-h', description: 'Print help' });
+    result.push({ value: '--help', description: 'Print help' });
   }
   if (
-    node.definition.version !== undefined &&
-    !node.definition.disableVersionFlag
+    node.definition.version !== undefined
+    && !node.definition.disableVersionFlag
   ) {
-    result.push({ value: "-V", description: "Print version" });
-    result.push({ value: "--version", description: "Print version" });
+    result.push({ value: '-V', description: 'Print version' });
+    result.push({ value: '--version', description: 'Print version' });
   }
-  for (const [token, child] of childEntries(node, nodes)) {
-    result.push({ value: token, description: child.about ?? "" });
+  for (const [token, child,] of childEntries(node, nodes)) {
+    result.push({ value: token, description: child.about ?? '' });
   }
   return uniqueBy(result, ({ value }) => value);
 }
 
 function hasVisiblePositionals(node: CompletionNode): boolean {
-  return visibleArguments(node).some(({ kind }) => kind === "positional");
+  return visibleArguments(node).some(({ kind }) => kind === 'positional');
 }
 
 function hasFallbackFilePositionals(node: CompletionNode): boolean {
-  if (!hasVisiblePositionals(node)) return false;
-  return !valueCompletions(node).some(({ tokens }) => tokens.includes("@positional"));
+  if (!hasVisiblePositionals(node)) {
+    return false;
+  }
+  return !valueCompletions(node).some(({ tokens }) => tokens.includes('@positional'));
 }
 
 function unique<Value>(values: readonly Value[]): readonly Value[] {
@@ -275,27 +279,29 @@ function uniqueBy<Value>(
   const seen = new Set<string>();
   return values.filter((value) => {
     const current = key(value);
-    if (seen.has(current)) return false;
+    if (seen.has(current)) {
+      return false;
+    }
     seen.add(current);
     return true;
   });
 }
 
 function shellIdentifier(executable: string): string {
-  const normalized = executable.replace(/[^A-Za-z0-9_]/g, "_");
+  const normalized = executable.replace(/[^A-Za-z0-9_]/g, '_');
   return /^[A-Za-z_]/.test(normalized) ? normalized : `_${normalized}`;
 }
 
 function shellQuote(value: string): string {
-  return `'${value.replaceAll("'", `'\"'\"'`)}'`;
+  return `'${value.replaceAll('\'', `'\"'\"'`)}'`;
 }
 
 function fishQuote(value: string): string {
-  return `'${value.replaceAll("\\", "\\\\").replaceAll("'", "\\'")}'`;
+  return `'${value.replaceAll('\\', '\\\\').replaceAll('\'', '\\\'')}'`;
 }
 
 function powerShellQuote(value: string): string {
-  return `'${value.replaceAll("'", "''")}'`;
+  return `'${value.replaceAll('\'', '\'\'')}'`;
 }
 
 function generateDynamicCompletion(
@@ -306,72 +312,72 @@ function generateDynamicCompletion(
   const executableQuoted = shellQuote(executable);
 
   switch (shell) {
-    case "bash":
+    case 'bash':
       return [
         `# dynamic bash completion for ${executable}`,
         `${name}() {`,
-        "  local candidate",
-        "  COMPREPLY=()",
-        "  while IFS= read -r candidate; do",
+        '  local candidate',
+        '  COMPREPLY=()',
+        '  while IFS= read -r candidate; do',
         '    [[ -n "$candidate" ]] && COMPREPLY+=("$candidate")',
         `  done < <(${dynamicCompletionEnvironment}=1 ${executableQuoted} "\${COMP_WORDS[@]:1:$((COMP_CWORD))}")`,
-        "}",
+        '}',
         `complete -o default -F ${name} ${executableQuoted}`,
-        "",
-      ].join("\n");
-    case "zsh":
+        '',
+      ].join('\n');
+    case 'zsh':
       return [
         `#compdef ${executable}`,
         `# dynamic zsh completion for ${executable}`,
         `${name}() {`,
-        "  local -a candidates",
+        '  local -a candidates',
         `  candidates=("\${(@f)$(${dynamicCompletionEnvironment}=1 ${executableQuoted} "\${words[@]:1}")}")`,
-        "  if (( ${#candidates[@]} )); then",
+        '  if (( ${#candidates[@]} )); then',
         '    compadd -Q -- "${candidates[@]}"',
-        "  else",
-        "    _files",
-        "  fi",
-        "}",
+        '  else',
+        '    _files',
+        '  fi',
+        '}',
         `compdef ${name} ${executableQuoted}`,
-        "",
-      ].join("\n");
-    case "fish": {
-      const commandPrefix = executable.includes("/")
+        '',
+      ].join('\n');
+    case 'fish': {
+      const commandPrefix = executable.includes('/')
         ? `complete -p ${fishQuote(executable)}`
         : `complete -c ${fishQuote(executable)}`;
       return [
         `# dynamic fish completion for ${executable}`,
         `function ${name}`,
-        "    set -l tokens (commandline -opc)",
-        "    set -l current (commandline -ct)",
+        '    set -l tokens (commandline -opc)',
+        '    set -l current (commandline -ct)',
         `    env ${dynamicCompletionEnvironment}=1 command ${fishQuote(executable)} $tokens[2..-1] "$current"`,
-        "end",
+        'end',
         `${commandPrefix} -a '(${name})'`,
-        "",
-      ].join("\n");
+        '',
+      ].join('\n');
     }
-    case "powershell": {
+    case 'powershell': {
       const environmentQuoted = powerShellQuote(dynamicCompletionEnvironment);
       const powerExecutable = powerShellQuote(executable);
       return [
         `# dynamic PowerShell completion for ${executable}`,
         `Register-ArgumentCompleter -Native -CommandName ${powerExecutable} -ScriptBlock {`,
-        "  param($wordToComplete, $commandAst, $cursorPosition)",
-        "  $arguments = @($commandAst.CommandElements | Select-Object -Skip 1 | ForEach-Object { [string]$_.Value })",
-        "  if ([string]::IsNullOrEmpty($wordToComplete)) { $arguments += '' }",
+        '  param($wordToComplete, $commandAst, $cursorPosition)',
+        '  $arguments = @($commandAst.CommandElements | Select-Object -Skip 1 | ForEach-Object { [string]$_.Value })',
+        '  if ([string]::IsNullOrEmpty($wordToComplete)) { $arguments += \'\' }',
         `  $previous = [Environment]::GetEnvironmentVariable(${environmentQuoted}, 'Process')`,
-        "  try {",
+        '  try {',
         `    [Environment]::SetEnvironmentVariable(${environmentQuoted}, '1', 'Process')`,
         `    $values = @(& ${powerExecutable} @arguments 2>$null)`,
-        "  } finally {",
+        '  } finally {',
         `    [Environment]::SetEnvironmentVariable(${environmentQuoted}, $previous, 'Process')`,
-        "  }",
-        "  foreach ($value in $values) {",
-        "    [System.Management.Automation.CompletionResult]::new($value, $value, 'ParameterValue', $value)",
-        "  }",
-        "}",
-        "",
-      ].join("\n");
+        '  }',
+        '  foreach ($value in $values) {',
+        '    [System.Management.Automation.CompletionResult]::new($value, $value, \'ParameterValue\', $value)',
+        '  }',
+        '}',
+        '',
+      ].join('\n');
     }
     default:
       throw new RangeError(`Unsupported completion shell: ${String(shell)}`);
@@ -379,7 +385,7 @@ function generateDynamicCompletion(
 }
 
 function casePatterns(id: string, tokens: readonly string[]): string {
-  return tokens.map((token) => shellQuote(`${id}:${token}`)).join("|");
+  return tokens.map((token) => shellQuote(`${id}:${token}`)).join('|');
 }
 
 function generateBash(
@@ -394,19 +400,21 @@ function generateBash(
     for (const completion of valueCompletions(node)) {
       if (completion.values.length > 0) {
         staticValueCases.push(
-          `    ${casePatterns(node.id, completion.tokens)}) candidates=(${completion.values.map(shellQuote).join(" ")}); handled=0 ;;`,
+          `    ${casePatterns(node.id, completion.tokens)}) candidates=(${completion.values.map(shellQuote).join(' ')}); handled=0 ;;`,
         );
       }
       if (completion.hint !== undefined) {
-        const action = completion.hint === "directory" ? "-d" : "-f";
+        const action = completion.hint === 'directory' ? '-d' : '-f';
         valueHintCases.push(
-          `    ${casePatterns(node.id, completion.tokens)}) while IFS= read -r candidate; do COMPREPLY+=("$candidate"); done < <(compgen ${action} -- "$current"); return 0 ;;`,
+          `    ${
+            casePatterns(node.id, completion.tokens)
+          }) while IFS= read -r candidate; do COMPREPLY+=("$candidate"); done < <(compgen ${action} -- "$current"); return 0 ;;`,
         );
       }
     }
   }
 
-  return renderTemplate("bash", {
+  return renderTemplate('bash', {
     EXECUTABLE: executable,
     EXECUTABLE_QUOTED: shellQuote(executable),
     NAME: name,
@@ -415,21 +423,21 @@ function generateBash(
       return tokens.length === 0
         ? []
         : [`    ${casePatterns(node.id, tokens)}) return 0 ;;`];
-    }).join("\n"),
+    }).join('\n'),
     SUBCOMMAND_CASES: nodes.flatMap((node) =>
-      childEntries(node, nodes).map(([token, _child, target]) =>
+      childEntries(node, nodes).map(([token, _child, target,]) =>
         `    ${shellQuote(`${node.id}:${token}`)}) printf '%s\\n' ${shellQuote(target.id)} ;;`
       )
-    ).join("\n"),
+    ).join('\n'),
     CANDIDATE_CASES: nodes.map((node) => {
       const values = candidates(node, nodes).map(({ value }) => shellQuote(value));
-      return `    ${shellQuote(node.id)}) printf '%s\\n' ${values.join(" ")} ;;`;
-    }).join("\n"),
-    STATIC_VALUE_CASES: staticValueCases.join("\n"),
-    VALUE_HINT_CASES: valueHintCases.join("\n"),
+      return `    ${shellQuote(node.id)}) printf '%s\\n' ${values.join(' ')} ;;`;
+    }).join('\n'),
+    STATIC_VALUE_CASES: staticValueCases.join('\n'),
+    VALUE_HINT_CASES: valueHintCases.join('\n'),
     ALLOWS_FILES_CASES: nodes.filter(hasFallbackFilePositionals)
       .map((node) => `    ${shellQuote(node.id)}) return 0 ;;`)
-      .join("\n"),
+      .join('\n'),
   });
 }
 
@@ -438,7 +446,7 @@ function generateZsh(
   executable: string,
 ): string {
   const name = `_bun_clap_${shellIdentifier(executable)}`;
-  const autoloadName = `_${executable.split("/").at(-1) ?? executable}`;
+  const autoloadName = `_${executable.split('/').at(-1) ?? executable}`;
   const staticValueCases: string[] = [];
   const valueHintCases: string[] = [];
 
@@ -446,11 +454,11 @@ function generateZsh(
     for (const completion of valueCompletions(node)) {
       if (completion.values.length > 0) {
         staticValueCases.push(
-          `    ${casePatterns(node.id, completion.tokens)}) values=(${completion.values.map(shellQuote).join(" ")}) ;;`,
+          `    ${casePatterns(node.id, completion.tokens)}) values=(${completion.values.map(shellQuote).join(' ')}) ;;`,
         );
       }
       if (completion.hint !== undefined) {
-        const action = completion.hint === "directory" ? "_directories" : "_files";
+        const action = completion.hint === 'directory' ? '_directories' : '_files';
         valueHintCases.push(
           `    ${casePatterns(node.id, completion.tokens)}) ${action} -P "$prefix"; return 0 ;;`,
         );
@@ -458,7 +466,7 @@ function generateZsh(
     }
   }
 
-  return renderTemplate("zsh", {
+  return renderTemplate('zsh', {
     EXECUTABLE: executable,
     EXECUTABLE_QUOTED: shellQuote(executable),
     NAME: name,
@@ -469,21 +477,21 @@ function generateZsh(
       return tokens.length === 0
         ? []
         : [`    ${casePatterns(node.id, tokens)}) return 0 ;;`];
-    }).join("\n"),
+    }).join('\n'),
     SUBCOMMAND_CASES: nodes.flatMap((node) =>
-      childEntries(node, nodes).map(([token, _child, target]) =>
+      childEntries(node, nodes).map(([token, _child, target,]) =>
         `    ${shellQuote(`${node.id}:${token}`)}) print -r -- ${shellQuote(target.id)} ;;`
       )
-    ).join("\n"),
+    ).join('\n'),
     CANDIDATE_CASES: nodes.map((node) => {
       const values = candidates(node, nodes).map(({ value }) => shellQuote(value));
-      return `    ${shellQuote(node.id)}) reply=(${values.join(" ")}) ;;`;
-    }).join("\n"),
-    STATIC_VALUE_CASES: staticValueCases.join("\n"),
-    VALUE_HINT_CASES: valueHintCases.join("\n"),
+      return `    ${shellQuote(node.id)}) reply=(${values.join(' ')}) ;;`;
+    }).join('\n'),
+    STATIC_VALUE_CASES: staticValueCases.join('\n'),
+    VALUE_HINT_CASES: valueHintCases.join('\n'),
     ALLOWS_FILES_CASES: nodes.filter(hasFallbackFilePositionals)
       .map((node) => `    ${shellQuote(node.id)}) return 0 ;;`)
-      .join("\n"),
+      .join('\n'),
   });
 }
 
@@ -492,7 +500,7 @@ function generateFish(
   executable: string,
 ): string {
   const name = `__bun_clap_${shellIdentifier(executable)}_context`;
-  const commandPrefix = executable.includes("/")
+  const commandPrefix = executable.includes('/')
     ? `complete -p ${fishQuote(executable)}`
     : `complete -c ${fishQuote(executable)}`;
   const registrations: string[] = [];
@@ -500,48 +508,60 @@ function generateFish(
   for (const node of nodes) {
     const condition = fishQuote(`test (${name}) = ${node.id}`);
     for (const argument of visibleArguments(node)) {
-      if (argument.kind === "positional") continue;
+      if (argument.kind === 'positional') {
+        continue;
+      }
       const baseParts = [commandPrefix, `-n ${condition}`];
-      if (argument.short !== undefined) baseParts.push(`-s ${fishQuote(argument.short)}`);
-      if (argument.long !== undefined) baseParts.push(`-l ${fishQuote(argument.long)}`);
-      if (argument.kind === "option") baseParts.push("-r");
-      if (argument.help !== undefined) baseParts.push(`-d ${fishQuote(argument.help)}`);
+      if (argument.short !== undefined) {
+        baseParts.push(`-s ${fishQuote(argument.short)}`);
+      }
+      if (argument.long !== undefined) {
+        baseParts.push(`-l ${fishQuote(argument.long)}`);
+      }
+      if (argument.kind === 'option') {
+        baseParts.push('-r');
+      }
+      if (argument.help !== undefined) {
+        baseParts.push(`-d ${fishQuote(argument.help)}`);
+      }
       appendFishValueCompletion(baseParts, argument);
-      registrations.push(baseParts.join(" "));
+      registrations.push(baseParts.join(' '));
       for (const alias of argument.aliases) {
         const aliasParts = [
           commandPrefix,
           `-n ${condition}`,
           `-l ${fishQuote(alias)}`,
-          ...(argument.kind === "option" ? ["-r"] : []),
+          ...(argument.kind === 'option' ? ['-r'] : []),
           ...(argument.help === undefined ? [] : [`-d ${fishQuote(argument.help)}`]),
         ];
         appendFishValueCompletion(aliasParts, argument);
-        registrations.push(aliasParts.join(" "));
+        registrations.push(aliasParts.join(' '));
       }
     }
     if (!node.definition.disableHelpFlag) {
       registrations.push(
-        `${commandPrefix} -n ${condition} -s h -l help -d ${fishQuote("Print help")}`,
+        `${commandPrefix} -n ${condition} -s h -l help -d ${fishQuote('Print help')}`,
       );
     }
     if (
-      node.definition.version !== undefined &&
-      !node.definition.disableVersionFlag
+      node.definition.version !== undefined
+      && !node.definition.disableVersionFlag
     ) {
       registrations.push(
-        `${commandPrefix} -n ${condition} -s V -l version -d ${fishQuote("Print version")}`,
+        `${commandPrefix} -n ${condition} -s V -l version -d ${fishQuote('Print version')}`,
       );
     }
     const childList = childEntries(node, nodes);
-    const disableFiles = !hasVisiblePositionals(node) ? " -f" : "";
-    for (const [token, child] of childList) {
+    const disableFiles = !hasVisiblePositionals(node) ? ' -f' : '';
+    for (const [token, child,] of childList) {
       registrations.push(
-        `${commandPrefix}${disableFiles} -n ${condition} -a ${fishQuote(token)}${child.about === undefined ? "" : ` -d ${fishQuote(child.about)}`}`,
+        `${commandPrefix}${disableFiles} -n ${condition} -a ${fishQuote(token)}${
+          child.about === undefined ? '' : ` -d ${fishQuote(child.about)}`
+        }`,
       );
     }
     const positionals = visibleArguments(node).filter(
-      ({ kind }) => kind === "positional",
+      ({ kind }) => kind === 'positional',
     );
     if (positionals.length > 0) {
       const completion = completionForArguments(positionals);
@@ -549,53 +569,57 @@ function generateFish(
         registrations.push(
           `${commandPrefix} -f -n ${condition} -a ${fishWordList(completion.values)}`,
         );
-      } else if (completion.hint === "directory") {
+      } else if (completion.hint === 'directory') {
         registrations.push(
-          `${commandPrefix} -f -n ${condition} -a ${fishQuote("(__fish_complete_directories)")}`,
+          `${commandPrefix} -f -n ${condition} -a ${fishQuote('(__fish_complete_directories)')}`,
         );
       }
     }
-    registrations.push("");
+    registrations.push('');
   }
 
-  return `${renderTemplate("fish", {
-    EXECUTABLE: executable,
-    NAME: name,
-    TAKES_VALUE_CASES: nodes.flatMap((node) => {
-      const tokens = valueOptionTokens(node);
-      return tokens.length === 0
-        ? []
-        : [
-            `            case ${tokens.map((token) => fishQuote(`${node.id}:${token}`)).join(" ")}`,
-            "                set expect_value 1",
-            "                continue",
+  return `${
+    renderTemplate('fish', {
+      EXECUTABLE: executable,
+      NAME: name,
+      TAKES_VALUE_CASES: nodes.flatMap((node) => {
+        const tokens = valueOptionTokens(node);
+        return tokens.length === 0
+          ? []
+          : [
+            `            case ${tokens.map((token) => fishQuote(`${node.id}:${token}`)).join(' ')}`,
+            '                set expect_value 1',
+            '                continue',
           ];
-    }).join("\n"),
-    SUBCOMMAND_CASES: nodes.flatMap((node) =>
-      childEntries(node, nodes).flatMap(([token, _child, target]) => [
-        `            case ${fishQuote(`${node.id}:${token}`)}`,
-        `                set context ${fishQuote(target.id)}`,
-      ])
-    ).join("\n"),
-    REGISTRATIONS: registrations.join("\n").trimEnd(),
-  }).trimEnd()}\n`;
+      }).join('\n'),
+      SUBCOMMAND_CASES: nodes.flatMap((node) =>
+        childEntries(node, nodes).flatMap(([token, _child, target,]) => [
+          `            case ${fishQuote(`${node.id}:${token}`)}`,
+          `                set context ${fishQuote(target.id)}`,
+        ])
+      ).join('\n'),
+      REGISTRATIONS: registrations.join('\n').trimEnd(),
+    }).trimEnd()
+  }\n`;
 }
 
 function appendFishValueCompletion(
   parts: string[],
   argument: ArgumentDefinition,
 ): void {
-  if (argument.kind !== "option") return;
+  if (argument.kind !== 'option') {
+    return;
+  }
   const completion = completionForArguments([argument]);
   if (completion.values.length > 0) {
-    parts.push("-f", `-a ${fishWordList(completion.values)}`);
-  } else if (completion.hint === "directory") {
-    parts.push("-f", `-a ${fishQuote("(__fish_complete_directories)")}`);
+    parts.push('-f', `-a ${fishWordList(completion.values)}`);
+  } else if (completion.hint === 'directory') {
+    parts.push('-f', `-a ${fishQuote('(__fish_complete_directories)')}`);
   }
 }
 
 function fishWordList(values: readonly string[]): string {
-  const expression = values.map(fishQuote).join(" ");
+  const expression = values.map(fishQuote).join(' ');
   return fishQuote(expression);
 }
 
@@ -615,13 +639,13 @@ function generatePowerShell(
         `      ${powerShellQuote(`${node.id}:${token}`)} { return $true }`,
       );
     }
-    for (const [token, _child, target] of childEntries(node, nodes)) {
+    for (const [token, _child, target,] of childEntries(node, nodes)) {
       subcommandCases.push(
         `      ${powerShellQuote(`${node.id}:${token}`)} { return ${powerShellQuote(target.id)} }`,
       );
     }
     for (const completion of valueCompletions(node)) {
-      const mode = completion.values.length > 0 ? "static" : completion.hint;
+      const mode = completion.values.length > 0 ? 'static' : completion.hint;
       if (mode !== undefined) {
         for (const token of completion.tokens) {
           valueModeCases.push(
@@ -630,7 +654,7 @@ function generatePowerShell(
         }
       }
       if (completion.values.length > 0) {
-        const values = completion.values.map(powerShellQuote).join(", ");
+        const values = completion.values.map(powerShellQuote).join(', ');
         for (const token of completion.tokens) {
           staticValueCases.push(
             `      ${powerShellQuote(`${node.id}:${token}`)} { return @(${values}) }`,
@@ -644,19 +668,19 @@ function generatePowerShell(
         `        [pscustomobject]@{ Value = ${powerShellQuote(candidate.value)}; Description = ${powerShellQuote(candidate.description)} }`,
       );
     }
-    candidateCases.push("      }");
+    candidateCases.push('      }');
   }
 
-  return renderTemplate("powershell", {
+  return renderTemplate('powershell', {
     EXECUTABLE: executable,
     EXECUTABLE_QUOTED: powerShellQuote(executable),
-    TAKES_VALUE_CASES: takesValueCases.join("\n"),
-    SUBCOMMAND_CASES: subcommandCases.join("\n"),
-    VALUE_MODE_CASES: valueModeCases.join("\n"),
-    STATIC_VALUE_CASES: staticValueCases.join("\n"),
-    CANDIDATE_CASES: candidateCases.join("\n"),
+    TAKES_VALUE_CASES: takesValueCases.join('\n'),
+    SUBCOMMAND_CASES: subcommandCases.join('\n'),
+    VALUE_MODE_CASES: valueModeCases.join('\n'),
+    STATIC_VALUE_CASES: staticValueCases.join('\n'),
+    CANDIDATE_CASES: candidateCases.join('\n'),
     ALLOWS_FILES_CASES: nodes.filter(hasFallbackFilePositionals)
       .map((node) => `      ${powerShellQuote(node.id)} { return $true }`)
-      .join("\n"),
+      .join('\n'),
   });
 }

@@ -1,13 +1,13 @@
 import {
   ArgumentAction,
   getArgumentDefinition,
+  type AnyGlobalArgument,
   type Argument,
   type ArgumentCardinality,
   type ArgumentDefinition,
   type ArgumentKind,
-  type AnyGlobalArgument,
   type ArgumentOutput,
-} from "./argument";
+} from './argument';
 import {
   CliError,
   DisplayKind,
@@ -15,8 +15,8 @@ import {
   type ParseDisplay,
   type ParseOutcome,
   type ParseResult,
-} from "./error";
-import { parsers } from "./parser";
+} from './error';
+import { parsers } from './parser';
 
 class DisplayRequest {
   constructor(readonly outcome: ParseDisplay) {}
@@ -39,7 +39,7 @@ interface ValueConditionDefinition {
 interface ConditionalSetRequirementDefinition {
   readonly target: string;
   readonly conditions: readonly ValueConditionDefinition[];
-  readonly match: "any" | "all";
+  readonly match: 'any' | 'all';
 }
 
 interface RequiredUnlessDefinition {
@@ -120,12 +120,10 @@ export interface CommandDefinition {
   readonly hidden: boolean;
 }
 
-type Simplify<Value> = { [Key in keyof Value]: Value[Key] } & {};
+type Simplify<Value> = { [Key in keyof Value]: Value[Key]; } & {};
 type StringKeyOf<Value> = Extract<keyof Value, string>;
-type RelationValue<Value> =
-  Exclude<Value, undefined> extends readonly (infer Item)[]
-    ? Item
-    : Exclude<Value, undefined>;
+type RelationValue<Value> = Exclude<Value, undefined> extends readonly (infer Item)[] ? Item
+  : Exclude<Value, undefined>;
 
 type FieldCondition<
   Fields extends object,
@@ -150,24 +148,21 @@ type DuplicateGroup<Name extends string> = {
 };
 
 type ParsedSubcommand<Subcommands extends Record<string, unknown>> = {
-  [Name in StringKeyOf<Subcommands>]: Subcommands[Name] extends AnyCommand
-    ? {
-        readonly name: Name;
-        readonly args: Infer<Subcommands[Name]>;
-      }
+  [Name in StringKeyOf<Subcommands>]: Subcommands[Name] extends AnyCommand ? {
+      readonly name: Name;
+      readonly args: Infer<Subcommands[Name]>;
+    }
     : never;
 }[StringKeyOf<Subcommands>];
 
 type SubcommandField<
   Subcommands extends Record<string, unknown>,
   Required extends boolean,
-> = StringKeyOf<Subcommands> extends never
-  ? {}
+> = StringKeyOf<Subcommands> extends never ? {}
   : {
-      readonly subcommand: Required extends true
-        ? ParsedSubcommand<Subcommands>
-        : ParsedSubcommand<Subcommands> | undefined;
-    };
+    readonly subcommand: Required extends true ? ParsedSubcommand<Subcommands>
+      : ParsedSubcommand<Subcommands> | undefined;
+  };
 
 type CommandArguments<
   Fields extends object,
@@ -213,16 +208,14 @@ export interface HandledCommand<
 }
 
 /** Gets the exact result returned by a configured Command. */
-export type Infer<ConfiguredCommand extends AnyCommand> =
-  ConfiguredCommand extends CommandType<
-    infer _Name,
-    infer Fields,
-    infer Subcommands,
-    infer Required,
-    infer _Groups
-  >
-    ? CommandArguments<Fields, Subcommands, Required>
-    : never;
+export type Infer<ConfiguredCommand extends AnyCommand> = ConfiguredCommand extends CommandType<
+  infer _Name,
+  infer Fields,
+  infer Subcommands,
+  infer Required,
+  infer _Groups
+> ? CommandArguments<Fields, Subcommands, Required>
+  : never;
 
 const commandDefinitions = new WeakMap<object, CommandDefinition>();
 
@@ -230,7 +223,7 @@ const commandDefinitions = new WeakMap<object, CommandDefinition>();
 export function getCommandDefinition(command: CommandType): CommandDefinition {
   const definition = commandDefinitions.get(command);
   if (definition === undefined) {
-    throw new TypeError("Expected a command created by command()");
+    throw new TypeError('Expected a command created by command()');
   }
   return definition;
 }
@@ -254,24 +247,30 @@ function copyCommand(
       merged.conditionalRequirements.map((requirement) => Object.freeze({ ...requirement })),
     ),
     conditionalSetRequirements: Object.freeze(
-      merged.conditionalSetRequirements.map((requirement) => Object.freeze({
-        ...requirement,
-        conditions: Object.freeze(
-          requirement.conditions.map((condition) => Object.freeze({ ...condition })),
-        ),
-      })),
+      merged.conditionalSetRequirements.map((requirement) =>
+        Object.freeze({
+          ...requirement,
+          conditions: Object.freeze(
+            requirement.conditions.map((condition) => Object.freeze({ ...condition })),
+          ),
+        })
+      ),
     ),
     requiredUnless: Object.freeze(
-      merged.requiredUnless.map((requirement) => Object.freeze({
-        ...requirement,
-        alternatives: Object.freeze([...requirement.alternatives]),
-      })),
+      merged.requiredUnless.map((requirement) =>
+        Object.freeze({
+          ...requirement,
+          alternatives: Object.freeze([...requirement.alternatives]),
+        })
+      ),
     ),
     requiredUnlessAll: Object.freeze(
-      merged.requiredUnlessAll.map((requirement) => Object.freeze({
-        ...requirement,
-        alternatives: Object.freeze([...requirement.alternatives]),
-      })),
+      merged.requiredUnlessAll.map((requirement) =>
+        Object.freeze({
+          ...requirement,
+          alternatives: Object.freeze([...requirement.alternatives]),
+        })
+      ),
     ),
     exclusiveArguments: Object.freeze([...merged.exclusiveArguments]),
     overrides: Object.freeze(
@@ -281,12 +280,14 @@ function copyCommand(
       merged.conflicts.map((conflict) => Object.freeze([...conflict])),
     ),
     groups: Object.freeze(
-      merged.groups.map((group) => Object.freeze({
-        ...group,
-        members: Object.freeze([...group.members]),
-        requires: Object.freeze([...group.requires]),
-        conflicts: Object.freeze([...group.conflicts]),
-      })),
+      merged.groups.map((group) =>
+        Object.freeze({
+          ...group,
+          members: Object.freeze([...group.members]),
+          requires: Object.freeze([...group.requires]),
+          conflicts: Object.freeze([...group.conflicts]),
+        })
+      ),
     ),
   });
 }
@@ -294,7 +295,7 @@ function copyCommand(
 function toValueConditions(
   conditions: readonly (readonly [string, unknown])[],
 ): readonly ValueConditionDefinition[] {
-  return conditions.map(([source, expected]) => ({ source, expected }));
+  return conditions.map(([source, expected,]) => ({ source, expected }));
 }
 
 function validateValueConditions(
@@ -304,19 +305,19 @@ function validateValueConditions(
     (condition, index) =>
       conditions.findIndex(
         (candidate) =>
-          candidate.source === condition.source &&
-          Object.is(candidate.expected, condition.expected),
+          candidate.source === condition.source
+          && Object.is(candidate.expected, condition.expected),
       ) !== index,
   );
   if (duplicate) {
-    throw new TypeError("A conditional requirement cannot contain duplicate conditions");
+    throw new TypeError('A conditional requirement cannot contain duplicate conditions');
   }
 }
 
 function updateGroupRelations(
   groups: readonly GroupDefinition[],
   groupName: string,
-  relation: "requires" | "conflicts",
+  relation: 'requires' | 'conflicts',
   targets: readonly string[],
 ): readonly GroupDefinition[] {
   const group = groups.find(({ name }) => name === groupName);
@@ -327,9 +328,7 @@ function updateGroupRelations(
   if (new Set(combined).size !== combined.length) {
     throw new TypeError(`Group '${groupName}' has duplicate ${relation}`);
   }
-  return groups.map((current) =>
-    current.name === groupName ? { ...current, [relation]: combined } : current
-  );
+  return groups.map((current) => current.name === groupName ? { ...current, [relation]: combined } : current);
 }
 
 /** An immutable, clap-style command builder. */
@@ -438,12 +437,12 @@ export class Command<
     if (
       definition.arguments.some(
         (argument) =>
-          argument.short === "V" ||
-          argument.long === "version" ||
-          argument.aliases.includes("version"),
+          argument.short === 'V'
+          || argument.long === 'version'
+          || argument.aliases.includes('version'),
       )
     ) {
-      throw new TypeError("Version flags conflict with an existing argument");
+      throw new TypeError('Version flags conflict with an existing argument');
     }
     return this.with({ version });
   }
@@ -461,9 +460,9 @@ export class Command<
     const Cardinality extends ArgumentCardinality,
     const Global extends boolean,
   >(
-    argument: Argument<ArgumentName, Value, Output, Kind, Cardinality, Global> &
-      (ArgumentName extends keyof Fields
-        ? DuplicateArgument<ArgumentName>
+    argument:
+      & Argument<ArgumentName, Value, Output, Kind, Cardinality, Global>
+      & (ArgumentName extends keyof Fields ? DuplicateArgument<ArgumentName>
         : unknown),
   ): Command<
     Name,
@@ -488,19 +487,19 @@ export class Command<
     ChildRequired extends boolean,
     ChildGroups extends string,
   >(
-    child: CommandType<ChildName, ChildFields, ChildSubcommands, ChildRequired, ChildGroups> &
-      (ChildName extends keyof Subcommands
-        ? DuplicateSubcommand<ChildName>
+    child:
+      & CommandType<ChildName, ChildFields, ChildSubcommands, ChildRequired, ChildGroups>
+      & (ChildName extends keyof Subcommands ? DuplicateSubcommand<ChildName>
         : unknown),
   ): Command<
     Name,
     Fields,
     Simplify<
-      Subcommands &
-        Record<
-          ChildName,
-          CommandType<ChildName, ChildFields, ChildSubcommands, ChildRequired, ChildGroups>
-        >
+      & Subcommands
+      & Record<
+        ChildName,
+        CommandType<ChildName, ChildFields, ChildSubcommands, ChildRequired, ChildGroups>
+      >
     >,
     SubcommandRequired,
     Groups
@@ -523,11 +522,11 @@ export class Command<
     return this.with<
       Fields,
       Simplify<
-        Subcommands &
-          Record<
-            ChildName,
-            CommandType<ChildName, ChildFields, ChildSubcommands, ChildRequired, ChildGroups>
-          >
+        & Subcommands
+        & Record<
+          ChildName,
+          CommandType<ChildName, ChildFields, ChildSubcommands, ChildRequired, ChildGroups>
+        >
       >
     >({ subcommands: [...definition.subcommands, childDefinition] });
   }
@@ -593,7 +592,7 @@ export class Command<
     return this.with({
       conditionalSetRequirements: [
         ...definition.conditionalSetRequirements,
-        { target, conditions: valueConditions, match: "any" },
+        { target, conditions: valueConditions, match: 'any' },
       ],
     });
   }
@@ -615,7 +614,7 @@ export class Command<
     return this.with({
       conditionalSetRequirements: [
         ...definition.conditionalSetRequirements,
-        { target, conditions: valueConditions, match: "all" },
+        { target, conditions: valueConditions, match: 'all' },
       ],
     });
   }
@@ -632,7 +631,7 @@ export class Command<
     target: Target,
   ): Command<Name, Fields, Subcommands, SubcommandRequired, Groups> {
     if (new Set(alternatives).size !== alternatives.length) {
-      throw new TypeError("A required-unless list cannot contain duplicate arguments");
+      throw new TypeError('A required-unless list cannot contain duplicate arguments');
     }
     const definition = getCommandDefinition(this);
     return this.with({
@@ -652,7 +651,7 @@ export class Command<
     target: Target,
   ): Command<Name, Fields, Subcommands, SubcommandRequired, Groups> {
     if (new Set(alternatives).size !== alternatives.length) {
-      throw new TypeError("A required-unless-all list cannot contain duplicate arguments");
+      throw new TypeError('A required-unless-all list cannot contain duplicate arguments');
     }
     const definition = getCommandDefinition(this);
     return this.with({
@@ -689,7 +688,7 @@ export class Command<
   ): Command<Name, Fields, Subcommands, SubcommandRequired, Groups> {
     const names: readonly string[] = [first, second, ...rest];
     if (new Set(names).size !== names.length) {
-      throw new TypeError("A conflict list cannot contain duplicate arguments");
+      throw new TypeError('A conflict list cannot contain duplicate arguments');
     }
     const definition = getCommandDefinition(this);
     return this.with({
@@ -708,7 +707,7 @@ export class Command<
     const names: readonly string[] = [first, ...rest];
     const combined = [...getCommandDefinition(this).exclusiveArguments, ...names];
     if (new Set(combined).size !== combined.length) {
-      throw new TypeError("An exclusive argument cannot be registered more than once");
+      throw new TypeError('An exclusive argument cannot be registered more than once');
     }
     return this.with({ exclusiveArguments: combined });
   }
@@ -762,7 +761,7 @@ export class Command<
       groups: updateGroupRelations(
         getCommandDefinition(this).groups,
         groupName,
-        "requires",
+        'requires',
         targets,
       ),
     });
@@ -783,7 +782,7 @@ export class Command<
       groups: updateGroupRelations(
         getCommandDefinition(this).groups,
         groupName,
-        "conflicts",
+        'conflicts',
         targets,
       ),
     });
@@ -811,9 +810,11 @@ export class Command<
         [definition.name],
         [],
       ) as Infer<this>;
-      return { ok: true, type: "value", value };
+      return { ok: true, type: 'value', value };
     } catch (error) {
-      if (error instanceof DisplayRequest) return error.outcome;
+      if (error instanceof DisplayRequest) {
+        return error.outcome;
+      }
       throw error;
     }
   }
@@ -824,7 +825,7 @@ export class Command<
       return this.parse(argv);
     } catch (error) {
       if (error instanceof CliError) {
-        return { ok: false, type: "error", error };
+        return { ok: false, type: 'error', error };
       }
       throw error;
     }
@@ -838,8 +839,8 @@ export class Command<
       ? { argv: argvOrOptions }
       : argvOrOptions as RunOptions;
     const argv = options.argv ?? Bun.argv.slice(2);
-    if (Bun.env.KONSTIT_CLI_COMPLETE === "1") {
-      return import("./dynamic-completion").then(
+    if (Bun.env.KONSTIT_CLI_COMPLETE === '1') {
+      return import('./dynamic-completion').then(
         ({ runDynamicCompletionRequest }) =>
           runDynamicCompletionRequest(this, {
             argv,
@@ -910,46 +911,46 @@ function validateArgument(
   if (all.some(({ name }) => name === argument.name)) {
     throw new TypeError(`Duplicate argument: ${argument.name}`);
   }
-  if (argument.kind === "positional") {
+  if (argument.kind === 'positional') {
     if (argument.short !== undefined || argument.long !== undefined) {
       throw new TypeError(`Positional '${argument.name}' cannot have option names`);
     }
-    const positionals = all.filter(({ kind }) => kind === "positional");
+    const positionals = all.filter(({ kind }) => kind === 'positional');
     const previous = positionals.at(-1);
     if (
-      previous !== undefined &&
-      (previous.repeatable || previous.trailingVarArg || previous.maxValues === null)
+      previous !== undefined
+      && (previous.repeatable || previous.trailingVarArg || previous.maxValues === null)
     ) {
       throw new TypeError(
         `No positional can follow repeatable or unbounded '${previous.name}'`,
       );
     }
     if (
-      argument.presence === "required" &&
-      positionals.some(({ presence }) => presence !== "required")
+      argument.presence === 'required'
+      && positionals.some(({ presence }) => presence !== 'required')
     ) {
-      throw new TypeError("A required positional cannot follow an optional positional");
+      throw new TypeError('A required positional cannot follow an optional positional');
     }
   }
 
-  if (argument.kind !== "positional" && argument.trailingVarArg) {
+  if (argument.kind !== 'positional' && argument.trailingVarArg) {
     throw new TypeError(`Named argument '${argument.name}' cannot be trailing`);
   }
-  if (argument.kind === "positional" && argument.global) {
+  if (argument.kind === 'positional' && argument.global) {
     throw new TypeError(`Positional '${argument.name}' cannot be global`);
   }
 
   const reservedLongs = new Set([
-    ...(commandDefinition.disableHelpFlag ? [] : ["help"]),
+    ...(commandDefinition.disableHelpFlag ? [] : ['help']),
     ...(commandDefinition.version === undefined || commandDefinition.disableVersionFlag
       ? []
-      : ["version"]),
+      : ['version']),
   ]);
   const reservedShorts = new Set([
-    ...(commandDefinition.disableHelpFlag ? [] : ["h"]),
+    ...(commandDefinition.disableHelpFlag ? [] : ['h']),
     ...(commandDefinition.version === undefined || commandDefinition.disableVersionFlag
       ? []
-      : ["V"]),
+      : ['V']),
   ]);
   const argumentLongs = [argument.long, ...argument.aliases].filter(
     (value): value is string => value !== undefined,
@@ -981,7 +982,7 @@ interface ParseState {
   readonly cliProvided: Set<string>;
   readonly valueCounts: Record<string, number>;
   positionalIndex: number;
-  subcommand?: { readonly name: string; readonly args: Record<string, unknown> };
+  subcommand?: { readonly name: string; readonly args: Record<string, unknown>; };
 }
 
 interface GlobalBinding {
@@ -1002,7 +1003,7 @@ function parseDefinition(
     valueCounts: {},
     positionalIndex: 0,
   };
-  const positionals = definition.arguments.filter(({ kind }) => kind === "positional");
+  const positionals = definition.arguments.filter(({ kind }) => kind === 'positional');
   initializeValues(definition, state, path);
   validateGlobalArguments(definition, inheritedGlobals);
   const localGlobals = definition.arguments
@@ -1014,21 +1015,23 @@ function parseDefinition(
   let optionsEnabled = true;
   while (index < argv.length) {
     const token = argv[index];
-    if (token === undefined) break;
+    if (token === undefined) {
+      break;
+    }
 
-    if (optionsEnabled && token === "--") {
+    if (optionsEnabled && token === '--') {
       optionsEnabled = false;
       index += 1;
       continue;
     }
     if (
-      optionsEnabled &&
-      !definition.disableHelpFlag &&
-      (token === "--help" || token === "-h")
+      optionsEnabled
+      && !definition.disableHelpFlag
+      && (token === '--help' || token === '-h')
     ) {
       throw new DisplayRequest({
         ok: true,
-        type: "display",
+        type: 'display',
         kind: DisplayKind.Help,
         output: renderHelp(
           definition,
@@ -1038,19 +1041,19 @@ function parseDefinition(
       });
     }
     if (
-      optionsEnabled &&
-      !definition.disableVersionFlag &&
-      definition.version !== undefined &&
-      (token === "--version" || token === "-V")
+      optionsEnabled
+      && !definition.disableVersionFlag
+      && definition.version !== undefined
+      && (token === '--version' || token === '-V')
     ) {
       throw new DisplayRequest({
         ok: true,
-        type: "display",
+        type: 'display',
         kind: DisplayKind.Version,
         output: `${definition.name} ${definition.version}\n`,
       });
     }
-    if (optionsEnabled && token.startsWith("--") && token.length > 2) {
+    if (optionsEnabled && token.startsWith('--') && token.length > 2) {
       index = parseLongOption(
         definition,
         argv,
@@ -1062,7 +1065,7 @@ function parseDefinition(
       );
       continue;
     }
-    if (optionsEnabled && token.startsWith("-") && token !== "-") {
+    if (optionsEnabled && token.startsWith('-') && token !== '-') {
       index = parseShortOptions(
         definition,
         argv,
@@ -1077,14 +1080,14 @@ function parseDefinition(
 
     if (optionsEnabled) {
       if (
-        token === "help" &&
-        definition.subcommands.length > 0 &&
-        !definition.disableHelpSubcommand &&
-        !hasExactSubcommand(definition, token)
+        token === 'help'
+        && definition.subcommands.length > 0
+        && !definition.disableHelpSubcommand
+        && !hasExactSubcommand(definition, token)
       ) {
         throw new DisplayRequest({
           ok: true,
-          type: "display",
+          type: 'display',
           kind: DisplayKind.Help,
           output: renderSubcommandHelp(
             definition,
@@ -1136,9 +1139,9 @@ function parseDefinition(
     storePositionalValue(positionalArgument, token, definition, path, state);
     const count = state.valueCounts[positionalArgument.name] ?? 0;
     if (
-      !positionalArgument.repeatable &&
-      positionalArgument.maxValues !== null &&
-      count >= positionalArgument.maxValues
+      !positionalArgument.repeatable
+      && positionalArgument.maxValues !== null
+      && count >= positionalArgument.maxValues
     ) {
       state.positionalIndex += 1;
     }
@@ -1159,7 +1162,9 @@ function parseDefinition(
     state.values.subcommand = state.subcommand;
   }
   for (const value of Object.values(state.values)) {
-    if (Array.isArray(value)) Object.freeze(value);
+    if (Array.isArray(value)) {
+      Object.freeze(value);
+    }
   }
   return Object.freeze(state.values);
 }
@@ -1172,7 +1177,7 @@ function initializeValues(
   for (const argument of definition.arguments) {
     if (argument.repeatable || argument.trailingVarArg) {
       state.values[argument.name] = [];
-    } else if (argument.presence === "default") {
+    } else if (argument.presence === 'default') {
       state.values[argument.name] = argument.defaultValue;
     } else {
       state.values[argument.name] = undefined;
@@ -1181,9 +1186,9 @@ function initializeValues(
     if (argument.env !== undefined) {
       const raw = Bun.env[argument.env];
       if (raw !== undefined) {
-        if (argument.kind === "flag") {
+        if (argument.kind === 'flag') {
           state.values[argument.name] = parseWith(argument, raw, `env:${argument.env}`, definition, path, parsers.boolean);
-        } else if (argument.kind === "count") {
+        } else if (argument.kind === 'count') {
           state.values[argument.name] = parseWith(argument, raw, `env:${argument.env}`, definition, path, parsers.integer);
         } else {
           storeRawValues(
@@ -1233,8 +1238,8 @@ function validateGlobalArguments(
         (value): value is string => value !== undefined,
       );
       if (
-        (local.short !== undefined && local.short === global.short) ||
-        localLongs.some((name) => globalLongs.includes(name))
+        (local.short !== undefined && local.short === global.short)
+        || localLongs.some((name) => globalLongs.includes(name))
       ) {
         throw new TypeError(
           `Argument '${local.name}' conflicts with inherited global '${global.name}'`,
@@ -1249,8 +1254,7 @@ function hasExactSubcommand(
   token: string,
 ): boolean {
   return definition.subcommands.some(
-    (child) =>
-      child.name === token || child.aliases.some(({ name }) => name === token),
+    (child) => child.name === token || child.aliases.some(({ name }) => name === token),
   );
 }
 
@@ -1275,21 +1279,24 @@ function resolveSubcommandWithArguments(
   inheritedArguments: readonly ArgumentDefinition[],
 ): CommandDefinition | undefined {
   const exact = definition.subcommands.find(
-    (child) =>
-      child.name === token || child.aliases.some(({ name }) => name === token),
+    (child) => child.name === token || child.aliases.some(({ name }) => name === token),
   );
-  if (exact !== undefined || !definition.inferSubcommands) return exact;
+  if (exact !== undefined || !definition.inferSubcommands) {
+    return exact;
+  }
 
   const matches = definition.subcommands.filter(
     (child) =>
-      child.name.startsWith(token) ||
-      child.aliases.some(({ name }) => name.startsWith(token)),
+      child.name.startsWith(token)
+      || child.aliases.some(({ name }) => name.startsWith(token)),
   );
-  if (matches.length === 1) return matches[0];
+  if (matches.length === 1) {
+    return matches[0];
+  }
   if (matches.length > 1) {
     throw commandError(
       ErrorKind.InvalidSubcommand,
-      `subcommand '${token}' is ambiguous: ${matches.map(({ name }) => name).join(", ")}`,
+      `subcommand '${token}' is ambiguous: ${matches.map(({ name }) => name).join(', ')}`,
       definition,
       path,
       inheritedArguments,
@@ -1344,27 +1351,29 @@ function parseLongOption(
   state: ParseState,
   inheritedGlobals: readonly GlobalBinding[],
 ): number {
-  const equalIndex = token.indexOf("=");
+  const equalIndex = token.indexOf('=');
   const name = token.slice(2, equalIndex === -1 ? undefined : equalIndex);
   const inlineValue = equalIndex === -1 ? undefined : token.slice(equalIndex + 1);
   const binding = availableArgumentBindings(definition, state, inheritedGlobals).find(
     ({ argument }) => argument.long === name || argument.aliases.includes(name),
   );
-  if (binding === undefined || binding.argument.kind === "positional") {
+  if (binding === undefined || binding.argument.kind === 'positional') {
     throw commandError(
       ErrorKind.UnknownArgument,
-      `unexpected argument '--${name}'${suggestToken(
-        `--${name}`,
-        definition,
-        inheritedGlobals.map(({ argument }) => argument),
-      )}`,
+      `unexpected argument '--${name}'${
+        suggestToken(
+          `--${name}`,
+          definition,
+          inheritedGlobals.map(({ argument }) => argument),
+        )
+      }`,
       definition,
       path,
       inheritedGlobals.map(({ argument }) => argument),
     );
   }
   const { argument } = binding;
-  if (argument.kind === "flag" || argument.kind === "count") {
+  if (argument.kind === 'flag' || argument.kind === 'count') {
     if (inlineValue !== undefined) {
       throw commandError(
         ErrorKind.TooManyValues,
@@ -1447,25 +1456,29 @@ function parseShortOptions(
   const cluster = [...token.slice(1)];
   for (let clusterIndex = 0; clusterIndex < cluster.length; clusterIndex += 1) {
     const short = cluster[clusterIndex];
-    if (short === undefined) continue;
+    if (short === undefined) {
+      continue;
+    }
     const binding = availableArgumentBindings(definition, state, inheritedGlobals).find(
       ({ argument }) => argument.short === short,
     );
-    if (binding === undefined || binding.argument.kind === "positional") {
+    if (binding === undefined || binding.argument.kind === 'positional') {
       throw commandError(
         ErrorKind.UnknownArgument,
-        `unexpected argument '-${short}'${suggestToken(
-          `-${short}`,
-          definition,
-          inheritedGlobals.map(({ argument }) => argument),
-        )}`,
+        `unexpected argument '-${short}'${
+          suggestToken(
+            `-${short}`,
+            definition,
+            inheritedGlobals.map(({ argument }) => argument),
+          )
+        }`,
         definition,
         path,
         inheritedGlobals.map(({ argument }) => argument),
       );
     }
     const { argument } = binding;
-    if (argument.kind === "flag" || argument.kind === "count") {
+    if (argument.kind === 'flag' || argument.kind === 'count') {
       storeSwitch(
         argument,
         `-${short}`,
@@ -1476,8 +1489,8 @@ function parseShortOptions(
       );
       continue;
     }
-    const attached = cluster.slice(clusterIndex + 1).join("");
-    if (argument.requireEquals && attached === "") {
+    const attached = cluster.slice(clusterIndex + 1).join('');
+    if (argument.requireEquals && attached === '') {
       if (argument.hasDefaultMissingValue) {
         storeParsedValues(
           argument,
@@ -1501,7 +1514,7 @@ function parseShortOptions(
       argument,
       argv,
       index,
-      attached === "" ? undefined : attached,
+      attached === '' ? undefined : attached,
       definition,
       path,
       `-${short}`,
@@ -1554,9 +1567,9 @@ function consumeOptionValues(
     const parts = splitRawValue(argument, raw);
     const delimiterCanExpandSingle = argument.repeatable && argument.maxValues === 1;
     if (
-      !delimiterCanExpandSingle &&
-      argument.maxValues !== null &&
-      values.length + parts.length > argument.maxValues
+      !delimiterCanExpandSingle
+      && argument.maxValues !== null
+      && values.length + parts.length > argument.maxValues
     ) {
       throw commandError(
         ErrorKind.TooManyValues,
@@ -1570,20 +1583,24 @@ function consumeOptionValues(
     rawCount += 1;
   };
 
-  if (inlineValue !== undefined) append(inlineValue);
+  if (inlineValue !== undefined) {
+    append(inlineValue);
+  }
   while (
-    (argument.maxValues === null || values.length < argument.maxValues) &&
-    !(argument.repeatable && argument.maxValues === 1 && rawCount >= 1)
+    (argument.maxValues === null || values.length < argument.maxValues)
+    && !(argument.repeatable && argument.maxValues === 1 && rawCount >= 1)
   ) {
     const raw = argv[nextIndex];
-    if (raw === undefined) break;
+    if (raw === undefined) {
+      break;
+    }
     if (argument.valueTerminator === raw) {
       nextIndex += 1;
       break;
     }
     if (
-      shouldStopOptionValues(argument, raw) ||
-      (values.length >= argument.minValues && hasExactSubcommand(definition, raw))
+      shouldStopOptionValues(argument, raw)
+      || (values.length >= argument.minValues && hasExactSubcommand(definition, raw))
     ) {
       break;
     }
@@ -1604,9 +1621,13 @@ function consumeOptionValues(
 }
 
 function shouldStopOptionValues(argument: ArgumentDefinition, token: string): boolean {
-  if (argument.allowHyphenValues) return false;
-  if (argument.allowNegativeNumbers && /^-\d/.test(token)) return false;
-  return token === "--" || (token.startsWith("-") && token !== "-");
+  if (argument.allowHyphenValues) {
+    return false;
+  }
+  if (argument.allowNegativeNumbers && /^-\d/.test(token)) {
+    return false;
+  }
+  return token === '--' || (token.startsWith('-') && token !== '-');
 }
 
 function splitRawValue(argument: ArgumentDefinition, raw: string): readonly string[] {
@@ -1625,9 +1646,9 @@ function storePositionalValue(
   const values = splitRawValue(argument, raw);
   const currentCount = state.valueCounts[argument.name] ?? 0;
   if (
-    !argument.repeatable &&
-    argument.maxValues !== null &&
-    currentCount + values.length > argument.maxValues
+    !argument.repeatable
+    && argument.maxValues !== null
+    && currentCount + values.length > argument.maxValues
   ) {
     throw commandError(
       ErrorKind.TooManyValues,
@@ -1665,23 +1686,22 @@ function storeParsedValues(
   path: readonly string[],
   state: ParseState,
 ): void {
-  const collectsValues =
-    argument.repeatable ||
-    argument.trailingVarArg ||
-    argument.maxValues !== 1;
+  const collectsValues = argument.repeatable
+    || argument.trailingVarArg
+    || argument.maxValues !== 1;
   if (
-    argument.env !== undefined &&
-    state.provided.has(argument.name) &&
-    !state.cliProvided.has(argument.name)
+    argument.env !== undefined
+    && state.provided.has(argument.name)
+    && !state.cliProvided.has(argument.name)
   ) {
     state.values[argument.name] = collectsValues ? [] : undefined;
     state.provided.delete(argument.name);
     delete state.valueCounts[argument.name];
   }
   if (
-    argument.kind === "option" &&
-    !argument.repeatable &&
-    state.cliProvided.has(argument.name)
+    argument.kind === 'option'
+    && !argument.repeatable
+    && state.cliProvided.has(argument.name)
   ) {
     throw commandError(
       ErrorKind.ArgumentConflict,
@@ -1717,13 +1737,13 @@ function storeSwitch(
   inheritedArguments: readonly ArgumentDefinition[],
 ): void {
   if (
-    argument.action === ArgumentAction.Help ||
-    argument.action === ArgumentAction.HelpShort ||
-    argument.action === ArgumentAction.HelpLong
+    argument.action === ArgumentAction.Help
+    || argument.action === ArgumentAction.HelpShort
+    || argument.action === ArgumentAction.HelpLong
   ) {
     throw new DisplayRequest({
       ok: true,
-      type: "display",
+      type: 'display',
       kind: DisplayKind.Help,
       output: renderHelp(
         definition,
@@ -1736,27 +1756,27 @@ function storeSwitch(
   if (argument.action === ArgumentAction.Version) {
     if (definition.version === undefined) {
       throw new TypeError(
-        `Command '${path.join(" ")}' must define a version for '${display}'`,
+        `Command '${path.join(' ')}' must define a version for '${display}'`,
       );
     }
     throw new DisplayRequest({
       ok: true,
-      type: "display",
+      type: 'display',
       kind: DisplayKind.Version,
       output: `${definition.name} ${definition.version}\n`,
     });
   }
   if (
-    argument.env !== undefined &&
-    state.provided.has(argument.name) &&
-    !state.cliProvided.has(argument.name)
+    argument.env !== undefined
+    && state.provided.has(argument.name)
+    && !state.cliProvided.has(argument.name)
   ) {
     state.values[argument.name] = argument.defaultValue;
     state.provided.delete(argument.name);
   }
   if (
-    argument.action === ArgumentAction.SetTrue ||
-    argument.action === ArgumentAction.SetFalse
+    argument.action === ArgumentAction.SetTrue
+    || argument.action === ArgumentAction.SetFalse
   ) {
     if (state.cliProvided.has(argument.name)) {
       throw commandError(
@@ -1769,7 +1789,7 @@ function storeSwitch(
     state.values[argument.name] = argument.action === ArgumentAction.SetTrue;
   } else if (argument.action === ArgumentAction.Count) {
     const current = state.values[argument.name];
-    state.values[argument.name] = typeof current === "number" ? current + 1 : 1;
+    state.values[argument.name] = typeof current === 'number' ? current + 1 : 1;
   } else {
     throw new Error(`Action '${argument.action}' is not a switch action`);
   }
@@ -1806,14 +1826,18 @@ function applyOverrides(
   state: ParseState,
 ): void {
   for (const { source, target } of definition.overrides) {
-    if (!state.cliProvided.has(source)) continue;
+    if (!state.cliProvided.has(source)) {
+      continue;
+    }
     const argument = definition.arguments.find(({ name }) => name === target);
-    if (argument === undefined) continue;
+    if (argument === undefined) {
+      continue;
+    }
     state.values[target] = argument.repeatable || argument.trailingVarArg
       ? []
-      : argument.presence === "default"
-        ? argument.defaultValue
-        : undefined;
+      : argument.presence === 'default'
+      ? argument.defaultValue
+      : undefined;
     state.provided.delete(target);
     state.cliProvided.delete(target);
     delete state.valueCounts[target];
@@ -1833,12 +1857,12 @@ function validateParsedValues(
   inheritedArguments: readonly ArgumentDefinition[],
 ): void {
   const missing = definition.arguments
-    .filter((argument) => argument.presence === "required" && !state.provided.has(argument.name))
+    .filter((argument) => argument.presence === 'required' && !state.provided.has(argument.name))
     .map(displayArgument);
   if (missing.length > 0) {
     throw commandError(
       ErrorKind.MissingRequiredArgument,
-      `the following required arguments were not provided: ${missing.join(", ")}`,
+      `the following required arguments were not provided: ${missing.join(', ')}`,
       definition,
       path,
       inheritedArguments,
@@ -1846,9 +1870,9 @@ function validateParsedValues(
   }
   const tooShort = definition.arguments.find(
     (argument) =>
-      (argument.kind === "option" || argument.kind === "positional") &&
-      state.provided.has(argument.name) &&
-      (state.valueCounts[argument.name] ?? 0) < argument.minValues,
+      (argument.kind === 'option' || argument.kind === 'positional')
+      && state.provided.has(argument.name)
+      && (state.valueCounts[argument.name] ?? 0) < argument.minValues,
   );
   if (tooShort !== undefined) {
     throw commandError(
@@ -1862,20 +1886,20 @@ function validateParsedValues(
   if (definition.subcommandRequired && state.subcommand === undefined) {
     throw commandError(
       ErrorKind.MissingSubcommand,
-      "a subcommand is required but one was not provided",
+      'a subcommand is required but one was not provided',
       definition,
       path,
       inheritedArguments,
     );
   }
   if (
-    definition.argRequiredElseHelp &&
-    state.provided.size === 0 &&
-    state.subcommand === undefined
+    definition.argRequiredElseHelp
+    && state.provided.size === 0
+    && state.subcommand === undefined
   ) {
     throw new DisplayRequest({
       ok: true,
-      type: "display",
+      type: 'display',
       kind: DisplayKind.Help,
       output: renderHelp(definition, path, inheritedArguments),
     });
@@ -1894,12 +1918,14 @@ function validateParsedValues(
   }
   for (const { source, expected, target } of definition.conditionalRequirements) {
     if (
-      matchesRelationValue(state.values[source], expected) &&
-      !state.provided.has(target)
+      matchesRelationValue(state.values[source], expected)
+      && !state.provided.has(target)
     ) {
       throw commandError(
         ErrorKind.MissingDependency,
-        `argument '${displayName(definition, source)}' requires '${displayName(definition, target)}' when its value is '${String(expected)}'`,
+        `argument '${displayName(definition, source)}' requires '${displayName(definition, target)}' when its value is '${
+          String(expected)
+        }'`,
         definition,
         path,
         inheritedArguments,
@@ -1908,18 +1934,16 @@ function validateParsedValues(
   }
   for (const requirement of definition.conditionalSetRequirements) {
     const matches = requirement.conditions.map(({ source, expected }) =>
-      state.provided.has(source) &&
-      matchesRelationValue(state.values[source], expected)
+      state.provided.has(source)
+      && matchesRelationValue(state.values[source], expected)
     );
-    const matched = requirement.match === "any"
+    const matched = requirement.match === 'any'
       ? matches.some(Boolean)
       : matches.every(Boolean);
     if (matched && !state.provided.has(requirement.target)) {
-      const joiner = requirement.match === "any" ? " or " : " and ";
+      const joiner = requirement.match === 'any' ? ' or ' : ' and ';
       const conditions = requirement.conditions
-        .map(({ source, expected }) =>
-          `'${displayName(definition, source)}=${String(expected)}'`
-        )
+        .map(({ source, expected }) => `'${displayName(definition, source)}=${String(expected)}'`)
         .join(joiner);
       throw commandError(
         ErrorKind.MissingDependency,
@@ -1932,12 +1956,14 @@ function validateParsedValues(
   }
   for (const { target, alternatives } of definition.requiredUnless) {
     if (
-      !state.provided.has(target) &&
-      !alternatives.some((name) => state.provided.has(name))
+      !state.provided.has(target)
+      && !alternatives.some((name) => state.provided.has(name))
     ) {
       throw commandError(
         ErrorKind.MissingRequiredArgument,
-        `argument '${displayName(definition, target)}' is required unless ${alternatives.map((name) => `'${displayName(definition, name)}'`).join(" or ")} is present`,
+        `argument '${displayName(definition, target)}' is required unless ${
+          alternatives.map((name) => `'${displayName(definition, name)}'`).join(' or ')
+        } is present`,
         definition,
         path,
         inheritedArguments,
@@ -1946,12 +1972,14 @@ function validateParsedValues(
   }
   for (const { target, alternatives } of definition.requiredUnlessAll) {
     if (
-      !state.provided.has(target) &&
-      !alternatives.every((name) => state.provided.has(name))
+      !state.provided.has(target)
+      && !alternatives.every((name) => state.provided.has(name))
     ) {
       throw commandError(
         ErrorKind.MissingRequiredArgument,
-        `argument '${displayName(definition, target)}' is required unless all of ${alternatives.map((name) => `'${displayName(definition, name)}'`).join(" and ")} are present`,
+        `argument '${displayName(definition, target)}' is required unless all of ${
+          alternatives.map((name) => `'${displayName(definition, name)}'`).join(' and ')
+        } are present`,
         definition,
         path,
         inheritedArguments,
@@ -1959,12 +1987,16 @@ function validateParsedValues(
     }
   }
   for (const exclusive of definition.exclusiveArguments) {
-    if (!state.provided.has(exclusive)) continue;
+    if (!state.provided.has(exclusive)) {
+      continue;
+    }
     const others = [...state.provided].filter((name) => name !== exclusive);
     if (others.length > 0) {
       throw commandError(
         ErrorKind.ArgumentConflict,
-        `argument '${displayName(definition, exclusive)}' cannot be used with ${others.map((name) => `'${displayName(definition, name)}'`).join(" and ")}`,
+        `argument '${displayName(definition, exclusive)}' cannot be used with ${
+          others.map((name) => `'${displayName(definition, name)}'`).join(' and ')
+        }`,
         definition,
         path,
         inheritedArguments,
@@ -1976,7 +2008,7 @@ function validateParsedValues(
     if (present.length > 1) {
       throw commandError(
         ErrorKind.ArgumentConflict,
-        `arguments ${present.map((name) => `'${displayName(definition, name)}'`).join(" and ")} cannot be used together`,
+        `arguments ${present.map((name) => `'${displayName(definition, name)}'`).join(' and ')} cannot be used together`,
         definition,
         path,
         inheritedArguments,
@@ -1988,7 +2020,7 @@ function validateParsedValues(
     if (group.required && present.length === 0) {
       throw commandError(
         ErrorKind.MissingRequiredArgument,
-        `one of group '${group.name}' is required: ${group.members.map((name) => displayName(definition, name)).join(", ")}`,
+        `one of group '${group.name}' is required: ${group.members.map((name) => displayName(definition, name)).join(', ')}`,
         definition,
         path,
         inheritedArguments,
@@ -1997,7 +2029,7 @@ function validateParsedValues(
     if (!group.multiple && present.length > 1) {
       throw commandError(
         ErrorKind.ArgumentConflict,
-        `arguments in group '${group.name}' cannot be used together: ${present.map((name) => displayName(definition, name)).join(", ")}`,
+        `arguments in group '${group.name}' cannot be used together: ${present.map((name) => displayName(definition, name)).join(', ')}`,
         definition,
         path,
         inheritedArguments,
@@ -2031,9 +2063,15 @@ function validateParsedValues(
 }
 
 function displayArgument(argument: ArgumentDefinition): string {
-  if (argument.kind === "positional") return `<${argument.name}>`;
-  if (argument.long !== undefined) return `--${argument.long}`;
-  if (argument.short !== undefined) return `-${argument.short}`;
+  if (argument.kind === 'positional') {
+    return `<${argument.name}>`;
+  }
+  if (argument.long !== undefined) {
+    return `--${argument.long}`;
+  }
+  if (argument.short !== undefined) {
+    return `-${argument.short}`;
+  }
   return argument.name;
 }
 
@@ -2083,7 +2121,7 @@ function suggestToken(
     }
   }
   const limit = Math.max(1, Math.floor(token.length / 3));
-  return best !== undefined && bestDistance <= limit ? `; a similar argument exists: '${best}'` : "";
+  return best !== undefined && bestDistance <= limit ? `; a similar argument exists: '${best}'` : '';
 }
 
 function editDistance(left: string, right: string): number {
@@ -2108,26 +2146,26 @@ function renderUsageText(
   path: readonly string[],
   inheritedArguments: readonly ArgumentDefinition[],
 ): string {
-  if (definition.overrideUsage !== undefined) return definition.overrideUsage;
+  if (definition.overrideUsage !== undefined) {
+    return definition.overrideUsage;
+  }
   const allArguments = [...definition.arguments, ...inheritedArguments];
-  const options = allArguments.some(({ kind, hidden }) =>
-    kind !== "positional" && !hidden
-  );
+  const options = allArguments.some(({ kind, hidden }) => kind !== 'positional' && !hidden);
   const positionalUsage = definition.arguments
-    .filter(({ kind, hidden }) => kind === "positional" && !hidden)
+    .filter(({ kind, hidden }) => kind === 'positional' && !hidden)
     .map((argument) => {
       const name = argument.valueName ?? argument.name.toUpperCase();
-      const rendered = argument.presence === "required" ? `<${name}>` : `[${name}]`;
+      const rendered = argument.presence === 'required' ? `<${name}>` : `[${name}]`;
       return argument.repeatable || argument.trailingVarArg || argument.maxValues !== 1
         ? `${rendered}...`
         : rendered;
     });
   return [
-    path.join(" "),
-    ...(options ? ["[OPTIONS]"] : []),
+    path.join(' '),
+    ...(options ? ['[OPTIONS]'] : []),
     ...positionalUsage,
-    ...(definition.subcommands.some(({ hidden }) => !hidden) ? ["<COMMAND>"] : []),
-  ].join(" ");
+    ...(definition.subcommands.some(({ hidden }) => !hidden) ? ['<COMMAND>'] : []),
+  ].join(' ');
 }
 
 function renderUsage(
@@ -2144,22 +2182,30 @@ function renderHelp(
   inheritedArguments: readonly ArgumentDefinition[] = [],
   includeLongAbout = true,
 ): string {
-  if (definition.overrideHelp !== undefined) return definition.overrideHelp;
+  if (definition.overrideHelp !== undefined) {
+    return definition.overrideHelp;
+  }
 
   const lines: string[] = [];
-  if (definition.beforeHelp !== undefined) lines.push(definition.beforeHelp);
-  if (definition.about !== undefined) lines.push(definition.about, "");
-  if (definition.author !== undefined) lines.push(`Author: ${definition.author}`, "");
+  if (definition.beforeHelp !== undefined) {
+    lines.push(definition.beforeHelp);
+  }
+  if (definition.about !== undefined) {
+    lines.push(definition.about, '');
+  }
+  if (definition.author !== undefined) {
+    lines.push(`Author: ${definition.author}`, '');
+  }
   lines.push(renderUsage(definition, path, inheritedArguments));
 
   const positionals = definition.arguments.filter(
-    (argument) => argument.kind === "positional" && !argument.hidden,
+    (argument) => argument.kind === 'positional' && !argument.hidden,
   );
   if (positionals.length > 0) {
-    lines.push("", "Arguments:");
+    lines.push('', 'Arguments:');
     const entries: Array<readonly [string, string]> = positionals.map((argument) => {
       const name = argument.valueName ?? argument.name.toUpperCase();
-      const base = argument.presence === "required" ? `<${name}>` : `[${name}]`;
+      const base = argument.presence === 'required' ? `<${name}>` : `[${name}]`;
       const label = argument.repeatable || argument.trailingVarArg || argument.maxValues !== 1
         ? `${base}...`
         : base;
@@ -2169,76 +2215,82 @@ function renderHelp(
   }
 
   const options = [...definition.arguments, ...inheritedArguments].filter(
-    (argument) => argument.kind !== "positional" && !argument.hidden,
+    (argument) => argument.kind !== 'positional' && !argument.hidden,
   );
   const entries: Array<readonly [string, string]> = options.map((argument) => {
     const names = [
       ...(argument.short === undefined ? [] : [`-${argument.short}`]),
       ...(argument.long === undefined ? [] : [`--${argument.long}`]),
-    ].join(", ");
-    const valueName = argument.valueName ?? argument.parser?.label ?? "VALUE";
-    const repeatedValue = argument.repeatable || argument.maxValues !== 1 ? "..." : "";
-    const value = argument.kind !== "option"
-      ? ""
+    ].join(', ');
+    const valueName = argument.valueName ?? argument.parser?.label ?? 'VALUE';
+    const repeatedValue = argument.repeatable || argument.maxValues !== 1 ? '...' : '';
+    const value = argument.kind !== 'option'
+      ? ''
       : argument.requireEquals
-        ? `${argument.minValues === 0 ? "[" : ""}=<${valueName}>${repeatedValue}${argument.minValues === 0 ? "]" : ""}`
-        : ` <${valueName}>${repeatedValue}`;
+      ? `${argument.minValues === 0 ? '[' : ''}=<${valueName}>${repeatedValue}${argument.minValues === 0 ? ']' : ''}`
+      : ` <${valueName}>${repeatedValue}`;
     return [`  ${names}${value}`, annotateHelp(argument)] as const;
   });
   if (!definition.disableHelpFlag) {
-    entries.push(["  -h, --help", "Print help"]);
+    entries.push(['  -h, --help', 'Print help']);
   }
   if (definition.version !== undefined && !definition.disableVersionFlag) {
-    entries.push(["  -V, --version", "Print version"]);
+    entries.push(['  -V, --version', 'Print version']);
   }
   if (entries.length > 0) {
-    lines.push("", "Options:");
+    lines.push('', 'Options:');
     pushAligned(lines, entries);
   }
 
   const subcommands = definition.subcommands.filter(({ hidden }) => !hidden);
   if (subcommands.length > 0) {
-    lines.push("", "Commands:");
+    lines.push('', 'Commands:');
     const commandEntries: Array<readonly [string, string]> = subcommands.map((child) => {
       const aliases = child.aliases
         .filter(({ visible }) => visible)
         .map(({ name }) => name);
       const label = aliases.length === 0
         ? child.name
-        : `${child.name} (aliases: ${aliases.join(", ")})`;
-      return [`  ${label}`, child.about ?? ""] as const;
+        : `${child.name} (aliases: ${aliases.join(', ')})`;
+      return [`  ${label}`, child.about ?? ''] as const;
     });
     if (subcommands.length > 0 && !definition.disableHelpSubcommand) {
-      commandEntries.push(["  help", "Print help for a subcommand"]);
+      commandEntries.push(['  help', 'Print help for a subcommand']);
     }
     pushAligned(lines, commandEntries);
   }
   if (includeLongAbout && definition.longAbout !== undefined) {
-    lines.push("", definition.longAbout);
+    lines.push('', definition.longAbout);
   }
-  if (definition.afterHelp !== undefined) lines.push("", definition.afterHelp);
-  return `${lines.join("\n")}\n`;
+  if (definition.afterHelp !== undefined) {
+    lines.push('', definition.afterHelp);
+  }
+  return `${lines.join('\n')}\n`;
 }
 
 function annotateHelp(argument: ArgumentDefinition): string {
   const annotations: string[] = [];
-  if (argument.help !== undefined) annotations.push(argument.help);
-  if (argument.env !== undefined) annotations.push(`[env: ${argument.env}]`);
+  if (argument.help !== undefined) {
+    annotations.push(argument.help);
+  }
+  if (argument.env !== undefined) {
+    annotations.push(`[env: ${argument.env}]`);
+  }
   if (
-    argument.presence === "default" &&
-    argument.kind !== "flag" &&
-    argument.kind !== "count"
+    argument.presence === 'default'
+    && argument.kind !== 'flag'
+    && argument.kind !== 'count'
   ) {
     annotations.push(`[default: ${String(argument.defaultValue)}]`);
   }
-  return annotations.join(" ");
+  return annotations.join(' ');
 }
 
 function pushAligned(lines: string[], entries: readonly (readonly [string, string])[]): void {
-  const width = Math.max(0, ...entries.map(([label]) => Bun.stringWidth(label)));
-  for (const [label, description] of entries) {
-    const padding = " ".repeat(width - Bun.stringWidth(label));
-    lines.push(description === "" ? label : `${label}${padding}  ${description}`);
+  const width = Math.max(0, ...entries.map(([label,]) => Bun.stringWidth(label)));
+  for (const [label, description,] of entries) {
+    const padding = ' '.repeat(width - Bun.stringWidth(label));
+    lines.push(description === '' ? label : `${label}${padding}  ${description}`);
   }
 }
 
@@ -2274,13 +2326,13 @@ function selectDeepestCommand(
   ];
   const parsedSubcommand = args.subcommand;
   if (
-    typeof parsedSubcommand !== "object" ||
-    parsedSubcommand === null ||
-    !("name" in parsedSubcommand) ||
-    !("args" in parsedSubcommand) ||
-    typeof parsedSubcommand.name !== "string" ||
-    typeof parsedSubcommand.args !== "object" ||
-    parsedSubcommand.args === null
+    typeof parsedSubcommand !== 'object'
+    || parsedSubcommand === null
+    || !('name' in parsedSubcommand)
+    || !('args' in parsedSubcommand)
+    || typeof parsedSubcommand.name !== 'string'
+    || typeof parsedSubcommand.args !== 'object'
+    || parsedSubcommand.args === null
   ) {
     return { definition, args, globals, path };
   }
@@ -2314,9 +2366,11 @@ function writeDisplay(display: ParseDisplay, options: RunOptions): number {
 }
 
 function normalizeHandlerExitCode(value: HandlerResult): number {
-  if (value === undefined) return 0;
+  if (value === undefined) {
+    return 0;
+  }
   if (!Number.isSafeInteger(value) || value < 0 || value > 255) {
-    throw new RangeError("A command handler exit code must be an integer from 0 to 255");
+    throw new RangeError('A command handler exit code must be an integer from 0 to 255');
   }
   return value;
 }
@@ -2326,8 +2380,12 @@ async function runConfiguredHandler<Args extends object>(
   result: ParseResult<Args>,
   options: RunOptions,
 ): Promise<number> {
-  if (result.type === "error") return writeParseFailure(result.error, options);
-  if (result.type === "display") return writeDisplay(result, options);
+  if (result.type === 'error') {
+    return writeParseFailure(result.error, options);
+  }
+  if (result.type === 'display') {
+    return writeDisplay(result, options);
+  }
 
   const selected = selectDeepestCommand(
     definition,
@@ -2336,7 +2394,7 @@ async function runConfiguredHandler<Args extends object>(
   );
   if (selected.definition.handler === undefined) {
     throw new TypeError(
-      `No handler is configured for command '${selected.path.join(" ")}'`,
+      `No handler is configured for command '${selected.path.join(' ')}'`,
     );
   }
   const context: HandlerContext = Object.freeze({
@@ -2351,7 +2409,7 @@ async function runConfiguredHandler<Args extends object>(
       );
       if (binding === undefined) {
         throw new TypeError(
-          `Global argument '${argumentDefinition.name}' is not registered for command '${selected.path.join(" ")}'`,
+          `Global argument '${argumentDefinition.name}' is not registered for command '${selected.path.join(' ')}'`,
         );
       }
       return binding.value as ArgumentOutput<ArgumentType>;

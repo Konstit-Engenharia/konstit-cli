@@ -1,10 +1,4 @@
-export {
-  count,
-  flag,
-  option,
-  positional,
-  type ValueCountRange,
-} from "./argument";
+export { count, flag, option, positional, type ValueCountRange } from './argument';
 export {
   command,
   type CommandHandler,
@@ -14,12 +8,8 @@ export {
   type HandlerResult,
   type Infer,
   type RunOptions,
-} from "./command";
-export {
-  completionShells,
-  isCompletionShell,
-  type CompletionShell,
-} from "./completion-shell";
+} from './command';
+export { type CompletionShell, completionShells, isCompletionShell } from './completion-shell';
 export {
   CliError,
   DisplayKind,
@@ -29,10 +19,5 @@ export {
   type ParseOutcome,
   type ParseResult,
   type ParseValue,
-} from "./error";
-export {
-  parsers,
-  type CompletionValueHint,
-  type ValueParser,
-  type ValueParserOptions,
-} from "./parser";
+} from './error';
+export { type CompletionValueHint, parsers, type ValueParser, type ValueParserOptions } from './parser';

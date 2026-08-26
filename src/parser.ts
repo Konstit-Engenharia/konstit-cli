@@ -8,7 +8,7 @@ export interface ValueParser<out Value> {
   parse(input: string): Value;
 }
 
-export type CompletionValueHint = "file" | "directory";
+export type CompletionValueHint = 'file' | 'directory';
 
 export interface ValueParserOptions {
   readonly completions?: readonly string[];
@@ -34,12 +34,12 @@ function createValueParser<Value>(
 }
 
 function finiteNumber(input: string): number {
-  if (input.trim() === "") {
-    throw new Error("expected a number");
+  if (input.trim() === '') {
+    throw new Error('expected a number');
   }
   const value = Number(input);
   if (!Number.isFinite(value)) {
-    throw new Error("expected a finite number");
+    throw new Error('expected a finite number');
   }
   return value;
 }
@@ -51,77 +51,77 @@ function jsonParser<Value>(
 function jsonParser<Value>(
   guard?: (value: unknown) => value is Value,
 ): ValueParser<Value | unknown> {
-  return createValueParser("JSON", (input) => {
+  return createValueParser('JSON', (input) => {
     let value: unknown;
     try {
       value = JSON.parse(input);
     } catch {
-      throw new Error("expected valid JSON");
+      throw new Error('expected valid JSON');
     }
     if (guard !== undefined && !guard(value)) {
-      throw new Error("JSON value has an invalid shape");
+      throw new Error('JSON value has an invalid shape');
     }
     return value;
   });
 }
 
 export const parsers = Object.freeze({
-  string: createValueParser("STRING", (input) => input),
+  string: createValueParser('STRING', (input) => input),
 
-  integer: createValueParser("INTEGER", (input) => {
+  integer: createValueParser('INTEGER', (input) => {
     if (!/^[+-]?\d+$/.test(input)) {
-      throw new Error("expected an integer");
+      throw new Error('expected an integer');
     }
     const value = Number(input);
     if (!Number.isSafeInteger(value)) {
-      throw new Error("integer is outside the safe range");
+      throw new Error('integer is outside the safe range');
     }
     return value;
   }),
 
-  float: createValueParser("NUMBER", finiteNumber),
+  float: createValueParser('NUMBER', finiteNumber),
 
-  bigint: createValueParser("INTEGER", (input) => {
+  bigint: createValueParser('INTEGER', (input) => {
     try {
       return BigInt(input);
     } catch {
-      throw new Error("expected an integer");
+      throw new Error('expected an integer');
     }
   }),
 
   boolean: createValueParser(
-    "BOOLEAN",
+    'BOOLEAN',
     (input) => {
       switch (input.toLowerCase()) {
-        case "1":
-        case "true":
-        case "yes":
-        case "on":
+        case '1':
+        case 'true':
+        case 'yes':
+        case 'on':
           return true;
-        case "0":
-        case "false":
-        case "no":
-        case "off":
+        case '0':
+        case 'false':
+        case 'no':
+        case 'off':
           return false;
         default:
-          throw new Error("expected true or false");
+          throw new Error('expected true or false');
       }
     },
-    { completions: ["true", "false"] },
+    { completions: ['true', 'false'] },
   ),
 
-  url: createValueParser("URL", (input) => {
+  url: createValueParser('URL', (input) => {
     try {
       return new URL(input);
     } catch {
-      throw new Error("expected a valid URL");
+      throw new Error('expected a valid URL');
     }
   }),
 
-  date: createValueParser("DATE", (input) => {
+  date: createValueParser('DATE', (input) => {
     const value = new Date(input);
     if (Number.isNaN(value.getTime())) {
-      throw new Error("expected a valid date");
+      throw new Error('expected a valid date');
     }
     return value;
   }),
@@ -131,10 +131,10 @@ export const parsers = Object.freeze({
   ): ValueParser<Values[number]> {
     const allowed = new Set<string>(values);
     return createValueParser(
-      values.join("|"),
+      values.join('|'),
       (input): Values[number] => {
         if (!allowed.has(input)) {
-          throw new Error(`expected one of: ${values.join(", ")}`);
+          throw new Error(`expected one of: ${values.join(', ')}`);
         }
         return input as Values[number];
       },
@@ -157,7 +157,7 @@ export const parsers = Object.freeze({
     maximum: number,
   ): ValueParser<number> {
     if (!Number.isFinite(minimum) || !Number.isFinite(maximum) || minimum > maximum) {
-      throw new RangeError("A parser range must have finite, ascending bounds");
+      throw new RangeError('A parser range must have finite, ascending bounds');
     }
     return createValueParser(`${minimum}..${maximum}`, (input) => {
       const value = finiteNumber(input);
