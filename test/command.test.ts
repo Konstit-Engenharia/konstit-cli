@@ -50,13 +50,21 @@ describe('command parsing', () => {
     const cli = command('app', {
       args: [
         option('port', parsers.integer, { short: 'p' }),
-        option('output', parsers.string, { aliases: ['out'] }),
+        option('output', parsers.string, { short: 'o', aliases: ['out'] }),
       ],
     });
 
     expect(parse(cli, ['-p3000', '--out=result.txt'])).toEqual({
       port: 3000,
       output: 'result.txt',
+    });
+    expect(parse(cli, ['-p=3000', '-o=result.txt'])).toEqual({
+      port: 3000,
+      output: 'result.txt',
+    });
+    expect(parse(cli, ['-o='])).toEqual({
+      port: undefined,
+      output: '',
     });
   });
 
@@ -479,6 +487,48 @@ describe('validation and errors', () => {
     if (!invalid.ok) {
       expect(invalid.error.kind).toBe(ErrorKind.InvalidValue);
       expect(invalid.error.message).toContain('from 1 to 65535');
+    }
+  });
+
+  test('rejects undefined values returned by value parsers', () => {
+    const cli = command('defined', {
+      args: [
+        option(
+          'value',
+          parsers.custom<string | undefined>('DEFINED', () => undefined),
+          { required: true },
+        ),
+      ],
+    });
+
+    const result = cli.tryParse(['--value', 'input']);
+    expect(result).toMatchObject({
+      ok: false,
+      error: { kind: ErrorKind.InvalidValue },
+    });
+    if (!result.ok) {
+      expect(result.error.message).toContain('value parser returned undefined');
+    }
+  });
+
+  test('escapes untrusted control characters in diagnostics', () => {
+    const cli = command('safe', {
+      args: [option('count', parsers.integer, { required: true })],
+    });
+    const result = cli.tryParse([
+      '--count',
+      '\u001b[31mBAD\nINJECTED\u202e',
+    ]);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain(
+        '\\u{1b}[31mBAD\\nINJECTED\\u{202e}',
+      );
+      expect(result.error.message).not.toMatch(/[\p{Cc}\p{Cf}]/u);
+      expect(result.error.output.split('\n')[0]).toBe(
+        `error: ${result.error.message}`,
+      );
     }
   });
 

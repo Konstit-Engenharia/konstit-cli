@@ -9,7 +9,7 @@ import {
   type ArgumentName,
   type ArgumentOutput,
   type ArgumentType,
-} from './argument';
+} from './argument.js';
 import {
   CliError,
   DisplayKind,
@@ -17,8 +17,8 @@ import {
   type ParseDisplay,
   type ParseOutcome,
   type ParseResult,
-} from './error';
-import { parsers } from './parser';
+} from './error.js';
+import { parsers } from './parser.js';
 
 class DisplayRequest {
   constructor(readonly outcome: ParseDisplay) {}
@@ -857,7 +857,7 @@ class Command<
       : argvOrOptions as RunOptions;
     const argv = options.argv ?? Bun.argv.slice(2);
     if (Bun.env.KONSTIT_CLI_COMPLETE === '1') {
-      return import('./dynamic-completion').then(
+      return import('./dynamic-completion.js').then(
         ({ runDynamicCompletionRequest }) =>
           runDynamicCompletionRequest(this, {
             argv,
@@ -2533,8 +2533,12 @@ function parseShortOptions(
       );
       continue;
     }
-    const attached = cluster.slice(clusterIndex + 1).join('');
-    if (argument.requireEquals && attached === '') {
+    const attachedSource = cluster.slice(clusterIndex + 1).join('');
+    const hasAttachedValue = attachedSource !== '';
+    const attached = attachedSource.startsWith('=')
+      ? attachedSource.slice(1)
+      : attachedSource;
+    if (argument.requireEquals && !hasAttachedValue) {
       if (argument.hasDefaultMissingValue) {
         storeParsedValues(
           argument,
@@ -2558,7 +2562,7 @@ function parseShortOptions(
       argument,
       argv,
       index,
-      attached === '' ? undefined : attached,
+      hasAttachedValue ? attached : undefined,
       definition,
       path,
       `-${short}`,
@@ -2877,7 +2881,11 @@ function parseWith(
     throw new Error(`Argument '${argument.name}' has no value parser`);
   }
   try {
-    return overrideParser.parse(raw);
+    const parsed = overrideParser.parse(raw);
+    if (parsed === undefined) {
+      throw new TypeError('a value parser returned undefined');
+    }
+    return parsed;
   } catch (cause) {
     const detail = cause instanceof Error ? cause.message : String(cause);
     throw commandError(
@@ -3158,11 +3166,28 @@ function commandError(
   inheritedArguments: readonly ArgumentDefinition[] = [],
 ): CliError {
   const usage = renderUsage(definition, path, inheritedArguments);
+  const safeMessage = sanitizeDiagnostic(message);
   return new CliError(
     kind,
-    message,
-    `error: ${message}\n\n${usage}\n\nFor more information, try '--help'.\n`,
+    safeMessage,
+    `error: ${safeMessage}\n\n${usage}\n\nFor more information, try '--help'.\n`,
   );
+}
+
+function sanitizeDiagnostic(message: string): string {
+  return message.replace(/[\p{Cc}\p{Cf}]/gu, (character) => {
+    if (character === '\n') {
+      return '\\n';
+    }
+    if (character === '\r') {
+      return '\\r';
+    }
+    if (character === '\t') {
+      return '\\t';
+    }
+    const codePoint = character.codePointAt(0);
+    return codePoint === undefined ? '' : `\\u{${codePoint.toString(16)}}`;
+  });
 }
 
 function suggestToken(

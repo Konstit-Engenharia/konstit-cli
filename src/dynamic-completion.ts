@@ -1,10 +1,10 @@
-import type { ArgumentDefinition } from './argument';
+import type { ArgumentDefinition } from './argument.js';
 import {
   getCommandDefinition,
   type CommandDefinition,
   type CommandType,
-} from './command';
-import type { CompletionValueHint } from './parser';
+} from './command.js';
+import type { CompletionValueHint } from './parser.js';
 
 /** A completion returned by a dynamic provider. */
 export interface DynamicCompletionCandidate {
@@ -264,6 +264,7 @@ function scanWords(state: ScanState, words: readonly string[]): void {
 
     if (state.pending !== undefined) {
       if (word === state.pending.argument.valueTerminator) {
+        applyDefaultMissing(state.pending, state);
         state.pending = undefined;
         index += 1;
         continue;
@@ -273,6 +274,7 @@ function scanWords(state: ScanState, words: readonly string[]): void {
         index += 1;
         continue;
       }
+      applyDefaultMissing(state.pending, state);
       state.pending = undefined;
     }
 
@@ -373,6 +375,7 @@ function scanLongOption(state: ScanState, word: string): void {
 
   const inline = equalsIndex < 0 ? undefined : word.slice(equalsIndex + 1);
   if (inline === undefined && argument.requireEquals) {
+    storeDefaultMissing(argument, state);
     return;
   }
   const inlineValues = inline === undefined ? [] : splitValue(argument, inline);
@@ -399,14 +402,17 @@ function scanShortOptions(state: ScanState, word: string): void {
       continue;
     }
 
-    let inline = cluster.slice(index + 1);
+    const inlineSource = cluster.slice(index + 1);
+    const hasInlineValue = inlineSource.length > 0;
+    let inline = inlineSource;
     if (inline.startsWith('=')) {
       inline = inline.slice(1);
     }
-    if (inline.length === 0 && argument.requireEquals) {
+    if (!hasInlineValue && argument.requireEquals) {
+      storeDefaultMissing(argument, state);
       return;
     }
-    const inlineValues = inline.length === 0 ? [] : splitValue(argument, inline);
+    const inlineValues = hasInlineValue ? splitValue(argument, inline) : [];
     if (inlineValues.length > 0) {
       storeArgumentValues(argument, inlineValues, state);
     }
@@ -425,6 +431,35 @@ function setPending(
     state.pending = { argument, consumed };
   } else {
     state.pending = undefined;
+  }
+}
+
+function applyDefaultMissing(pending: PendingValue, state: ScanState): void {
+  if (pending.consumed === 0) {
+    storeDefaultMissing(pending.argument, state);
+  }
+}
+
+function storeDefaultMissing(
+  argument: ArgumentDefinition,
+  state: ScanState,
+): void {
+  if (!argument.hasDefaultMissingValue) {
+    return;
+  }
+  if (!state.cliProvided.has(argument.name)) {
+    state.cliProvided.add(argument.name);
+    state.rawValues[argument.name] = [];
+    state.values[argument.name] = collectsValues(argument) ? [] : undefined;
+  }
+  if (collectsValues(argument)) {
+    const current = state.values[argument.name];
+    state.values[argument.name] = [
+      ...(Array.isArray(current) ? current : []),
+      argument.defaultMissingValue,
+    ];
+  } else {
+    state.values[argument.name] = argument.defaultMissingValue;
   }
 }
 

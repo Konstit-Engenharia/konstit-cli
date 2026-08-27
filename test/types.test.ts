@@ -146,6 +146,19 @@ type _ConfiguredArgumentsAreExact = Expect<
   Equal<ConfiguredArgumentsActual, ConfiguredArgumentsExpected>
 >;
 
+const requiredDefinedParser = command('required-defined-parser', {
+  args: [
+    option(
+      'value',
+      parsers.custom<string | undefined>('DEFINED', (input) => input),
+      { required: true },
+    ),
+  ],
+});
+type _RequiredParserValueIsDefined = Expect<
+  Equal<Infer<typeof requiredDefinedParser>['value'], string>
+>;
+
 const advancedConfiguredCli = command('advanced-configured', {
   args: [
     option('pair', parsers.string, { numArgs: 2, required: true }),

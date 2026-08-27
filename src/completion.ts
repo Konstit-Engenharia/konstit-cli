@@ -1,17 +1,17 @@
-import type { ArgumentDefinition } from './argument';
+import type { ArgumentDefinition } from './argument.js';
 import {
   getCommandDefinition,
   type CommandDefinition,
   type CommandType,
-} from './command';
-import type { CompletionShell } from './completion-shell';
+} from './command.js';
+import type { CompletionShell } from './completion-shell.js';
 import bashTemplate from './completion-templates/bash.txt' with { type: 'text' };
 import fishTemplate from './completion-templates/fish.txt' with { type: 'text' };
 import powerShellTemplate from './completion-templates/powershell.txt' with { type: 'text' };
 import zshTemplate from './completion-templates/zsh.txt' with { type: 'text' };
-import type { CompletionValueHint } from './parser';
+import type { CompletionValueHint } from './parser.js';
 
-export { type CompletionShell, completionShells, isCompletionShell } from './completion-shell';
+export { type CompletionShell, completionShells, isCompletionShell } from './completion-shell.js';
 export {
   type DynamicCompletionCandidate,
   type DynamicCompletionCandidateInput,
@@ -23,7 +23,7 @@ export {
   type DynamicCompletionResult,
   type DynamicCompletionValues,
   resolveDynamicCompletion,
-} from './dynamic-completion';
+} from './dynamic-completion.js';
 
 export interface CompletionOptions {
   /** Command name or path users enter in the shell. Defaults to Command.name. */

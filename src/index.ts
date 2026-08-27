@@ -10,7 +10,7 @@ export {
   positional,
   type PositionalOptions,
   type ValueCountRange,
-} from './argument';
+} from './argument.js';
 export {
   command,
   type CommandGroupOptions,
@@ -21,8 +21,8 @@ export {
   type HandlerResult,
   type Infer,
   type RunOptions,
-} from './command';
-export { type CompletionShell, completionShells, isCompletionShell } from './completion-shell';
+} from './command.js';
+export { type CompletionShell, completionShells, isCompletionShell } from './completion-shell.js';
 export {
   CliError,
   DisplayKind,
@@ -32,5 +32,5 @@ export {
   type ParseOutcome,
   type ParseResult,
   type ParseValue,
-} from './error';
-export { type CompletionValueHint, type KeyValuePair, parsers, type ValueParser, type ValueParserOptions } from './parser';
+} from './error.js';
+export { type CompletionValueHint, type KeyValuePair, parsers, type ValueParser, type ValueParserOptions } from './parser.js';

@@ -90,6 +90,60 @@ describe('dynamic completion', () => {
     expect(Object.isFrozen(result.candidates)).toBe(true);
   });
 
+  test('applies default-missing values before later providers run', async () => {
+    const received: DynamicCompletionContext[] = [];
+    const createCli = (requireEquals: boolean) =>
+      command('tool', {
+        args: [
+          option('mode', parsers.string, {
+            short: 'm',
+            defaultMissing: 'auto',
+            requireEquals,
+          }),
+          option('target', parsers.string, {
+            complete: (context) => {
+              received.push(context);
+              return ['done'];
+            },
+          }),
+        ],
+      });
+
+    for (const requireEquals of [true, false]) {
+      const cli = createCli(requireEquals);
+      await resolveDynamicCompletion(cli, ['--mode', '--target', '']);
+      await resolveDynamicCompletion(cli, ['-m', '--target', '']);
+    }
+
+    expect(received).toHaveLength(4);
+    for (const context of received) {
+      expect(context.values.mode).toBe('auto');
+      expect(context.rawValues.mode).toEqual([]);
+    }
+
+    let repeated: DynamicCompletionContext | undefined;
+    const repeatable = command('tool', {
+      args: [
+        option('mode', parsers.string, {
+          repeatable: true,
+          defaultMissing: 'auto',
+        }),
+        option('target', parsers.string, {
+          complete: (context) => {
+            repeated = context;
+            return ['done'];
+          },
+        }),
+      ],
+    });
+    await resolveDynamicCompletion(
+      repeatable,
+      ['--mode', '--mode', '--target', ''],
+    );
+    expect(repeated?.values.mode).toEqual(['auto', 'auto']);
+    expect(repeated?.rawValues.mode).toEqual([]);
+  });
+
   test('supports async iterables and delimiter-aware output', async () => {
     const cli = command('tool', {
       args: [option('label', parsers.string, {

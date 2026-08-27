@@ -1,9 +1,9 @@
-import type { DynamicCompletionProvider } from './dynamic-completion';
+import type { DynamicCompletionProvider } from './dynamic-completion.js';
 import {
   parsers,
   type CompletionValueHint,
   type ValueParser,
-} from './parser';
+} from './parser.js';
 
 export type ArgumentKind = 'option' | 'positional' | 'flag' | 'count';
 type ValueArgumentKind = Extract<ArgumentKind, 'option' | 'positional'>;

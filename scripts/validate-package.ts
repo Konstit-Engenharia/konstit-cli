@@ -1,4 +1,16 @@
 import assert from 'node:assert/strict';
+import {
+  mkdtemp,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
+import {
+  dirname,
+  resolve,
+} from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 const mainExport: string = '@konstit/cli';
 const completionExport: string = '@konstit/cli/completion';
@@ -61,4 +73,58 @@ assert.deepEqual(parsed.value, {
 });
 assert.deepEqual(cli.completionShells, completion.completionShells);
 
-console.log('Validated package exports and built chunks.');
+const consumerDirectory = await mkdtemp(resolve(root, '.node-next-consumer-'));
+try {
+  await writeFile(
+    resolve(consumerDirectory, 'consumer.ts'),
+    [
+      'import { command, option, parsers } from \'@konstit/cli\';',
+      'import { resolveDynamicCompletion } from \'@konstit/cli/completion\';',
+      '',
+      'const consumer = command(\'consumer\', {',
+      '  args: [option(\'port\', parsers.integer, { required: true })],',
+      '});',
+      'void resolveDynamicCompletion(consumer, [\'--port\', \'\']);',
+      '',
+    ].join('\n'),
+  );
+  await writeFile(
+    resolve(consumerDirectory, 'tsconfig.json'),
+    `${
+      JSON.stringify(
+        {
+          compilerOptions: {
+            target: 'ESNext',
+            module: 'NodeNext',
+            moduleResolution: 'NodeNext',
+            strict: true,
+            exactOptionalPropertyTypes: true,
+            skipLibCheck: false,
+            noEmit: true,
+          },
+          files: ['consumer.ts'],
+        },
+        null,
+        2,
+      )
+    }\n`,
+  );
+  const typecheck = Bun.spawnSync(
+    [
+      process.execPath,
+      resolve(root, 'node_modules/typescript/bin/tsc'),
+      '--project',
+      resolve(consumerDirectory, 'tsconfig.json'),
+    ],
+    { cwd: consumerDirectory, stdout: 'pipe', stderr: 'pipe' },
+  );
+  assert.equal(
+    typecheck.exitCode,
+    0,
+    `NodeNext consumer typecheck failed:\n${typecheck.stdout.toString()}${typecheck.stderr.toString()}`,
+  );
+} finally {
+  await rm(consumerDirectory, { recursive: true, force: true });
+}
+
+console.log('Validated package exports, built chunks, and NodeNext declarations.');
