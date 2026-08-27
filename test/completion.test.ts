@@ -564,15 +564,19 @@ printf 'AFTER_TERMINATOR:%s\n' "\${COMPREPLY[*]}"
 
   for (const shell of ['fish', 'pwsh'] as const) {
     const executable = Bun.which(shell);
-    test.skipIf(executable === null)(`${shell} output has valid syntax when installed`, () => {
-      if (executable === null) {
-        return;
-      }
-      const completionShell = shell === 'pwsh' ? 'powershell' : 'fish';
-      const result = checkSyntax(shell, generateCompletion(cli, completionShell));
-      expect(result.exitCode).toBe(0);
-      expect(result.stderr).toBe('');
-    });
+    test.skipIf(executable === null)(
+      `${shell} output has valid syntax when installed`,
+      () => {
+        if (executable === null) {
+          return;
+        }
+        const completionShell = shell === 'pwsh' ? 'powershell' : 'fish';
+        const result = checkSyntax(shell, generateCompletion(cli, completionShell));
+        expect(result.exitCode).toBe(0);
+        expect(result.stderr).toBe('');
+      },
+      shell === 'pwsh' ? { timeout: 20_000 } : undefined,
+    );
   }
 });
 

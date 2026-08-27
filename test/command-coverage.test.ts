@@ -702,8 +702,8 @@ describe('command coverage', () => {
     const error = spyOn(console, 'error').mockImplementation(() => {});
     try {
       const cli = command('tool', { handler: () => {} });
-      expect(await cli.run(['--help'])).toBe(0);
-      expect(log.mock.calls[0]?.[0]).toContain('Usage: tool');
+      expect(await cli.run({ argv: ['--help'], color: false })).toBe(0);
+      expect(log).toHaveBeenCalledWith(expect.stringContaining('Usage: tool'));
 
       expect(await cli.run(['--unknown'])).toBe(2);
       expect(error).toHaveBeenCalledWith(expect.stringContaining(
