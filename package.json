@@ -47,6 +47,7 @@
     "build:types": "tsc -p tsconfig.build.json",
     "build:validate": "bun ./scripts/validate-package.ts",
     "analyze:bundle": "bun ./scripts/analyze-bundle.ts",
+    "release": "bun ./scripts/release.ts",
     "test": "bun test --parallel",
     "coverage": "bun test --coverage",
     "typecheck": "tsc -p tsconfig.json --noEmit",
