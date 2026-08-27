@@ -16,6 +16,12 @@ export interface ValueParserOptions {
   readonly completionHint?: CompletionValueHint;
 }
 
+/** A key and value separated by the first equals sign in an argument. */
+export interface KeyValuePair {
+  readonly key: string;
+  readonly value: string;
+}
+
 /** Creates an immutable parser for the public parsers namespace. */
 function createValueParser<Value>(
   label: string,
@@ -44,6 +50,59 @@ function finiteNumber(input: string): number {
   }
   return value;
 }
+
+function scaledInteger(
+  input: string,
+  units: Readonly<Record<string, number>>,
+  errorMessage: string,
+): number {
+  const match = /^(\d+)(?:\.(\d+))?([A-Za-z]+)$/.exec(input);
+  if (match === null) {
+    throw new Error(errorMessage);
+  }
+
+  const [, whole = '0', fraction, unit = '',] = match;
+  const multiplier = units[unit];
+  if (multiplier === undefined) {
+    throw new Error(errorMessage);
+  }
+
+  const multiplierValue = BigInt(multiplier);
+  let value = BigInt(whole) * multiplierValue;
+  if (fraction !== undefined) {
+    const denominator = 10n ** BigInt(fraction.length);
+    const numerator = BigInt(fraction) * multiplierValue;
+    if (numerator % denominator !== 0n) {
+      throw new Error(errorMessage);
+    }
+    value += numerator / denominator;
+  }
+
+  if (value > BigInt(Number.MAX_SAFE_INTEGER)) {
+    throw new Error(errorMessage);
+  }
+  return Number(value);
+}
+
+const durationUnits = Object.freeze({
+  ms: 1,
+  s: 1_000,
+  m: 60_000,
+  h: 3_600_000,
+  d: 86_400_000,
+});
+
+const byteSizeUnits = Object.freeze({
+  B: 1,
+  KB: 1_000,
+  MB: 1_000_000,
+  GB: 1_000_000_000,
+  TB: 1_000_000_000_000,
+  KiB: 1_024,
+  MiB: 1_048_576,
+  GiB: 1_073_741_824,
+  TiB: 1_099_511_627_776,
+});
 
 function jsonParser(): ValueParser<unknown>;
 function jsonParser<Value>(
@@ -134,6 +193,34 @@ export const parsers = Object.freeze({
     return value;
   }),
 
+  /** Parses a duration and returns its integer millisecond count. */
+  duration: createValueParser('DURATION', (input) =>
+    scaledInteger(
+      input,
+      durationUnits,
+      'expected a duration such as 500ms, 30s, 5m, 2h, or 1d',
+    )),
+
+  /** Parses an SI or IEC byte size and returns its integer byte count. */
+  byteSize: createValueParser('BYTES', (input) =>
+    scaledInteger(
+      input,
+      byteSizeUnits,
+      'expected a byte size such as 512B, 10KB, or 4MiB',
+    )),
+
+  /** Parses KEY=VALUE, splitting only at the first equals sign. */
+  keyValue: createValueParser('KEY=VALUE', (input): KeyValuePair => {
+    const separator = input.indexOf('=');
+    if (separator < 1) {
+      throw new Error('expected KEY=VALUE with a non-empty key');
+    }
+    return Object.freeze({
+      key: input.slice(0, separator),
+      value: input.slice(separator + 1),
+    });
+  }),
+
   /** Creates a parser that accepts one of the supplied string values. */
   enum<const Values extends readonly [string, ...string[]]>(
     values: Values,
@@ -149,6 +236,22 @@ export const parsers = Object.freeze({
       },
       { completions: values },
     );
+  },
+
+  /** Creates a string parser that requires a regular-expression match. */
+  regex(expression: RegExp): ValueParser<string> {
+    if (!(expression instanceof RegExp)) {
+      throw new TypeError('A regex parser requires a RegExp');
+    }
+    const source = expression.source;
+    const flags = expression.flags;
+    const label = expression.toString();
+    return createValueParser(label, (input) => {
+      if (!new RegExp(source, flags).test(input)) {
+        throw new Error(`expected value matching ${label}`);
+      }
+      return input;
+    });
   },
 
   /** Parses JSON and optionally checks its decoded shape with a type guard. */

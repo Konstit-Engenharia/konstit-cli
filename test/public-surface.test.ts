@@ -11,6 +11,7 @@ import {
   positional,
   type CommandGroupOptions,
   type Infer,
+  type KeyValuePair,
   type ValueParser,
 } from '../src';
 import type {
@@ -61,9 +62,17 @@ test('keeps the small factory surface exactly typed', () => {
     'PERCENTAGE',
     (input) => Number(input),
   );
+  const slug: ValueParser<string> = parsers.regex(/^[a-z-]+$/);
+  const duration: ValueParser<number> = parsers.duration;
+  const byteSize: ValueParser<number> = parsers.byteSize;
+  const pair: ValueParser<KeyValuePair> = parsers.keyValue;
   const cli = command('build', {
     args: [
       option('percentage', percentage, { required: true }),
+      option('slug', slug),
+      option('timeout', duration),
+      option('limit', byteSize),
+      option('define', pair),
       option('mode', parsers.enum(['fast', 'safe']), { default: 'safe' }),
       positional('file'),
       flag('cache', { negated: true }),
@@ -74,6 +83,10 @@ test('keeps the small factory surface exactly typed', () => {
   type Actual = Infer<typeof cli>;
   type Expected = {
     readonly percentage: number;
+    readonly slug: string | undefined;
+    readonly timeout: number | undefined;
+    readonly limit: number | undefined;
+    readonly define: KeyValuePair | undefined;
     readonly mode: 'fast' | 'safe';
     readonly file: string | undefined;
     readonly cache: boolean;

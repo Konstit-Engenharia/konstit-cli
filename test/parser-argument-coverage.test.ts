@@ -61,6 +61,68 @@ describe('built-in value parsers', () => {
     );
   });
 
+  test('parses durations as integer milliseconds', () => {
+    expect(parsers.duration.parse('500ms')).toBe(500);
+    expect(parsers.duration.parse('1.001s')).toBe(1_001);
+    expect(parsers.duration.parse('1.5m')).toBe(90_000);
+    expect(parsers.duration.parse('2h')).toBe(7_200_000);
+    expect(parsers.duration.parse('1d')).toBe(86_400_000);
+
+    for (
+      const input of [
+        '1',
+        '-1s',
+        '1 s',
+        '1w',
+        '0.5ms',
+        '9007199254740992ms',
+      ]
+    ) {
+      expect(() => parsers.duration.parse(input)).toThrow(
+        'expected a duration',
+      );
+    }
+  });
+
+  test('parses SI and IEC byte sizes as integer bytes', () => {
+    expect(parsers.byteSize.parse('512B')).toBe(512);
+    expect(parsers.byteSize.parse('1.5KB')).toBe(1_500);
+    expect(parsers.byteSize.parse('2MB')).toBe(2_000_000);
+    expect(parsers.byteSize.parse('4MiB')).toBe(4_194_304);
+    expect(parsers.byteSize.parse('1TiB')).toBe(1_099_511_627_776);
+
+    for (
+      const input of [
+        '1',
+        '-1KB',
+        '1 KB',
+        '1kb',
+        '0.5B',
+        '9007199254740992B',
+      ]
+    ) {
+      expect(() => parsers.byteSize.parse(input)).toThrow(
+        'expected a byte size',
+      );
+    }
+  });
+
+  test('parses key/value pairs at the first equals sign', () => {
+    const pair = parsers.keyValue.parse('TOKEN=a=b');
+    expect(pair).toEqual({ key: 'TOKEN', value: 'a=b' });
+    expect(Object.isFrozen(pair)).toBe(true);
+    expect(parsers.keyValue.parse('EMPTY=')).toEqual({
+      key: 'EMPTY',
+      value: '',
+    });
+    expect(() => parsers.keyValue.parse('missing')).toThrow(
+      'expected KEY=VALUE with a non-empty key',
+    );
+    expect(() => parsers.keyValue.parse('=value')).toThrow(
+      'expected KEY=VALUE with a non-empty key',
+    );
+  });
+
   test('parses JSON with and without a type guard', () => {
     expect(parsers.json().parse('{"name":"Ada"}')).toEqual({ name: 'Ada' });
     expect(() => parsers.json().parse('{'))
@@ -101,6 +163,23 @@ describe('built-in value parsers', () => {
     );
     expect(() => percentage.parse('101')).toThrow(
       'expected a number from 0 to 100',
+    );
+  });
+
+  test('validates strings with regular expressions', () => {
+    const slug = parsers.regex(/^[a-z][a-z0-9-]*$/);
+    expect(slug.parse('release-1')).toBe('release-1');
+    expect(slug.label).toBe('/^[a-z][a-z0-9-]*$/');
+    expect(() => slug.parse('Release 1')).toThrow(
+      'expected value matching /^[a-z][a-z0-9-]*$/',
+    );
+
+    const global = parsers.regex(/^value$/g);
+    expect(global.parse('value')).toBe('value');
+    expect(global.parse('value')).toBe('value');
+
+    expect(() => parsers.regex('value' as never)).toThrow(
+      'A regex parser requires a RegExp',
     );
   });
 

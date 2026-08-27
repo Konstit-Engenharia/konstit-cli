@@ -33,4 +33,4 @@ export {
   type ParseResult,
   type ParseValue,
 } from './error';
-export { type CompletionValueHint, parsers, type ValueParser, type ValueParserOptions } from './parser';
+export { type CompletionValueHint, type KeyValuePair, parsers, type ValueParser, type ValueParserOptions } from './parser';

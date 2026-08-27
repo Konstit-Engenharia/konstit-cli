@@ -290,13 +290,26 @@ const run = command('run', {
 ## Parsers
 
 Built-in parsers include `string`, `integer`, `float`, `bigint`, `boolean`,
-`url`, and `date`. Factory parsers include:
+`url`, `date`, `duration`, `byteSize`, and `keyValue`. Factory parsers include:
 
 ```ts
 parsers.enum(['dev', 'prod']);
+parsers.regex(/^[a-z][a-z0-9-]*$/);
 parsers.range(1, 10);
 parsers.json(isMyConfig);
 parsers.custom('PORT', parsePort);
+```
+
+A regex parser returns the original string when the pattern matches. Add `^`
+and `$` when the complete argument must match.
+
+The unit parsers return integer base units. Byte sizes use decimal `KB` through
+`TB`, or binary `KiB` through `TiB`. A key/value parser splits at the first `=`:
+
+```ts
+parsers.duration.parse('1.5s'); // 1500 milliseconds
+parsers.byteSize.parse('4MiB'); // 4194304 bytes
+parsers.keyValue.parse('MODE=safe'); // { key: 'MODE', value: 'safe' }
 ```
 
 A custom parser can throw an `Error`. The library converts it to a structured
