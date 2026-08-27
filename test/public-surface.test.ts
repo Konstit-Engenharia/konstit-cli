@@ -66,6 +66,8 @@ test('keeps the small factory surface exactly typed', () => {
   const duration: ValueParser<number> = parsers.duration;
   const byteSize: ValueParser<number> = parsers.byteSize;
   const pair: ValueParser<KeyValuePair> = parsers.keyValue;
+  const cron: ValueParser<string> = parsers.cron;
+  const color: ValueParser<string> = parsers.color;
   const cli = command('build', {
     args: [
       option('percentage', percentage, { required: true }),
@@ -73,6 +75,8 @@ test('keeps the small factory surface exactly typed', () => {
       option('timeout', duration),
       option('limit', byteSize),
       option('define', pair),
+      option('schedule', cron),
+      option('accent', color),
       option('mode', parsers.enum(['fast', 'safe']), { default: 'safe' }),
       positional('file'),
       flag('cache', { negated: true }),
@@ -87,6 +91,8 @@ test('keeps the small factory surface exactly typed', () => {
     readonly timeout: number | undefined;
     readonly limit: number | undefined;
     readonly define: KeyValuePair | undefined;
+    readonly schedule: string | undefined;
+    readonly accent: string | undefined;
     readonly mode: 'fast' | 'safe';
     readonly file: string | undefined;
     readonly cache: boolean;

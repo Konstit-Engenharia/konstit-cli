@@ -16,6 +16,8 @@ assert.deepEqual(cli.parsers.keyValue.parse('MODE=safe'), {
   key: 'MODE',
   value: 'safe',
 });
+assert.equal(cli.parsers.cron.parse('*/15 * * * *'), '*/15 * * * *');
+assert.equal(cli.parsers.color.parse('oklch(65% 0.2 30)'), 'oklch(65% 0.2 30)');
 assert.equal(typeof completion.generateCompletion, 'function');
 assert.equal(typeof completion.resolveDynamicCompletion, 'function');
 

@@ -221,6 +221,28 @@ export const parsers = Object.freeze({
     });
   }),
 
+  /** Validates a schedulable five-field Bun cron expression or nickname. */
+  cron: createValueParser('CRON', (input) => {
+    let next: Date | null;
+    try {
+      next = Bun.cron.parse(input, 0, { tz: 'UTC' });
+    } catch {
+      throw new Error('expected a schedulable Bun cron expression');
+    }
+    if (next === null) {
+      throw new Error('expected a schedulable Bun cron expression');
+    }
+    return input;
+  }),
+
+  /** Validates a CSS color accepted by Bun while preserving its source text. */
+  color: createValueParser('COLOR', (input) => {
+    if (Bun.color(input, 'css') === null) {
+      throw new Error('expected a valid CSS color');
+    }
+    return input;
+  }),
+
   /** Creates a parser that accepts one of the supplied string values. */
   enum<const Values extends readonly [string, ...string[]]>(
     values: Values,

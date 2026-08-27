@@ -123,6 +123,40 @@ describe('built-in value parsers', () => {
     );
   });
 
+  test('validates schedulable Bun cron expressions', () => {
+    const weekdayMorning = '30 9 * * MON-FRI';
+    expect(parsers.cron.parse(weekdayMorning)).toBe(weekdayMorning);
+    expect(parsers.cron.parse('@daily')).toBe('@daily');
+    expect(parsers.cron.label).toBe('CRON');
+    expect(() => parsers.cron.parse('0 0 * * * *')).toThrow(
+      'expected a schedulable Bun cron expression',
+    );
+    expect(() => parsers.cron.parse('0 0 30 2 *')).toThrow(
+      'expected a schedulable Bun cron expression',
+    );
+  });
+
+  test('validates CSS colors without normalizing their text', () => {
+    for (
+      const input of [
+        'red',
+        '#ff6600',
+        'rgb(255 102 0 / 50%)',
+        'hsl(24 100% 50%)',
+        'lab(60% 40 60)',
+        'oklch(65% 0.2 30)',
+      ]
+    ) {
+      expect(parsers.color.parse(input)).toBe(input);
+    }
+    expect(parsers.color.label).toBe('COLOR');
+    for (const input of ['not-a-color', 'var(--brand)', '16711680']) {
+      expect(() => parsers.color.parse(input)).toThrow(
+        'expected a valid CSS color',
+      );
+    }
+  });
+
   test('parses JSON with and without a type guard', () => {
     expect(parsers.json().parse('{"name":"Ada"}')).toEqual({ name: 'Ada' });
     expect(() => parsers.json().parse('{'))

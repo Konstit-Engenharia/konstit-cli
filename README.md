@@ -290,7 +290,8 @@ const run = command('run', {
 ## Parsers
 
 Built-in parsers include `string`, `integer`, `float`, `bigint`, `boolean`,
-`url`, `date`, `duration`, `byteSize`, and `keyValue`. Factory parsers include:
+`url`, `date`, `duration`, `byteSize`, `keyValue`, `cron`, and `color`. Factory
+parsers include:
 
 ```ts
 parsers.enum(['dev', 'prod']);
@@ -310,7 +311,16 @@ The unit parsers return integer base units. Byte sizes use decimal `KB` through
 parsers.duration.parse('1.5s'); // 1500 milliseconds
 parsers.byteSize.parse('4MiB'); // 4194304 bytes
 parsers.keyValue.parse('MODE=safe'); // { key: 'MODE', value: 'safe' }
+parsers.cron.parse('30 9 * * MON-FRI'); // original string
+parsers.color.parse('oklch(65% 0.2 30)'); // original string
 ```
+
+The cron parser accepts Bun's five-field syntax and predefined nicknames. It
+rejects expressions with no possible execution time.
+
+The color parser accepts CSS colors supported by `Bun.color`, including named,
+hex, RGB, HSL, LAB, and OKLCH colors. It returns the original text so handlers
+can select a Bun output format.
 
 A custom parser can throw an `Error`. The library converts it to a structured
 `CliError` with `ErrorKind.InvalidValue`.
