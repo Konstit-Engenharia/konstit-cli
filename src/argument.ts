@@ -37,9 +37,11 @@ export interface ArgumentDefinition {
   readonly name: string;
   readonly kind: ArgumentKind;
   readonly action: ArgumentAction;
+  readonly color: boolean;
   readonly parser?: ValueParser<unknown> | undefined;
   readonly short?: string;
   readonly long?: string;
+  readonly negativeLong?: string;
   readonly aliases: readonly string[];
   readonly help?: string;
   readonly valueName?: string;
@@ -73,7 +75,7 @@ type OneCharacter<Value extends string> = string extends Value ? Value
 export interface ArgumentOptions {
   /** Sets the argument description shown in generated help. */
   readonly describe?: string;
-  /** Reads a missing value from this environment variable. */
+  /** Reads a missing value from this environment variable. Flags use its presence. */
   readonly env?: string;
   /** Hides the argument from help and completion while keeping it parseable. */
   readonly hide?: boolean;
@@ -356,7 +358,7 @@ export function getArgumentDefinition(argument: ArgumentType): ArgumentDefinitio
   const definition = argumentDefinitions.get(argument);
   if (definition === undefined) {
     throw new TypeError(
-      'Expected an argument created by option(), positional(), flag(), or count()',
+      'Expected an argument created by option(), positional(), flag(), colorFlag(), or count()',
     );
   }
   return definition;
@@ -428,6 +430,7 @@ function baseDefinition(
   return Object.freeze({
     name,
     kind,
+    color: false,
     action: kind === 'flag'
       ? ArgumentAction.SetTrue
       : kind === 'count'
@@ -902,6 +905,21 @@ export function flag(
     });
   }
   return configuredArgument(definition);
+}
+
+/** Creates global --name and --no-name switches with automatic color detection. */
+export function colorFlag<const Name extends string>(
+  name: Name,
+): ArgumentType<Name, boolean, boolean, 'flag', 'one', true>;
+export function colorFlag(name: string): ArgumentType {
+  const definition = baseDefinition(name, 'flag');
+  return configuredArgument(copyDefinition(definition, {
+    color: true,
+    negativeLong: `no-${name.replaceAll('_', '-')}`,
+    global: true,
+    env: 'NO_COLOR',
+    help: 'Enable or disable color output',
+  }));
 }
 
 /** Creates an occurrence counter, such as -vvv. An absent counter is zero. */

@@ -1,4 +1,5 @@
 import {
+  colorFlag,
   command,
   completionShells,
   count,
@@ -14,14 +15,7 @@ const verbose = count('verbose', {
   describe: 'Increase verbosity',
 });
 
-const color = option(
-  'color',
-  parsers.enum(['auto', 'always', 'never']),
-  {
-    global: true,
-    default: 'auto',
-  },
-);
+const color = colorFlag('color');
 
 const clone = command('clone', {
   about: 'Clone a repository',
@@ -53,7 +47,7 @@ const clone = command('clone', {
     config,
   }, context) => {
     const verbosity = context.global(verbose);
-    const colorMode = context.global(color);
+    const colorEnabled = context.global(color);
     console.log(`clone ${repository}`);
     if (directory !== undefined) {
       console.log(`directory: ${directory}`);
@@ -65,7 +59,7 @@ const clone = command('clone', {
       console.log(`config: ${setting}`);
     }
     if (verbosity > 0) {
-      console.log(`verbosity: ${verbosity}; color: ${colorMode}`);
+      console.log(`verbosity: ${verbosity}; color: ${colorEnabled}`);
     }
   },
 });

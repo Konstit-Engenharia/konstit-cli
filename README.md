@@ -34,6 +34,7 @@ bun add @konstit/cli
 
 ```ts
 import {
+  colorFlag,
   command,
   count,
   flag,
@@ -44,6 +45,7 @@ import {
 } from '@konstit/cli';
 
 const verbose = count('verbose', { global: true, short: 'v' });
+const color = colorFlag('color');
 
 const serve = command('serve', {
   about: 'Serve static files',
@@ -56,11 +58,12 @@ const serve = command('serve', {
     option('host', parsers.string, { default: '127.0.0.1' }),
     flag('open', { short: 'o' }),
     verbose,
+    color,
     positional('root', parsers.string, { required: true }),
   ],
-  handler: async ({ port, host, open, verbose, root }) => {
+  handler: async ({ port, host, open, verbose, color, root }) => {
     // port: number; host: string; open: boolean
-    // verbose: number; root: string
+    // verbose: number; color: boolean; root: string
     console.log(`Serving ${root} on ${host}:${port}`);
   },
 });
@@ -202,8 +205,24 @@ const color = option(
 );
 ```
 
-All argument kinds accept `describe`, `env`, and `hide`. Named arguments also
-accept `global`, `short`, `long`, and `aliases`.
+All argument kinds accept `describe`, `env`, and `hide`. For value arguments
+and counters, `env` parses the variable content. For flags, `env` tests only
+whether the variable exists; an empty value counts as present. Named arguments
+also accept `global`, `short`, `long`, and `aliases`.
+
+```ts
+const ci = flag('ci', { env: 'CI' });
+// CI exists: true; CI is absent: false
+
+const color = colorFlag('color');
+// Adds --color and --no-color and returns a resolved boolean.
+```
+
+`colorFlag()` is global. `NO_COLOR` presence disables color, including when
+`--color` is present. Using both switches is an argument conflict. Without a
+switch, handler and help output use stdout TTY detection, errors use stderr TTY
+detection, and `TERM=dumb` disables color. Explicit switches override terminal
+detection. The handler receives only the resolved boolean.
 
 Value options and positionals accept:
 
@@ -223,7 +242,7 @@ Value options and positionals accept:
 
 Options also accept `defaultMissing` and `requireEquals`. Positionals also
 accept `trailingVarArg`. Flags accept `negated`. Counters use their occurrence
-count as the output value.
+count as the output value. `colorFlag()` provides the paired color policy.
 
 ```ts
 const port = option('port', parsers.integer, {

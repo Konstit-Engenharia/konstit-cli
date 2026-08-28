@@ -208,6 +208,7 @@ function optionTokens(argument: ArgumentDefinition): readonly string[] {
   return [
     ...(argument.short === undefined ? [] : [`-${argument.short}`]),
     ...(argument.long === undefined ? [] : [`--${argument.long}`]),
+    ...(argument.negativeLong === undefined ? [] : [`--${argument.negativeLong}`]),
     ...argument.aliases.map((alias) => `--${alias}`),
   ];
 }
@@ -719,7 +720,10 @@ function generateFish(
       }
       appendFishValueCompletion(baseParts, argument);
       registrations.push(baseParts.join(' '));
-      for (const alias of argument.aliases) {
+      for (const alias of [
+        ...(argument.negativeLong === undefined ? [] : [argument.negativeLong]),
+        ...argument.aliases,
+      ]) {
         const aliasParts = [
           commandPrefix,
           `-n ${condition}`,

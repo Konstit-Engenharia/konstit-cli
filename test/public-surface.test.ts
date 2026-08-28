@@ -3,6 +3,7 @@ import {
   test,
 } from 'bun:test';
 import {
+  colorFlag,
   command,
   count,
   flag,
@@ -80,6 +81,7 @@ test('keeps the small factory surface exactly typed', () => {
       option('mode', parsers.enum(['fast', 'safe']), { default: 'safe' }),
       positional('file'),
       flag('cache', { negated: true }),
+      colorFlag('outputColor'),
       count('verbose'),
     ],
   });
@@ -96,6 +98,7 @@ test('keeps the small factory surface exactly typed', () => {
     readonly mode: 'fast' | 'safe';
     readonly file: string | undefined;
     readonly cache: boolean;
+    readonly outputColor: boolean;
     readonly verbose: number;
   };
   const exact: Expect<Equal<Actual, Expected>> = true;

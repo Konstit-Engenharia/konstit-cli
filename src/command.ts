@@ -24,6 +24,15 @@ class DisplayRequest {
   constructor(readonly outcome: ParseDisplay) {}
 }
 
+type ColorMode = 'auto' | 'always' | 'never';
+
+interface ParseSession {
+  readonly defaultColor: boolean;
+  colorMode?: ColorMode;
+}
+
+const outputColorModes = new WeakMap<object, ColorMode>();
+
 interface RequirementDefinition {
   readonly source: string;
   readonly target: string;
@@ -819,21 +828,12 @@ class Command<
 
   /** Parses explicit argv. User-facing failures throw CliError. */
   parse(argv: readonly string[]): ParseOutcome<Infer<this>> {
-    try {
-      const definition = getCommandDefinition(this);
-      const value = parseDefinition(
-        definition,
-        [...argv],
-        [definition.name],
-        [],
-      ) as Infer<this>;
-      return { ok: true, type: 'value', value };
-    } catch (error) {
-      if (error instanceof DisplayRequest) {
-        return error.outcome;
-      }
-      throw error;
-    }
+    const definition = getCommandDefinition(this);
+    return parseConfigured<Infer<this>>(
+      definition,
+      argv,
+      handlerColorEnabled(),
+    );
   }
 
   /** Parses argv without exceptions for expected CLI outcomes. */
@@ -865,7 +865,16 @@ class Command<
           }),
       );
     }
-    return runConfiguredHandler(getCommandDefinition(this), this.tryParse(argv), options);
+    const definition = getCommandDefinition(this);
+    return runConfiguredHandler(
+      definition,
+      tryParseConfigured<Infer<this>>(
+        definition,
+        argv,
+        handlerColorEnabled(options),
+      ),
+      options,
+    );
   }
 
   /** Renders the complete help text for this command. */
@@ -1798,6 +1807,12 @@ function validateCommandAlias(definition: CommandDefinition, alias: string): voi
   }
 }
 
+function argumentLongNames(argument: ArgumentDefinition): readonly string[] {
+  return [argument.long, argument.negativeLong, ...argument.aliases].filter(
+    (value): value is string => value !== undefined,
+  );
+}
+
 function validateArgument(
   commandDefinition: CommandDefinition,
   argument: ArgumentDefinition,
@@ -1805,6 +1820,9 @@ function validateArgument(
   const all = commandDefinition.arguments;
   if (all.some(({ name }) => name === argument.name)) {
     throw new TypeError(`Duplicate argument: ${argument.name}`);
+  }
+  if (argument.color && all.some((current) => current.color)) {
+    throw new TypeError('A command cannot contain more than one color flag');
   }
   if (argument.kind === 'positional') {
     if (argument.short !== undefined || argument.long !== undefined) {
@@ -1850,9 +1868,7 @@ function validateArgument(
       ? []
       : ['V']),
   ]);
-  const argumentLongs = [argument.long, ...argument.aliases].filter(
-    (value): value is string => value !== undefined,
-  );
+  const argumentLongs = argumentLongNames(argument);
   if (new Set(argumentLongs).size !== argumentLongs.length) {
     throw new TypeError(`Argument '${argument.name}' has duplicate long options`);
   }
@@ -1860,7 +1876,7 @@ function validateArgument(
     if (reservedLongs.has(long)) {
       throw new TypeError(`Option '--${long}' is reserved`);
     }
-    if (all.some((current) => current.long === long || current.aliases.includes(long))) {
+    if (all.some((current) => argumentLongNames(current).includes(long))) {
       throw new TypeError(`Duplicate long option: --${long}`);
     }
   }
@@ -1883,8 +1899,7 @@ function validateBuiltInCollisions(
     !definition.disableHelpFlag && available.some(
       (argument) =>
         argument.short === 'h'
-        || argument.long === 'help'
-        || argument.aliases.includes('help'),
+        || argumentLongNames(argument).includes('help'),
     )
   ) {
     throw new TypeError('Help flags conflict with an existing argument');
@@ -1895,8 +1910,7 @@ function validateBuiltInCollisions(
     && available.some(
       (argument) =>
         argument.short === 'V'
-        || argument.long === 'version'
-        || argument.aliases.includes('version'),
+        || argumentLongNames(argument).includes('version'),
     )
   ) {
     throw new TypeError('Version flags conflict with an existing argument');
@@ -1906,8 +1920,55 @@ function validateBuiltInCollisions(
     ...inheritedGlobals,
     ...definition.arguments.filter(({ global }) => global),
   ];
+  if (globals.filter(({ color }) => color).length > 1) {
+    throw new TypeError('An active command path cannot contain more than one color flag');
+  }
   for (const child of definition.subcommands) {
     validateBuiltInCollisions(child, globals);
+  }
+}
+
+function parseConfigured<Value>(
+  definition: CommandDefinition,
+  argv: readonly string[],
+  defaultColor: boolean,
+): ParseOutcome<Value> {
+  const session: ParseSession = { defaultColor };
+  try {
+    const value = parseDefinition(
+      definition,
+      [...argv],
+      [definition.name],
+      [],
+      session,
+    ) as Value;
+    return { ok: true, type: 'value', value };
+  } catch (error) {
+    if (session.colorMode !== undefined) {
+      const target = error instanceof DisplayRequest ? error.outcome : error;
+      if (typeof target === 'object' && target !== null) {
+        outputColorModes.set(target, session.colorMode);
+      }
+    }
+    if (error instanceof DisplayRequest) {
+      return error.outcome;
+    }
+    throw error;
+  }
+}
+
+function tryParseConfigured<Value>(
+  definition: CommandDefinition,
+  argv: readonly string[],
+  defaultColor: boolean,
+): ParseResult<Value> {
+  try {
+    return parseConfigured<Value>(definition, argv, defaultColor);
+  } catch (error) {
+    if (error instanceof CliError) {
+      return { ok: false, type: 'error', error };
+    }
+    throw error;
   }
 }
 
@@ -1916,6 +1977,7 @@ interface ParseState {
   readonly provided: Set<string>;
   readonly cliProvided: Set<string>;
   readonly valueCounts: Record<string, number>;
+  readonly session: ParseSession;
   positionalIndex: number;
   subcommand?: { readonly name: string; readonly args: Record<string, unknown>; };
 }
@@ -1930,12 +1992,14 @@ function parseDefinition(
   argv: string[],
   path: readonly string[],
   inheritedGlobals: readonly GlobalBinding[],
+  session: ParseSession,
 ): Record<string, unknown> {
   const state: ParseState = {
     values: {},
     provided: new Set(),
     cliProvided: new Set(),
     valueCounts: {},
+    session,
     positionalIndex: 0,
   };
   const positionals = definition.arguments.filter(({ kind }) => kind === 'positional');
@@ -2061,6 +2125,7 @@ function parseDefinition(
             argv.slice(index + 1),
             [...path, child.name],
             globals,
+            session,
           ),
         });
         index = argv.length;
@@ -2129,7 +2194,11 @@ function initializeValues(
   state: ParseState,
 ): void {
   for (const argument of definition.arguments) {
-    if (argument.repeatable || argument.trailingVarArg) {
+    if (argument.color) {
+      const disabled = Bun.env.NO_COLOR !== undefined;
+      state.values[argument.name] = disabled ? false : state.session.defaultColor;
+      state.session.colorMode = disabled ? 'never' : 'auto';
+    } else if (argument.repeatable || argument.trailingVarArg) {
       state.values[argument.name] = [];
     } else if (argument.presence === 'default') {
       state.values[argument.name] = argument.defaultValue;
@@ -2161,20 +2230,17 @@ function applyEnvironmentFallbacks(
     if (raw === undefined) {
       continue;
     }
-    const display = `env:${argument.env}`;
     if (argument.kind === 'flag') {
-      state.values[argument.name] = parseWith(
-        argument,
-        raw,
-        display,
-        definition,
-        path,
-        parsers.boolean,
-        true,
-      );
+      state.values[argument.name] = argument.color
+        ? false
+        : argument.action === ArgumentAction.SetTrue;
+      if (argument.color) {
+        state.session.colorMode = 'never';
+      }
       state.provided.add(argument.name);
       continue;
     }
+    const display = `env:${argument.env}`;
     if (argument.kind === 'count') {
       const count = parseWith(
         argument,
@@ -2244,7 +2310,7 @@ function hasDeclaredOption(
   if (token.startsWith('--')) {
     const name = token.slice(2).split('=', 1)[0];
     return bindings.some(
-      ({ argument }) => argument.long === name || argument.aliases.includes(name ?? ''),
+      ({ argument }) => name !== undefined && argumentLongNames(argument).includes(name),
     );
   }
   const short = Array.from(token.slice(1))[0];
@@ -2275,13 +2341,11 @@ function validateGlobalArguments(
 ): void {
   for (const local of definition.arguments) {
     for (const { argument: global } of inheritedGlobals) {
-      const localLongs = [local.long, ...local.aliases].filter(
-        (value): value is string => value !== undefined,
-      );
-      const globalLongs = [global.long, ...global.aliases].filter(
-        (value): value is string => value !== undefined,
-      );
+      const localLongs = argumentLongNames(local);
+      const globalLongs = argumentLongNames(global);
       if (
+        (local.color && global.color)
+        ||
         (local.short !== undefined && local.short === global.short)
         || localLongs.some((name) => globalLongs.includes(name))
       ) {
@@ -2399,7 +2463,7 @@ function parseLongOption(
   const name = token.slice(2, equalIndex === -1 ? undefined : equalIndex);
   const inlineValue = equalIndex === -1 ? undefined : token.slice(equalIndex + 1);
   const binding = availableArgumentBindings(definition, state, inheritedGlobals).find(
-    ({ argument }) => argument.long === name || argument.aliases.includes(name),
+    ({ argument }) => argumentLongNames(argument).includes(name),
   );
   if (binding === undefined || binding.argument.kind === 'positional') {
     throw commandError(
@@ -2433,6 +2497,7 @@ function parseLongOption(
       path,
       binding.state,
       inheritedGlobals.map(({ argument: inherited }) => inherited),
+      argument.negativeLong === name ? false : undefined,
     );
     return index + 1;
   }
@@ -2806,6 +2871,7 @@ function storeSwitch(
   path: readonly string[],
   state: ParseState,
   inheritedArguments: readonly ArgumentDefinition[],
+  explicitValue?: boolean,
 ): void {
   if (
     argument.action === ArgumentAction.Help
@@ -2857,7 +2923,15 @@ function storeSwitch(
         path,
       );
     }
-    state.values[argument.name] = argument.action === ArgumentAction.SetTrue;
+    const value = explicitValue ?? argument.action === ArgumentAction.SetTrue;
+    state.values[argument.name] = argument.color && Bun.env.NO_COLOR !== undefined
+      ? false
+      : value;
+    if (argument.color) {
+      state.session.colorMode = state.values[argument.name] === true
+        ? 'always'
+        : 'never';
+    }
   } else if (argument.action === ArgumentAction.Count) {
     const current = state.values[argument.name];
     state.values[argument.name] = typeof current === 'number' ? current + 1 : 1;
@@ -3197,9 +3271,8 @@ function suggestToken(
 ): string {
   const candidates = [
     ...[...definition.arguments, ...inheritedArguments].flatMap((argument) => [
-      ...(argument.long === undefined ? [] : [`--${argument.long}`]),
+      ...argumentLongNames(argument).map((name) => `--${name}`),
       ...(argument.short === undefined ? [] : [`-${argument.short}`]),
-      ...argument.aliases.map((alias) => `--${alias}`),
     ]),
     ...definition.subcommands.flatMap((child) => [
       child.name,
@@ -3341,6 +3414,7 @@ function renderHelp(
     const names = [
       ...(argument.short === undefined ? [] : [`-${argument.short}`]),
       ...(argument.long === undefined ? [] : [`--${argument.long}`]),
+      ...(argument.negativeLong === undefined ? [] : [`--${argument.negativeLong}`]),
     ].join(', ');
     const value = argument.kind !== 'option'
       ? ''
@@ -3492,7 +3566,7 @@ export interface RunOptions {
   readonly stdout?: (output: string) => void;
   /** Receives user-facing parse errors. */
   readonly stderr?: (output: string) => void;
-  /** Controls ANSI styling for help. The default detects an interactive terminal. */
+  /** Controls ANSI styling and the automatic color-flag value. */
   readonly color?: boolean;
 }
 
@@ -3549,14 +3623,71 @@ function selectDeepestCommand(
   );
 }
 
+type OutputChannel = 'stdout' | 'stderr';
+
+interface ColorDecision {
+  readonly enabled: boolean;
+  readonly force: boolean;
+}
+
+function handlerColorEnabled(options: RunOptions = {}): boolean {
+  if (Bun.env.NO_COLOR !== undefined) {
+    return false;
+  }
+  return options.color
+    ?? (process.stdout.isTTY === true && Bun.env.TERM !== 'dumb');
+}
+
+function automaticColorEnabled(
+  channel: OutputChannel,
+  options: RunOptions = {},
+): boolean {
+  if (Bun.env.NO_COLOR !== undefined) {
+    return false;
+  }
+  if (options.color !== undefined) {
+    return options.color;
+  }
+  const writer = channel === 'stdout' ? options.stdout : options.stderr;
+  const stream = channel === 'stdout' ? process.stdout : process.stderr;
+  return writer === undefined
+    && stream.isTTY === true
+    && Bun.env.TERM !== 'dumb';
+}
+
+function colorDecision(
+  target: object,
+  channel: OutputChannel,
+  options: RunOptions,
+): ColorDecision | undefined {
+  const mode = outputColorModes.get(target);
+  if (mode === undefined) {
+    return undefined;
+  }
+  if (Bun.env.NO_COLOR !== undefined || mode === 'never') {
+    return { enabled: false, force: false };
+  }
+  if (mode === 'always') {
+    return { enabled: true, force: true };
+  }
+  return {
+    enabled: automaticColorEnabled(channel, options),
+    force: options.color === true,
+  };
+}
+
 function writeParseFailure(error: CliError, options: RunOptions): number {
   const write = options.stderr ?? ((output: string) => console.error(output.trimEnd()));
-  write(error.output);
+  const decision = colorDecision(error, 'stderr', options);
+  write(decision?.enabled === true
+    ? styleParseFailure(error.output, decision.force)
+    : error.output);
   return error.exitCode;
 }
 
 const helpAnsi = Object.freeze({ strong: '\x1b[1m', reset: '\x1b[0m' });
 const helpAccent = '#0891b2';
+const errorAccent = '#dc2626';
 
 function helpPalette(forceColor: boolean): {
   readonly heading: string;
@@ -3624,16 +3755,26 @@ function styleHelp(output: string, forceColor: boolean): string {
   }).join('\n');
 }
 
+function styleParseFailure(output: string, forceColor: boolean): string {
+  const format = forceColor ? 'ansi-16m' : 'ansi';
+  const accent = Bun.color(errorAccent, format) ?? '';
+  const styled = styleHelp(output, forceColor);
+  return styled.startsWith('error: ')
+    ? `${helpAnsi.strong}${accent}error:${helpAnsi.reset}${styled.slice(6)}`
+    : styled;
+}
+
 function writeDisplay(
   definition: CommandDefinition,
   display: ParseDisplay,
   options: RunOptions,
 ): number {
   const write = options.stdout ?? ((output: string) => console.log(output.trimEnd()));
+  const decision = colorDecision(display, 'stdout', options);
   const output = display.kind === DisplayKind.Help
-      && shouldStyleHelp(options)
+      && (decision?.enabled ?? shouldStyleHelp(options))
       && !hasHelpOverride(definition, display.output)
-    ? styleHelp(display.output, options.color === true)
+    ? styleHelp(display.output, decision?.force ?? options.color === true)
     : display.output;
   write(output);
   return 0;

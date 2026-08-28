@@ -1,4 +1,7 @@
-import type { ArgumentDefinition } from './argument.js';
+import {
+  ArgumentAction,
+  type ArgumentDefinition,
+} from './argument.js';
 import {
   getCommandDefinition,
   type CommandDefinition,
@@ -218,7 +221,11 @@ function initializeArguments(
   state: ScanState,
 ): void {
   for (const argument of argumentsToInitialize) {
-    if (argument.repeatable || argument.trailingVarArg) {
+    if (argument.color) {
+      state.values[argument.name] = Bun.env.NO_COLOR === undefined
+        && process.stdout.isTTY === true
+        && Bun.env.TERM !== 'dumb';
+    } else if (argument.repeatable || argument.trailingVarArg) {
       state.values[argument.name] = [];
     } else if (argument.presence === 'default') {
       state.values[argument.name] = argument.defaultValue;
@@ -231,12 +238,9 @@ function initializeArguments(
       : Bun.env[argument.env];
     if (environmentValue !== undefined) {
       if (argument.kind === 'flag') {
-        const normalized = environmentValue.toLowerCase();
-        if (['1', 'true', 'yes', 'on'].includes(normalized)) {
-          state.values[argument.name] = true;
-        } else if (['0', 'false', 'no', 'off'].includes(normalized)) {
-          state.values[argument.name] = false;
-        }
+        state.values[argument.name] = argument.color
+          ? false
+          : argument.action === ArgumentAction.SetTrue;
       } else if (argument.kind === 'count') {
         const count = Number(environmentValue);
         if (Number.isSafeInteger(count) && count >= 0) {
@@ -348,7 +352,11 @@ function activeNamedArgument(
   return activeArguments(state).find(
     (argument) =>
       argument.kind !== 'positional'
-      && (argument.long === long || argument.aliases.includes(long)),
+      && (
+        argument.long === long
+        || argument.negativeLong === long
+        || argument.aliases.includes(long)
+      ),
   );
 }
 
@@ -369,7 +377,7 @@ function scanLongOption(state: ScanState, word: string): void {
     return;
   }
   if (argument.kind === 'flag' || argument.kind === 'count') {
-    storeSwitch(argument, state);
+    storeSwitch(argument, state, argument.negativeLong === long ? false : undefined);
     return;
   }
 
@@ -592,11 +600,18 @@ function collectsValues(argument: ArgumentDefinition): boolean {
     || argument.maxValues !== 1;
 }
 
-function storeSwitch(argument: ArgumentDefinition, state: ScanState): void {
+function storeSwitch(
+  argument: ArgumentDefinition,
+  state: ScanState,
+  explicitValue?: boolean,
+): void {
   const firstCliValue = !state.cliProvided.has(argument.name);
   state.cliProvided.add(argument.name);
   if (argument.kind === 'flag') {
-    state.values[argument.name] = argument.action !== 'setFalse';
+    const value = explicitValue ?? argument.action !== 'setFalse';
+    state.values[argument.name] = argument.color && Bun.env.NO_COLOR !== undefined
+      ? false
+      : value;
   } else {
     const current = state.values[argument.name];
     state.values[argument.name] = !firstCliValue && typeof current === 'number'
@@ -825,6 +840,7 @@ function namedCandidates(state: ScanState): readonly DynamicCompletionCandidate[
       [
         ...(argument.short === undefined ? [] : [`-${argument.short}`]),
         ...(argument.long === undefined ? [] : [`--${argument.long}`]),
+        ...(argument.negativeLong === undefined ? [] : [`--${argument.negativeLong}`]),
         ...argument.aliases.map((alias) => `--${alias}`),
       ].map((value) => ({
         value,

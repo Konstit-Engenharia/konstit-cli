@@ -367,25 +367,45 @@ describe('command coverage', () => {
     expect(parse(cli, ['fet']).subcommand?.name).toBe('download');
   });
 
-  test('parses flag and count environment fallbacks', () => {
+  test('uses flag environment presence and parses count environment values', () => {
     const originalFlag = Bun.env.KONSTIT_CLI_TEST_FLAG;
+    const originalNegatedFlag = Bun.env.KONSTIT_CLI_TEST_NEGATED_FLAG;
     const originalCount = Bun.env.KONSTIT_CLI_TEST_COUNT;
-    Bun.env.KONSTIT_CLI_TEST_FLAG = 'yes';
+    Bun.env.KONSTIT_CLI_TEST_FLAG = '';
+    Bun.env.KONSTIT_CLI_TEST_NEGATED_FLAG = 'not-a-boolean';
     Bun.env.KONSTIT_CLI_TEST_COUNT = '3';
     try {
       const cli = command('tool', {
         args: [
           flag('enabled', { env: 'KONSTIT_CLI_TEST_FLAG' }),
+          flag('color', {
+            long: 'no-color',
+            negated: true,
+            env: 'KONSTIT_CLI_TEST_NEGATED_FLAG',
+          }),
           count('verbose', {
             short: 'v',
             env: 'KONSTIT_CLI_TEST_COUNT',
           }),
         ],
       });
-      expect(parse(cli, [])).toEqual({ enabled: true, verbose: 3 });
-      expect(parse(cli, ['--enabled', '-v'])).toEqual({
+      expect(parse(cli, [])).toEqual({
         enabled: true,
+        color: false,
+        verbose: 3,
+      });
+      expect(parse(cli, ['--enabled', '--no-color', '-v'])).toEqual({
+        enabled: true,
+        color: false,
         verbose: 1,
+      });
+
+      delete Bun.env.KONSTIT_CLI_TEST_FLAG;
+      delete Bun.env.KONSTIT_CLI_TEST_NEGATED_FLAG;
+      expect(parse(cli, [])).toEqual({
+        enabled: false,
+        color: true,
+        verbose: 3,
       });
 
       Bun.env.KONSTIT_CLI_TEST_COUNT = '-3';
@@ -407,6 +427,11 @@ describe('command coverage', () => {
         delete Bun.env.KONSTIT_CLI_TEST_FLAG;
       } else {
         Bun.env.KONSTIT_CLI_TEST_FLAG = originalFlag;
+      }
+      if (originalNegatedFlag === undefined) {
+        delete Bun.env.KONSTIT_CLI_TEST_NEGATED_FLAG;
+      } else {
+        Bun.env.KONSTIT_CLI_TEST_NEGATED_FLAG = originalNegatedFlag;
       }
       if (originalCount === undefined) {
         delete Bun.env.KONSTIT_CLI_TEST_COUNT;

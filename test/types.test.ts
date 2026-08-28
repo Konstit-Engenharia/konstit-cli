@@ -1,4 +1,5 @@
 import {
+  colorFlag,
   command,
   completionShells,
   count,
@@ -122,17 +123,20 @@ const configuredColor = option('color', colorParser, {
   global: true,
   default: 'auto',
 });
+const configuredOutputColor = colorFlag('outputColor');
 const configuredArgumentsCli = command('configured-arguments', {
   args: [
     configuredVerbose,
     configuredColor,
+    configuredOutputColor,
     option('fallback', colorParser),
   ],
   handler: ({ color, fallback }, context) => {
     const typedColor: 'auto' | 'always' | 'never' = color;
     const typedFallback: 'auto' | 'always' | 'never' | undefined = fallback;
     const typedVerbose: number = context.global(configuredVerbose);
-    void [typedColor, typedFallback, typedVerbose];
+    const typedOutputColor: boolean = context.global(configuredOutputColor);
+    void [typedColor, typedFallback, typedVerbose, typedOutputColor];
   },
 });
 
@@ -140,6 +144,7 @@ type ConfiguredArgumentsActual = Infer<typeof configuredArgumentsCli>;
 type ConfiguredArgumentsExpected = {
   readonly verbose: number;
   readonly color: 'auto' | 'always' | 'never';
+  readonly outputColor: boolean;
   readonly fallback: 'auto' | 'always' | 'never' | undefined;
 };
 type _ConfiguredArgumentsAreExact = Expect<

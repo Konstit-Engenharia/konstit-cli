@@ -1,5 +1,6 @@
 export {
   type ArgumentOptions,
+  colorFlag,
   count,
   type CountOptions,
   flag,

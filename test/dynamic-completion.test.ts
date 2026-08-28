@@ -247,7 +247,7 @@ describe('dynamic completion', () => {
       const [name, value,] of [
         [names.scalar, 'environment'],
         [names.repeatable, 'env-one,env-two'],
-        [names.flag, 'false'],
+        [names.flag, 'present'],
         [names.count, '4'],
       ] as const
     ) {

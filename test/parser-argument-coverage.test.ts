@@ -469,7 +469,7 @@ describe('argument configuration and metadata', () => {
 
   test('rejects invalid declarative definitions at runtime', () => {
     expect(() => getArgumentDefinition({} as ArgumentType)).toThrow(
-      'Expected an argument created by option(), positional(), flag(), or count()',
+      'Expected an argument created by option(), positional(), flag(), colorFlag(), or count()',
     );
 
     expect(() => flag('verbose', { short: 'vv' } as never)).toThrow(

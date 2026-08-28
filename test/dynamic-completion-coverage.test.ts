@@ -28,7 +28,7 @@ describe('dynamic completion coverage', () => {
     }
   });
 
-  test('loads supported environment values and ignores invalid ones', async () => {
+  test('loads environment presence and supported values', async () => {
     const names = {
       enabled: 'KONSTIT_CLI_DYNAMIC_ENABLED',
       disabled: 'KONSTIT_CLI_DYNAMIC_DISABLED',
@@ -42,9 +42,9 @@ describe('dynamic completion coverage', () => {
     let context: DynamicCompletionContext | undefined;
 
     await withEnvironment({
-      [names.enabled]: 'yes',
+      [names.enabled]: '',
       [names.disabled]: 'off',
-      [names.invalidFlag]: 'maybe',
+      [names.invalidFlag]: 'not-a-boolean',
       [names.count]: '3',
       [names.invalidCount]: '3.5',
       [names.port]: '8080',
@@ -54,7 +54,7 @@ describe('dynamic completion coverage', () => {
       const cli = command('env', {
         args: [
           flag('enabled', { env: names.enabled }),
-          flag('disabled', { env: names.disabled }),
+          flag('disabled', { env: names.disabled, negated: true }),
           flag('invalidFlag', { env: names.invalidFlag }),
           count('verbose', { env: names.count }),
           count('invalidCount', { env: names.invalidCount }),
@@ -86,7 +86,7 @@ describe('dynamic completion coverage', () => {
     expect(context?.values).toMatchObject({
       enabled: true,
       disabled: false,
-      invalidFlag: false,
+      invalidFlag: true,
       verbose: 3,
       invalidCount: 0,
       port: 8080,
