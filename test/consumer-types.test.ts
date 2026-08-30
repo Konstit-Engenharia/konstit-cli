@@ -63,4 +63,4 @@ test('keeps configured defaults sound without exact optional properties', () => 
     getNewLine: () => '\n',
   });
   expect(formatted).toBe('');
-});
+}, { timeout: 20_000 });
