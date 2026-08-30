@@ -41,11 +41,14 @@
     "LICENSE"
   ],
   "scripts": {
-    "build": "bun run build:clean && bun run --parallel build:js build:types && bun run build:validate",
+    "build": "bun run build:artifacts && bun run build:validate",
+    "build:artifacts": "bun run build:clean && bun run --parallel build:js build:types",
     "build:clean": "bun ./scripts/clean-dist.ts",
     "build:js": "bun build ./src/index.ts ./src/completion.ts --outdir ./dist --target=bun --format=esm --sourcemap=external --minify --keep-names --splitting --chunk-naming 'chunks/[name]-[hash].[ext]'",
     "build:types": "tsc -p tsconfig.build.json",
-    "build:validate": "bun ./scripts/validate-package.ts",
+    "build:validate": "bun ./scripts/validate-package.ts && bun ./scripts/check-package-consumer.ts",
+    "benchmark:types": "bun run build:artifacts && bun ./scripts/benchmark-types.ts",
+    "benchmark:types:update": "bun run build:artifacts && bun ./scripts/benchmark-types.ts --update",
     "analyze:bundle": "bun ./scripts/analyze-bundle.ts",
     "release": "bun ./scripts/release.ts",
     "test": "bun test --parallel",

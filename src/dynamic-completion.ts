@@ -7,6 +7,15 @@ import {
   type CommandDefinition,
   type CommandType,
 } from './command.js';
+import {
+  argumentLongNames,
+  isNegativeNumberToken,
+  matchSubcommand,
+  parseLongOptionToken,
+  parseShortOptionCluster,
+  splitArgumentValue,
+  stopsOptionValueCollection,
+} from './command/recognition.js';
 import type { CompletionValueHint } from './parser.js';
 
 /** A completion returned by a dynamic provider. */
@@ -352,11 +361,7 @@ function activeNamedArgument(
   return activeArguments(state).find(
     (argument) =>
       argument.kind !== 'positional'
-      && (
-        argument.long === long
-        || argument.negativeLong === long
-        || argument.aliases.includes(long)
-      ),
+      && argumentLongNames(argument).includes(long),
   );
 }
 
@@ -370,23 +375,23 @@ function activeShortArgument(
 }
 
 function scanLongOption(state: ScanState, word: string): void {
-  const equalsIndex = word.indexOf('=');
-  const long = word.slice(2, equalsIndex < 0 ? undefined : equalsIndex);
-  const argument = activeNamedArgument(state, long);
+  const { name, inlineValue } = parseLongOptionToken(word);
+  const argument = activeNamedArgument(state, name);
   if (argument === undefined) {
     return;
   }
   if (argument.kind === 'flag' || argument.kind === 'count') {
-    storeSwitch(argument, state, argument.negativeLong === long ? false : undefined);
+    storeSwitch(argument, state, argument.negativeLong === name ? false : undefined);
     return;
   }
 
-  const inline = equalsIndex < 0 ? undefined : word.slice(equalsIndex + 1);
-  if (inline === undefined && argument.requireEquals) {
+  if (inlineValue === undefined && argument.requireEquals) {
     storeDefaultMissing(argument, state);
     return;
   }
-  const inlineValues = inline === undefined ? [] : splitValue(argument, inline);
+  const inlineValues = inlineValue === undefined
+    ? []
+    : splitArgumentValue(argument, inlineValue);
   if (inlineValues.length > 0) {
     storeArgumentValues(argument, inlineValues, state);
   }
@@ -395,7 +400,7 @@ function scanLongOption(state: ScanState, word: string): void {
 }
 
 function scanShortOptions(state: ScanState, word: string): void {
-  const cluster = word.slice(1);
+  const cluster = parseShortOptionCluster(word);
   for (let index = 0; index < cluster.length; index += 1) {
     const short = cluster[index];
     if (short === undefined) {
@@ -410,7 +415,7 @@ function scanShortOptions(state: ScanState, word: string): void {
       continue;
     }
 
-    const inlineSource = cluster.slice(index + 1);
+    const inlineSource = cluster.slice(index + 1).join('');
     const hasInlineValue = inlineSource.length > 0;
     let inline = inlineSource;
     if (inline.startsWith('=')) {
@@ -492,12 +497,7 @@ function stopsValueCollection(
   argument: ArgumentDefinition,
   word: string,
 ): boolean {
-  if (
-    word.startsWith('-')
-    && word !== '-'
-    && !argument.allowHyphenValues
-    && !(argument.allowNegativeNumbers && /^-(?:\d|\.\d)/.test(word))
-  ) {
+  if (stopsOptionValueCollection(argument, word)) {
     return true;
   }
   return state.optionsEnabled
@@ -517,7 +517,7 @@ function acceptsOptionLookingPositional(state: ScanState, token: string): boolea
     return false;
   }
   return argument.allowHyphenValues
-    || (argument.allowNegativeNumbers && /^-(?:\d|\.\d)/.test(token));
+    || (argument.allowNegativeNumbers && isNegativeNumberToken(token));
 }
 
 function hasDeclaredOption(state: ScanState, token: string): boolean {
@@ -549,9 +549,7 @@ function splitValue(
   argument: ArgumentDefinition,
   raw: string,
 ): readonly string[] {
-  return argument.valueDelimiter === undefined
-    ? [raw]
-    : raw.split(argument.valueDelimiter);
+  return splitArgumentValue(argument, raw);
 }
 
 function storeArgumentValues(
@@ -624,19 +622,10 @@ function resolveSubcommand(
   definition: CommandDefinition,
   token: string,
 ): CommandDefinition | undefined {
-  const exact = definition.subcommands.find(
-    (child) => child.name === token || child.aliases.some(({ name }) => name === token),
-  );
-  if (exact !== undefined || !definition.inferSubcommands) {
-    return exact;
-  }
-
-  const matches = definition.subcommands.filter(
-    (child) =>
-      child.name.startsWith(token)
-      || child.aliases.some(({ name }) => name.startsWith(token)),
-  );
-  return matches.length === 1 ? matches[0] : undefined;
+  const match = matchSubcommand(definition, token);
+  return match.kind === 'exact' || match.kind === 'unique'
+    ? match.command
+    : undefined;
 }
 
 function enterSubcommand(state: ScanState, child: CommandDefinition): void {

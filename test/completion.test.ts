@@ -38,6 +38,11 @@ const cli = command('demo', {
   ],
 });
 
+const bash = Bun.which('bash');
+const zsh = Bun.which('zsh');
+const bashTest = test.skipIf(bash === null);
+const zshTest = test.skipIf(zsh === null);
+
 describe('completion generation', () => {
   test('supports the common shell set', () => {
     expect(completionShells).toEqual(['bash', 'zsh', 'fish', 'powershell']);
@@ -98,9 +103,15 @@ describe('completion generation', () => {
       expect(script).toContain(dynamicCompletionEnvironment);
       expect(script).not.toContain('--mode');
     }
+  });
+
+  bashTest('Bash dynamic output has valid syntax', () => {
     expect(
       checkSyntax('bash', generateCompletion(cli, 'bash', { dynamic: true })).exitCode,
     ).toBe(0);
+  });
+
+  zshTest('Zsh dynamic output has valid syntax', () => {
     expect(
       checkSyntax('zsh', generateCompletion(cli, 'zsh', { dynamic: true })).exitCode,
     ).toBe(0);
@@ -128,7 +139,7 @@ describe('completion generation', () => {
     expect(output).toBe('7265616374\t\n7265646973\t\n');
   });
 
-  test('Bash dynamic scripts forward the incomplete argv', () => {
+  bashTest('Bash dynamic scripts forward the incomplete argv', () => {
     const script = `${generateCompletion(cli, 'bash', { dynamic: true })}
 demo() {
   [[ "$KONSTIT_CLI_COMPLETE" == 1 ]] || return 1
@@ -176,13 +187,13 @@ printf 'DYNAMIC:%s\n' "\${COMPREPLY[*]}"
 });
 
 describe('generated shell scripts', () => {
-  test('Bash output has valid syntax', () => {
+  bashTest('Bash output has valid syntax', () => {
     const result = checkSyntax('bash', generateCompletion(cli, 'bash'));
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe('');
   });
 
-  test('Bash completes option values, inline values, and nested options', () => {
+  bashTest('Bash completes option values, inline values, and nested options', () => {
     const script = `${generateCompletion(cli, 'bash')}
 COMP_WORDS=(demo --mode "")
 COMP_CWORD=2
@@ -204,7 +215,7 @@ printf 'NESTED:%s\n' "\${COMPREPLY[*]}"
     expect(result.stdout).toContain('NESTED:--target');
   });
 
-  test('Bash tracks multi-value options, require-equals, and positional indexes', () => {
+  bashTest('Bash tracks multi-value options, require-equals, and positional indexes', () => {
     const arityCli = command('arity', {
       args: [
         option('pair', parsers.enum(['first', 'second']), { numArgs: 2 }),
@@ -245,7 +256,7 @@ printf 'SECOND_POSITIONAL:%s\n' "\${COMPREPLY[*]}"
     expect(result.stdout).not.toContain('SECOND_POSITIONAL:alpha');
   });
 
-  test('Bash scans delimited, attached, ranged, and unbounded option values', () => {
+  bashTest('Bash scans delimited, attached, ranged, and unbounded option values', () => {
     const scannerCli = command('scanner', {
       args: [
         flag('verbose', { short: 'v' }),
@@ -313,7 +324,7 @@ printf 'UNBOUNDED_SUBCOMMAND_STOP:%s\n' "\${COMPREPLY[*]}"
     expect(result.stdout).toContain('UNBOUNDED_SUBCOMMAND_STOP:--child-force');
   });
 
-  test('Bash matches positional token policy, logical arity, and inferred commands', () => {
+  bashTest('Bash matches positional token policy, logical arity, and inferred commands', () => {
     const positionalCli = command('positionals', {
       args: [
         positional('literal', parsers.enum(['--literal']), {
@@ -382,7 +393,7 @@ printf 'INFERRED_STOP:%s\n' "\${COMPREPLY[*]}"
     expect(inferredResult.stdout).toContain('INFERRED_STOP:--child');
   });
 
-  test('Bash matches exact inference, repeatable positionals, and terminators', () => {
+  bashTest('Bash matches exact inference, repeatable positionals, and terminators', () => {
     const inferredCli = command('exact', {
       inferSubcommands: true,
       args: [
@@ -442,7 +453,7 @@ printf 'TERMINATOR:%s\n' "\${COMPREPLY[*]}"
     expect(terminatorResult.stdout).toContain('TERMINATOR:beta');
   });
 
-  test('Bash parses hidden arguments and exact built-ins without displaying them', () => {
+  bashTest('Bash parses hidden arguments and exact built-ins without displaying them', () => {
     const hiddenCli = command('hidden', {
       args: [
         option('secret', parsers.string, { numArgs: 2, hide: true }),
@@ -528,7 +539,7 @@ printf 'AFTER_TERMINATOR:%s\n' "\${COMPREPLY[*]}"
     expect(generateCompletion(nul, 'bash')).toContain('\t00\t');
   });
 
-  test('Zsh output has valid syntax', () => {
+  zshTest('Zsh output has valid syntax', () => {
     const result = checkSyntax('zsh', generateCompletion(cli, 'zsh'));
     expect(result.exitCode).toBe(0);
     expect(result.stderr).toBe('');
@@ -564,11 +575,12 @@ printf 'AFTER_TERMINATOR:%s\n' "\${COMPREPLY[*]}"
 
   for (const shell of ['fish', 'pwsh'] as const) {
     const executable = Bun.which(shell);
-    test.skipIf(executable === null)(
+    const required = shell === 'pwsh' && process.platform === 'win32';
+    test.skipIf(executable === null && !required)(
       `${shell} output has valid syntax when installed`,
       () => {
         if (executable === null) {
-          return;
+          throw new Error(`${shell} is required on ${process.platform}`);
         }
         const completionShell = shell === 'pwsh' ? 'powershell' : 'fish';
         const result = checkSyntax(shell, generateCompletion(cli, completionShell));
