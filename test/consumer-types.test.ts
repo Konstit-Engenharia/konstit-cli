@@ -16,7 +16,9 @@ test('keeps configured defaults sound without exact optional properties', () => 
     target: ts.ScriptTarget.ESNext,
     types: ['bun'],
   };
-  const sourcePath = resolve(import.meta.dir, 'nonexact-consumer.ts');
+  const sourcePath = ts.sys.resolvePath(
+    resolve(import.meta.dir, 'nonexact-consumer.ts'),
+  );
   const source = `
     import { command, option, parsers } from '../src';
 
