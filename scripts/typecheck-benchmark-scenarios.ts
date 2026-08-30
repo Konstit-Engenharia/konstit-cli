@@ -1,3 +1,4 @@
+/** A generated consumer used for local TypeScript diagnostics. */
 export interface TypecheckScenario {
   readonly name: string;
   readonly source: string;

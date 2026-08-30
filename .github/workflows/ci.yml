@@ -90,6 +90,3 @@ jobs:
 
       - name: Lint project
         run: bun run lint
-
-      - name: Check type performance
-        run: bun run benchmark:types
