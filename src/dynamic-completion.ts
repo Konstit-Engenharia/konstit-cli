@@ -148,10 +148,10 @@ export async function resolveDynamicCompletion(
   }
 
   const candidates: DynamicCompletionCandidate[] = [];
-  if (currentWord.length === 0 || currentWord.startsWith('-')) {
+  if (state.optionsEnabled && (currentWord.length === 0 || currentWord.startsWith('-'))) {
     candidates.push(...namedCandidates(state));
   }
-  if (!currentWord.startsWith('-')) {
+  if (state.optionsEnabled && !currentWord.startsWith('-')) {
     candidates.push(...subcommandCandidates(state));
     const positional = currentPositional(state);
     if (positional !== undefined) {

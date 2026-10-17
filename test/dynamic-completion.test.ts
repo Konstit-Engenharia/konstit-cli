@@ -208,6 +208,64 @@ describe('dynamic completion', () => {
     expect(result.candidates.map(({ value }) => value)).toEqual(['open']);
   });
 
+  test('does not suggest options after the option terminator', async () => {
+    const cli = command('demo', {
+      args: [flag('verbose', { global: true })],
+      subcommands: [command('clean', {
+        version: '1.0.0',
+        args: [flag('obsolete')],
+      })],
+    });
+
+    for (const current of ['', '-', '--o']) {
+      const result = await resolveDynamicCompletion(cli, ['clean', '--', current]);
+      expect(result.candidates).toEqual([]);
+      expect(result.commandPath).toEqual(['demo', 'clean']);
+      expect(result.current).toBe(current);
+      expect(result.argument).toBeUndefined();
+    }
+
+    const atEnd = await resolveDynamicCompletion(cli, ['clean', '--'], {
+      cursor: 2,
+      filter: false,
+    });
+    expect(atEnd.candidates).toEqual([]);
+    expect(cli.tryParse(['clean', '--', '--obsolete']).type).toBe('error');
+  });
+
+  test('does not suggest subcommands after the option terminator', async () => {
+    const cli = command('demo', {
+      subcommands: [command('clean')],
+    });
+
+    for (const current of ['', 'cl']) {
+      const result = await resolveDynamicCompletion(cli, ['--', current]);
+      expect(result.candidates).toEqual([]);
+    }
+  });
+
+  test('only completes remaining positional values after the option terminator', async () => {
+    const cli = command('demo', {
+      args: [
+        flag('obsolete'),
+        positional('file', parsers.enum(['file', '--file'])),
+      ],
+      subcommands: [command('clean')],
+    });
+
+    const positionalResult = await resolveDynamicCompletion(cli, ['--', '']);
+    expect(positionalResult.argument?.name).toBe('file');
+    expect(positionalResult.candidates.map(({ value }) => value)).toEqual(['file', '--file']);
+
+    const hyphenated = await resolveDynamicCompletion(cli, ['--', '--f']);
+    expect(hyphenated.argument?.name).toBe('file');
+    expect(hyphenated.candidates.map(({ value }) => value)).toEqual(['--file']);
+
+    const exhausted = await resolveDynamicCompletion(cli, ['--', 'file', '']);
+    expect(exhausted.candidates).toEqual([]);
+    expect(exhausted.argument).toBeUndefined();
+  });
+
   test('supports cursor-at-end and rejects invalid candidate values', async () => {
     const cli = command('tool', { args: [flag('verbose')] });
     const result = await resolveDynamicCompletion(cli, [], { cursor: 0 });
