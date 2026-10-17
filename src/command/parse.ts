@@ -284,6 +284,10 @@ function parseDefinition(
     index += 1;
   }
 
+  // Capture CLI presence before environment fallbacks and overrides can change it.
+  const subcommandConflict = definition.argsConflictWithSubcommands && state.subcommand !== undefined
+    ? definition.arguments.find((argument) => !argument.global && state.cliProvided.has(argument.name))
+    : undefined;
   applyEnvironmentFallbacks(definition, state, path);
   applyOverrides(definition, state);
   validateParsedValues(
@@ -291,6 +295,7 @@ function parseDefinition(
     path,
     state,
     inheritedGlobals.map(({ argument }) => argument),
+    subcommandConflict,
   );
   if (definition.subcommands.length > 0) {
     state.values.subcommand = state.subcommand;
@@ -1060,6 +1065,7 @@ function validateParsedValues(
   path: readonly string[],
   state: ParseState,
   inheritedArguments: readonly ArgumentDefinition[],
+  subcommandConflict: ArgumentDefinition | undefined,
 ): void {
   const missing = definition.arguments
     .filter((argument) => argument.presence === 'required' && !state.provided.has(argument.name))
@@ -1110,4 +1116,13 @@ function validateParsedValues(
     );
   }
   validateRelations(definition, path, state, inheritedArguments);
+  if (subcommandConflict !== undefined && state.subcommand !== undefined) {
+    throw commandError(
+      ErrorKind.ArgumentConflict,
+      `argument '${displayArgument(subcommandConflict)}' cannot be used with subcommand '${state.subcommand.name}'`,
+      definition,
+      path,
+      inheritedArguments,
+    );
+  }
 }

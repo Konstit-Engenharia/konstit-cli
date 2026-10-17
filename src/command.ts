@@ -302,6 +302,13 @@ class Command<
     return this.with({ inferSubcommands: enabled });
   }
 
+  /** Rejects explicit local arguments when a subcommand is selected. */
+  argsConflictWithSubcommands(
+    enabled = true,
+  ): Command<Name, Fields, Subcommands, SubcommandRequired, Groups> {
+    return this.with({ argsConflictWithSubcommands: enabled });
+  }
+
   /** Disables the generated `help` subcommand. */
   disableHelpSubcommand(
     disabled = true,
@@ -933,6 +940,12 @@ export interface CommandOptions<
   readonly inferSubcommands?: boolean;
   /** Makes the parsed subcommand field required. */
   readonly subcommandRequired?: SubcommandRequired;
+  /**
+   * Rejects CLI-supplied local arguments when a subcommand is selected.
+   * Defaults to false. Globals, defaults, and environment fallbacks are exempt.
+   * Does not waive required arguments.
+   */
+  readonly argsConflictWithSubcommands?: boolean;
   /** Displays help when no argument or subcommand was supplied. */
   readonly defaultToHelp?: boolean;
   /** Disables the generated `help` subcommand. */
@@ -1033,6 +1046,7 @@ function emptyCommand<const Name extends string>(
     conflicts: Object.freeze([]),
     groups: Object.freeze([]),
     subcommandRequired: false,
+    argsConflictWithSubcommands: false,
     argRequiredElseHelp: false,
     inferSubcommands: false,
     disableHelpSubcommand: false,
@@ -1129,6 +1143,9 @@ export function command(
   }
   if (options.inferSubcommands !== undefined) {
     configured = configured.inferSubcommands(options.inferSubcommands);
+  }
+  if (options.argsConflictWithSubcommands !== undefined) {
+    configured = configured.argsConflictWithSubcommands(options.argsConflictWithSubcommands);
   }
   if (options.subcommandRequired === true) {
     configured = configured.requireSubcommand() as unknown as typeof configured;

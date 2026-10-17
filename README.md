@@ -97,6 +97,7 @@ options object.
 | `subcommands`           | Subcommand tuple.                                           |
 | `inferSubcommands`      | Accept an unambiguous name or alias prefix.                 |
 | `subcommandRequired`    | Require a subcommand and make its result non-optional.      |
+| `argsConflictWithSubcommands` | Reject explicit local arguments when a subcommand is selected. |
 | `defaultToHelp`         | Display help when no argument or subcommand is supplied.    |
 | `disableHelpSubcommand` | Disable the generated `help` subcommand.                    |
 | `disableHelpFlag`       | Disable generated `-h` and `--help`.                        |
@@ -185,6 +186,56 @@ The `subcommand` result is a union discriminated by its canonical `name`.
 Without `subcommandRequired: true`, it also includes `undefined`. Visible
 aliases appear in help and completion. Hidden aliases affect parsing only.
 `repo help clone` renders nested help.
+
+### Local arguments that conflict with subcommands
+
+Set `argsConflictWithSubcommands: true` when a command's local arguments are
+only meaningful without a subcommand. The setting defaults to `false`.
+
+```ts
+const cli = command('demo', {
+  argsConflictWithSubcommands: true,
+  args: [flag('dry-run', { short: 'n' })],
+  handler: (args) => {
+    console.log('build dry-run:', args['dry-run']);
+  },
+  subcommands: [command('clean', {
+    args: [flag('dry-run', { short: 'n' })],
+    handler: (args) => {
+      console.log('clean dry-run:', args['dry-run']);
+    },
+  })],
+});
+
+process.exitCode = await cli.run();
+```
+
+```sh
+demo -n          # Runs build with dry-run enabled
+demo clean -n    # Runs clean with dry-run enabled
+demo -n clean    # ArgumentConflict; no handler runs
+```
+
+The constraint rejects explicitly supplied local flags, counts, options, and
+positionals when that command selects a subcommand. An explicit occurrence
+counts even if its value is `false`, empty, equal to its default, omitted for
+an option with optional values, or later cleared by an `overrides` relation.
+Defaults, absent arguments, and environment fallbacks do not cause conflicts.
+Global options remain available before and after subcommands.
+
+The setting applies only to the command that declares it. Enable it on nested
+commands independently. Subcommand aliases and inferred prefixes follow the
+same rule. Tokens consumed as positional values after `--` or by a trailing
+positional do not select subcommands. Help and version requests retain their
+normal display behavior.
+
+`parse()` throws a `CliError` with `ErrorKind.ArgumentConflict`; `tryParse()`
+returns that error, and `run()` reports it and returns exit code `2` without
+calling a handler. Existing required-argument and relation checks still run.
+In particular, this setting does not waive a parent's required local arguments:
+if one must be supplied on the CLI, a subcommand invocation cannot satisfy both
+rules. Use this constraint with local arguments that can be absent for
+subcommand invocations.
 
 ## Arguments
 

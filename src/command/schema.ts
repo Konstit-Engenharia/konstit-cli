@@ -73,6 +73,7 @@ export interface CommandDefinition {
   readonly conflicts: readonly (readonly string[])[];
   readonly groups: readonly GroupDefinition[];
   readonly subcommandRequired: boolean;
+  readonly argsConflictWithSubcommands: boolean;
   readonly argRequiredElseHelp: boolean;
   readonly inferSubcommands: boolean;
   readonly disableHelpSubcommand: boolean;

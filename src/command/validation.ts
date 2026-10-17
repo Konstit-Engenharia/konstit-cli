@@ -42,6 +42,7 @@ const commandOptionKeys = new Set([
   'subcommands',
   'inferSubcommands',
   'subcommandRequired',
+  'argsConflictWithSubcommands',
   'defaultToHelp',
   'disableHelpSubcommand',
   'disableHelpFlag',
@@ -74,6 +75,7 @@ const commandStringOptionKeys = [
 const commandBooleanOptionKeys = [
   'inferSubcommands',
   'subcommandRequired',
+  'argsConflictWithSubcommands',
   'defaultToHelp',
   'disableHelpSubcommand',
   'disableHelpFlag',

@@ -51,6 +51,7 @@ type _ResultIsExact = Expect<Equal<Actual, Expected>>;
 const initializedCli = command('release', {
   version: '1.0.0',
   about: 'Create a release',
+  argsConflictWithSubcommands: true,
   args: [
     option('port', parsers.integer, { required: true }),
     flag('dryRun'),
