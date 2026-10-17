@@ -51,7 +51,7 @@ const serve = command('serve', {
   about: 'Serve static files',
   version: '1.0.0',
   args: [
-    option('port', parsers.range(1, 65_535), {
+    option('port', parsers.range(1, 65_535, { integer: true }), {
       short: 'p',
       default: 3000,
     }),
@@ -367,12 +367,19 @@ parsers include:
 parsers.enum(['dev', 'prod']);
 parsers.regex(/^[a-z][a-z0-9-]*$/);
 parsers.range(1, 10);
+parsers.range(1, 65_535, { integer: true });
 parsers.json(isMyConfig);
 parsers.custom('PORT', parsePort);
 ```
 
 A regex parser returns the original string when the pattern matches. Add `^`
 and `$` when the complete argument must match.
+
+A range includes both bounds and accepts fractional values by default. Set
+`integer: true` to use the same base-10 safe integer rules as `parsers.integer`:
+signed integer text is accepted, while decimals, exponent notation, hex, and
+values outside JavaScript's safe integer range are rejected. The parser still
+returns a `number`. Setting `integer: false` preserves the default behavior.
 
 The unit parsers return integer base units. Byte sizes use decimal `KB` through
 `TB`, or binary `KiB` through `TiB`. A key/value parser splits at the first `=`:

@@ -34,4 +34,11 @@ export {
   type ParseResult,
   type ParseValue,
 } from './error.js';
-export { type CompletionValueHint, type KeyValuePair, parsers, type ValueParser, type ValueParserOptions } from './parser.js';
+export {
+  type CompletionValueHint,
+  type KeyValuePair,
+  parsers,
+  type RangeParserOptions,
+  type ValueParser,
+  type ValueParserOptions,
+} from './parser.js';

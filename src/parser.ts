@@ -16,6 +16,12 @@ export interface ValueParserOptions {
   readonly completionHint?: CompletionValueHint;
 }
 
+/** Settings accepted by parsers.range(). */
+export interface RangeParserOptions {
+  /** Accepts only base-10 safe integers, like parsers.integer. Defaults to false. */
+  readonly integer?: boolean;
+}
+
 /** A key and value separated by the first equals sign in an argument. */
 export interface KeyValuePair {
   readonly key: string;
@@ -288,18 +294,22 @@ export const parsers = Object.freeze({
     return createValueParser(label, parse, options);
   },
 
-  /** Creates a number parser limited to the inclusive range. */
+  /** Creates a number parser limited to the inclusive range, optionally restricted to safe integers. */
   range(
     minimum: number,
     maximum: number,
+    { integer = false }: RangeParserOptions = {},
   ): ValueParser<number> {
     if (!Number.isFinite(minimum) || !Number.isFinite(maximum) || minimum > maximum) {
       throw new RangeError('A parser range must have finite, ascending bounds');
     }
+    if (typeof integer !== 'boolean') {
+      throw new TypeError('Range parser option \'integer\' must be a boolean');
+    }
     return createValueParser(`${minimum}..${maximum}`, (input) => {
-      const value = finiteNumber(input);
+      const value = integer ? parsers.integer.parse(input) : finiteNumber(input);
       if (value < minimum || value > maximum) {
-        throw new Error(`expected a number from ${minimum} to ${maximum}`);
+        throw new Error(`expected ${integer ? 'an integer' : 'a number'} from ${minimum} to ${maximum}`);
       }
       return value;
     });

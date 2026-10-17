@@ -10,12 +10,24 @@ import {
   type CompletionShell,
   type Infer,
   type OptionOptions,
+  type RangeParserOptions,
 } from '../src';
 import { generateCompletion } from '../src/completion';
 
 type Equal<Left, Right> = (<Value>() => Value extends Left ? 1 : 2) extends (<Value>() => Value extends Right ? 1 : 2) ? true
   : false;
 type Expect<Value extends true> = Value;
+
+const integerRangeOptions: RangeParserOptions = { integer: true };
+const integerRangeCli = command('bounded', {
+  args: [option('port', parsers.range(1, 65_535, integerRangeOptions), { required: true })],
+});
+type _IntegerRangeOutputIsExact = Expect<Equal<Infer<typeof integerRangeCli>['port'], number>>;
+
+void (() => {
+  // @ts-expect-error integer mode accepts only a boolean
+  parsers.range(1, 10, { integer: 'true' });
+});
 
 const typedCli = command('deploy', {
   args: [
