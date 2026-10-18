@@ -45,6 +45,7 @@ import {
   stopsOptionValueCollection,
 } from './recognition.js';
 import {
+  applyConditionalDefaults,
   applyOverrides,
   validateRelations,
   type RelationState,
@@ -395,6 +396,7 @@ function parseDefinition(
     inheritedGlobals.map(({ argument }) => argument),
   );
   applyConfigValues(definition, config, path, state, inheritedGlobals);
+  applyConditionalDefaults(definition, state);
   const cliProvidedBeforeOverrides = new Set(state.cliProvided);
   applyOverrides(definition, state);
   resetOverriddenSources(definition, state, cliProvidedBeforeOverrides);
@@ -462,8 +464,17 @@ function initializeValues(
       state.values[argument.name] = disabled ? false : state.session.defaultColor;
       state.sources.set(argument.name, disabled ? 'env' : 'default');
       state.session.colorMode = disabled ? 'never' : 'auto';
-    } else if (argument.repeatable || argument.trailingVarArg) {
-      state.values[argument.name] = [];
+    } else if (
+      argument.repeatable
+      || argument.trailingVarArg
+      || argument.defaultValues !== undefined
+    ) {
+      state.values[argument.name] = argument.defaultValues === undefined
+        ? []
+        : [...argument.defaultValues];
+      if (argument.defaultValues !== undefined) {
+        state.sources.set(argument.name, 'default');
+      }
     } else if (argument.presence === 'default') {
       state.values[argument.name] = argument.defaultValue;
       state.sources.set(argument.name, 'default');
@@ -691,7 +702,9 @@ function resetOverriddenSources(
     if (argument === undefined) {
       continue;
     }
-    const collectsValues = argument.repeatable || argument.trailingVarArg;
+    const collectsValues = argument.repeatable
+      || argument.trailingVarArg
+      || argument.defaultValues !== undefined;
     if (argument.color && Bun.env.NO_COLOR !== undefined) {
       state.sources.set(target, 'env');
     } else if (argument.presence === 'default') {
@@ -700,8 +713,9 @@ function resetOverriddenSources(
       state.sources.delete(target);
     }
     if (collectsValues) {
-      // relation application already restored an empty collection
-      state.values[target] = [];
+      state.values[target] = argument.defaultValues === undefined
+        ? []
+        : [...argument.defaultValues];
     }
   }
 }
@@ -1005,7 +1019,7 @@ function parseLongOption(
       },
     );
   }
-  const { argument } = binding;
+  const { argument, definition: argumentDefinition } = binding;
   collectDeprecation(
     state.session.warnings,
     'argument',
@@ -1044,6 +1058,7 @@ function parseLongOption(
       inheritedGlobals.map(({ argument: inherited }) => inherited),
       argument.negativeLong === name ? false : undefined,
       argvOffset + index,
+      argumentDefinition.argsOverrideSelf,
     );
     return index + 1;
   }
@@ -1059,6 +1074,7 @@ function parseLongOption(
         'cli',
         argvOffset + index,
         inheritedGlobals.map(({ argument: inherited }) => inherited),
+        argumentDefinition.argsOverrideSelf,
       );
       return index + 1;
     }
@@ -1096,6 +1112,7 @@ function parseLongOption(
       'cli',
       argvOffset + index,
       inheritedGlobals.map(({ argument: inherited }) => inherited),
+      argumentDefinition.argsOverrideSelf,
     );
   } else {
     storeRawValues(
@@ -1110,6 +1127,7 @@ function parseLongOption(
       consumed.valueIndices,
       argvOffset + index,
       inheritedGlobals.map(({ argument: inherited }) => inherited),
+      argumentDefinition.argsOverrideSelf,
     );
   }
   return consumed.nextIndex;
@@ -1158,7 +1176,7 @@ function parseShortOptions(
         },
       );
     }
-    const { argument } = binding;
+    const { argument, definition: argumentDefinition } = binding;
     collectDeprecation(
       state.session.warnings,
       'argument',
@@ -1177,6 +1195,7 @@ function parseShortOptions(
         inheritedGlobals.map(({ argument: inherited }) => inherited),
         undefined,
         argvOffset + index,
+        argumentDefinition.argsOverrideSelf,
       );
       continue;
     }
@@ -1197,6 +1216,7 @@ function parseShortOptions(
           'cli',
           argvOffset + index,
           inheritedGlobals.map(({ argument: inherited }) => inherited),
+          argumentDefinition.argsOverrideSelf,
         );
         return index + 1;
       }
@@ -1234,6 +1254,7 @@ function parseShortOptions(
         'cli',
         argvOffset + index,
         inheritedGlobals.map(({ argument: inherited }) => inherited),
+        argumentDefinition.argsOverrideSelf,
       );
     } else {
       storeRawValues(
@@ -1248,6 +1269,7 @@ function parseShortOptions(
         consumed.valueIndices,
         argvOffset + index,
         inheritedGlobals.map(({ argument: inherited }) => inherited),
+        argumentDefinition.argsOverrideSelf,
       );
     }
     return consumed.nextIndex;
@@ -1413,6 +1435,7 @@ function storeRawValues(
   tokenIndices?: readonly number[],
   tokenIndex?: number,
   inheritedArguments: readonly ArgumentDefinition[] = [],
+  argsOverrideSelf = definition.argsOverrideSelf,
 ): void {
   storeParsedValues(
     argument,
@@ -1436,6 +1459,7 @@ function storeRawValues(
     source,
     tokenIndex ?? tokenIndices?.[0],
     inheritedArguments,
+    argsOverrideSelf,
   );
 }
 
@@ -1449,6 +1473,7 @@ function storeParsedValues(
   source: ValueSource = 'cli',
   tokenIndex?: number,
   inheritedArguments: readonly ArgumentDefinition[] = [],
+  argsOverrideSelf = definition.argsOverrideSelf,
 ): void {
   const collectsValues = argument.repeatable
     || argument.trailingVarArg
@@ -1460,11 +1485,17 @@ function storeParsedValues(
     state.cliProvided.delete(argument.name);
     delete state.valueCounts[argument.name];
   }
+  const overrideSelf = argument.kind === 'option'
+    && !argument.repeatable
+    && source === 'cli'
+    && argsOverrideSelf
+    && state.cliProvided.has(argument.name);
   if (
     argument.kind === 'option'
     && !argument.repeatable
     && source === 'cli'
     && state.cliProvided.has(argument.name)
+    && !overrideSelf
   ) {
     throw commandError(
       ErrorKind.ArgumentConflict,
@@ -1477,6 +1508,12 @@ function storeParsedValues(
         ...(tokenIndex === undefined ? {} : { tokenIndex }),
       },
     );
+  }
+
+  if (overrideSelf) {
+    state.values[argument.name] = collectsValues ? [] : undefined;
+    state.provided.delete(argument.name);
+    delete state.valueCounts[argument.name];
   }
 
   if (collectsValues) {
@@ -1511,6 +1548,7 @@ function storeSwitch(
   inheritedArguments: readonly ArgumentDefinition[],
   explicitValue?: boolean,
   tokenIndex?: number,
+  argsOverrideSelf = definition.argsOverrideSelf,
 ): void {
   if (
     argument.action === ArgumentAction.Help
@@ -1552,7 +1590,17 @@ function storeSwitch(
     argument.action === ArgumentAction.SetTrue
     || argument.action === ArgumentAction.SetFalse
   ) {
-    if (state.cliProvided.has(argument.name)) {
+    const nextValue = explicitValue ?? argument.action === ArgumentAction.SetTrue;
+    const pairedColorConflict = argument.color
+      && state.cliProvided.has(argument.name)
+      && (
+        Bun.env.NO_COLOR !== undefined
+        || state.values[argument.name] !== nextValue
+      );
+    const overrideSelf = argsOverrideSelf
+      && !pairedColorConflict
+      && state.cliProvided.has(argument.name);
+    if (state.cliProvided.has(argument.name) && !overrideSelf) {
       throw commandError(
         ErrorKind.ArgumentConflict,
         `argument '${display}' cannot be used more than once`,

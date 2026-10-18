@@ -95,6 +95,34 @@ assert.match(cli.renderMarkdown(documented), /documented/);
 assert.match(cli.renderManPage(documented), /\.TH/);
 assert.equal(cli.getWarnings(documented.parse(['--listen', '9000'])).length, 1);
 
+const defaults = cli.command('defaults', {
+  args: [
+    cli.option(
+      'mode',
+      cli.parsers.enum([
+        { value: 'development', aliases: ['dev'] },
+        { value: 'production', aliases: ['prod'], describe: 'Production mode' },
+        { value: 'legacy', hide: true },
+      ], { ignoreCase: true }),
+      { default: 'development' },
+    ),
+    cli.option('port', cli.parsers.integer, { default: 3000 }),
+    cli.option('tag', cli.parsers.string, { repeatable: true, defaultValues: ['local'] }),
+  ],
+  defaultIf: [{ source: 'mode', equals: 'production', target: 'port', value: 443 }],
+  argsOverrideSelf: true,
+});
+const fromDefaults = defaults.parse(['--mode', 'dev', '--mode', 'PROD']);
+assert.equal(fromDefaults.type, 'value');
+if (fromDefaults.type !== 'value') {
+  throw new Error('Expected parsed conditional defaults');
+}
+assert.deepEqual(fromDefaults.value, { mode: 'production', port: 443, tag: ['local'] });
+assert.equal(cli.getValueSource(fromDefaults.value, 'port'), 'default');
+assert.equal(cli.describeCommand(defaults).defaultIf[0]?.value, 443);
+assert.match(defaults.renderHelp(), /Production mode/);
+assert.doesNotMatch(defaults.renderHelp(), /legacy/);
+
 const consumerDirectory = await mkdtemp(resolve(root, '.node-next-consumer-'));
 try {
   await writeFile(

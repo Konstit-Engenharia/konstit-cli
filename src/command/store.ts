@@ -64,6 +64,9 @@ export function copyCommand(
         })
       ),
     ),
+    defaultIf: Object.freeze(
+      merged.defaultIf.map((rule) => Object.freeze({ ...rule })),
+    ),
     exclusiveArguments: Object.freeze([...merged.exclusiveArguments]),
     overrides: Object.freeze(
       merged.overrides.map((override) => Object.freeze({ ...override })),

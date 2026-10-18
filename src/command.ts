@@ -3,6 +3,7 @@ import {
   type AnyArgument,
   type AnyGlobalArgument,
   type ArgumentCardinality,
+  type ArgumentDefinition,
   type ArgumentKind,
   type ArgumentName,
   type ArgumentOutput,
@@ -184,6 +185,14 @@ function toValueConditions(
   return conditions.map(([source, expected,]) => ({ source, expected }));
 }
 
+function conditionalDefaultCollectsValues(
+  argument: ArgumentDefinition | undefined,
+): boolean {
+  return argument !== undefined
+    && (argument.kind === 'option' || argument.kind === 'positional')
+    && (argument.repeatable || argument.trailingVarArg || argument.maxValues !== 1);
+}
+
 function validateValueConditions(
   conditions: readonly ValueConditionDefinition[],
 ): void {
@@ -315,6 +324,13 @@ class Command<
     enabled = true,
   ): Command<Name, Fields, Subcommands, SubcommandRequired, Groups> {
     return this.with({ argsConflictWithSubcommands: enabled });
+  }
+
+  /** Allows later CLI occurrences of non-repeatable options and ordinary flags to replace earlier values. */
+  argsOverrideSelf(
+    enabled = true,
+  ): Command<Name, Fields, Subcommands, SubcommandRequired, Groups> {
+    return this.with({ argsOverrideSelf: enabled });
   }
 
   /** Disables the generated `help` subcommand. */
@@ -823,6 +839,17 @@ type RequiredUnlessRelation<Fields extends object> = {
   };
 }[StringKeyOf<Fields>];
 
+type ConditionalDefaultRelation<Fields extends object> = {
+  [Source in StringKeyOf<Fields>]: {
+    [Target in Exclude<StringKeyOf<Fields>, Source>]: {
+      readonly source: Source;
+      readonly equals?: RelationValue<Fields[Source]>;
+      readonly target: Target;
+      readonly value: Exclude<Fields[Target], undefined>;
+    };
+  }[Exclude<StringKeyOf<Fields>, Source>];
+}[StringKeyOf<Fields>];
+
 /** A declarative clap-style argument group. */
 export interface CommandGroupOptions<
   Name extends string = string,
@@ -974,6 +1001,8 @@ export interface CommandOptions<
    * Does not waive required arguments.
    */
   readonly argsConflictWithSubcommands?: boolean;
+  /** Allows later CLI occurrences of non-repeatable options and ordinary flags to replace earlier values. */
+  readonly argsOverrideSelf?: boolean;
   /** Displays help when no argument or subcommand was supplied. */
   readonly defaultToHelp?: boolean;
   /** Disables the generated `help` subcommand. */
@@ -1006,6 +1035,10 @@ export interface CommandOptions<
   >[];
   /** Requires a target unless every alternative is present. */
   readonly requiredUnlessAll?: readonly RequiredUnlessRelation<
+    FieldsFromArguments<Arguments>
+  >[];
+  /** Supplies a target value when a source value matches a condition. */
+  readonly defaultIf?: readonly ConditionalDefaultRelation<
     FieldsFromArguments<Arguments>
   >[];
   /** Clears a target whenever its source is explicitly provided. */
@@ -1069,12 +1102,14 @@ function emptyCommand<const Name extends string>(
     conditionalSetRequirements: Object.freeze([]),
     requiredUnless: Object.freeze([]),
     requiredUnlessAll: Object.freeze([]),
+    defaultIf: Object.freeze([]),
     exclusiveArguments: Object.freeze([]),
     overrides: Object.freeze([]),
     conflicts: Object.freeze([]),
     groups: Object.freeze([]),
     subcommandRequired: false,
     argsConflictWithSubcommands: false,
+    argsOverrideSelf: false,
     argRequiredElseHelp: false,
     inferSubcommands: false,
     disableHelpSubcommand: false,
@@ -1183,6 +1218,9 @@ export function command(
   if (options.argsConflictWithSubcommands !== undefined) {
     configured = configured.argsConflictWithSubcommands(options.argsConflictWithSubcommands);
   }
+  if (options.argsOverrideSelf !== undefined) {
+    configured = configured.argsOverrideSelf(options.argsOverrideSelf);
+  }
   if (options.subcommandRequired === true) {
     configured = configured.requireSubcommand() as unknown as typeof configured;
   }
@@ -1194,6 +1232,33 @@ export function command(
   }
 
   validateCommandRelations(options, getCommandDefinition(configured));
+  if (options.defaultIf !== undefined) {
+    const defaultIf = options.defaultIf as readonly {
+      readonly source: string;
+      readonly equals?: unknown;
+      readonly target: string;
+      readonly value: unknown;
+    }[];
+    const currentDefinition = getCommandDefinition(configured);
+    const argumentsByName = new Map(
+      currentDefinition.arguments.map((argument) => [argument.name, argument]),
+    );
+    configured = new Command(copyCommand(currentDefinition, {
+      defaultIf: Object.freeze(defaultIf.map((rule) =>
+        Object.freeze({
+          source: rule.source,
+          ...(Object.hasOwn(rule, 'equals') ? { equals: rule.equals } : {}),
+          target: rule.target,
+          value: conditionalDefaultCollectsValues(argumentsByName.get(rule.target))
+              && Array.isArray(rule.value)
+            ? Object.freeze([...rule.value])
+            : rule.value,
+          hasEquals: Object.hasOwn(rule, 'equals'),
+        })
+      )),
+    })) as unknown as typeof configured;
+  }
+
   for (const [source, target,] of options.requires ?? []) {
     configured = configured.requires(source as never, target as never);
   }

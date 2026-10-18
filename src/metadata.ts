@@ -11,6 +11,7 @@ import {
 } from './command/syntax.js';
 import type {
   CompletionValueHint,
+  EnumValue,
   ValueParser,
 } from './parser.js';
 
@@ -28,6 +29,8 @@ export interface ParserMetadata {
   readonly label: string;
   readonly completions?: readonly string[];
   readonly completionHint?: CompletionValueHint;
+  readonly choices?: readonly EnumValue[];
+  readonly ignoreCase?: boolean;
 }
 
 /** Minimum and maximum values consumed by one argument. A null maximum is unbounded. */
@@ -53,6 +56,7 @@ export interface ArgumentMetadata {
   readonly presence: ArgumentDefinition['presence'];
   readonly hasDefaultValue: boolean;
   readonly defaultValue?: MetadataValue;
+  readonly defaultValues?: readonly MetadataValue[];
   readonly defaultMissingValue?: MetadataValue;
   readonly hasDefaultMissingValue: boolean;
   readonly repeatable: boolean;
@@ -119,6 +123,15 @@ export interface CommandMetadataOptions {
   readonly includeHidden?: boolean;
 }
 
+/** A conditional fallback, with unsupported values omitted from metadata. */
+export interface ConditionalDefaultMetadata {
+  readonly source: string;
+  readonly target: string;
+  readonly hasEquals: boolean;
+  readonly equals?: MetadataValue;
+  readonly value?: MetadataValue;
+}
+
 /** An immutable, callback-free description of one command and its descendants. */
 export interface CommandMetadata {
   readonly name: string;
@@ -140,6 +153,7 @@ export interface CommandMetadata {
   readonly subcommands: readonly CommandMetadata[];
   readonly requirements: readonly RequirementMetadata[];
   readonly conditionalRequirements: readonly ConditionalRequirementMetadata[];
+  readonly defaultIf: readonly ConditionalDefaultMetadata[];
   readonly conditionalSetRequirements: readonly ConditionalSetRequirementMetadata[];
   readonly requiredUnless: readonly RequiredUnlessMetadata[];
   readonly requiredUnlessAll: readonly RequiredUnlessMetadata[];
@@ -149,6 +163,7 @@ export interface CommandMetadata {
   readonly groups: readonly GroupMetadata[];
   readonly subcommandRequired: boolean;
   readonly argsConflictWithSubcommands: boolean;
+  readonly argsOverrideSelf: boolean;
   readonly argRequiredElseHelp: boolean;
   readonly inferSubcommands: boolean;
   readonly disableHelpSubcommand: boolean;
@@ -200,11 +215,11 @@ function describeDefinition(
   );
   const visibleArgumentNames = new Set(argumentsToDescribe.map(({ name }) => name));
   const relations = describeRelations(definition, visibleArgumentNames, includeHidden);
-  const parserDefinitions = argumentsToDescribe.map((argument) => describeArgument(argument));
+  const parserDefinitions = argumentsToDescribe.map((argument) => describeArgument(argument, includeHidden));
   const inheritedDefinitions = inheritedGlobals.filter(
     ({ hidden }) => includeHidden || !hidden,
   );
-  const inheritedParserDefinitions = inheritedDefinitions.map((argument) => describeArgument(argument));
+  const inheritedParserDefinitions = inheritedDefinitions.map((argument) => describeArgument(argument, includeHidden));
   const childGlobals = uniqueArguments([
     ...inheritedGlobals,
     ...definition.arguments.filter(({ global }) => global),
@@ -248,6 +263,7 @@ function describeDefinition(
     ...relations,
     subcommandRequired: definition.subcommandRequired,
     argsConflictWithSubcommands: definition.argsConflictWithSubcommands,
+    argsOverrideSelf: definition.argsOverrideSelf,
     argRequiredElseHelp: definition.argRequiredElseHelp,
     inferSubcommands: definition.inferSubcommands,
     disableHelpSubcommand: definition.disableHelpSubcommand,
@@ -257,15 +273,18 @@ function describeDefinition(
   });
 }
 
-function describeArgument(argument: ArgumentDefinition): ArgumentMetadata {
+function describeArgument(argument: ArgumentDefinition, includeHidden: boolean): ArgumentMetadata {
   const hasDefaultValue = argument.presence === 'default';
   const defaultValue = hasDefaultValue
     ? toMetadataValue(argument.defaultValue)
     : undefined;
+  const defaultValues = argument.defaultValues === undefined
+    ? undefined
+    : toMetadataValue(argument.defaultValues) as readonly MetadataValue[] | undefined;
   const defaultMissingValue = argument.hasDefaultMissingValue
     ? toMetadataValue(argument.defaultMissingValue)
     : undefined;
-  const parser = argument.parser === undefined ? undefined : describeParser(argument.parser);
+  const parser = argument.parser === undefined ? undefined : describeParser(argument.parser, includeHidden);
   return Object.freeze({
     name: argument.name,
     kind: argument.kind,
@@ -284,6 +303,7 @@ function describeArgument(argument: ArgumentDefinition): ArgumentMetadata {
     presence: argument.presence,
     hasDefaultValue,
     ...(defaultValue === undefined ? {} : { defaultValue }),
+    ...(defaultValues === undefined ? {} : { defaultValues }),
     ...(defaultMissingValue === undefined ? {} : { defaultMissingValue }),
     hasDefaultMissingValue: argument.hasDefaultMissingValue,
     repeatable: argument.repeatable,
@@ -317,13 +337,28 @@ function uniqueArguments(argumentsToMerge: readonly ArgumentDefinition[]): reado
   return result;
 }
 
-function describeParser(parser: ValueParser<unknown>): ParserMetadata {
+function describeParser(parser: ValueParser<unknown>, includeHidden: boolean): ParserMetadata {
   return Object.freeze({
     label: parser.label,
     ...(parser.completions === undefined
       ? {}
       : { completions: Object.freeze([...parser.completions]) }),
     ...(parser.completionHint === undefined ? {} : { completionHint: parser.completionHint }),
+    ...(parser.choices === undefined ? {} : {
+      choices: Object.freeze(
+        parser.choices
+          .filter(({ hide }) => includeHidden || hide !== true)
+          .map(({ value, aliases, describe, hide }) =>
+            Object.freeze({
+              value,
+              ...(aliases === undefined ? {} : { aliases: Object.freeze([...aliases]) }),
+              ...(describe === undefined ? {} : { describe }),
+              ...(hide === undefined ? {} : { hide }),
+            })
+          ),
+      ),
+    }),
+    ...(parser.ignoreCase === undefined ? {} : { ignoreCase: parser.ignoreCase }),
   });
 }
 
@@ -335,6 +370,7 @@ function describeRelations(
   CommandMetadata,
   | 'requirements'
   | 'conditionalRequirements'
+  | 'defaultIf'
   | 'conditionalSetRequirements'
   | 'requiredUnless'
   | 'requiredUnlessAll'
@@ -347,6 +383,19 @@ function describeRelations(
   const requirements = definition.requirements
     .filter(({ source, target }) => isVisible(source) && isVisible(target))
     .map(({ source, target }) => Object.freeze({ source, target }));
+  const defaultIf = definition.defaultIf
+    .filter(({ source, target }) => isVisible(source) && isVisible(target))
+    .map(({ source, target, hasEquals, equals, value }) => {
+      const safeEquals = hasEquals ? toMetadataValue(equals) : undefined;
+      const safeValue = toMetadataValue(value);
+      return Object.freeze({
+        source,
+        target,
+        hasEquals,
+        ...(safeEquals === undefined ? {} : { equals: safeEquals }),
+        ...(safeValue === undefined ? {} : { value: safeValue }),
+      });
+    });
   const conditionalRequirements = definition.conditionalRequirements
     .filter(({ source, target }) => isVisible(source) && isVisible(target))
     .map(({ source, target, expected }) => {
@@ -415,6 +464,7 @@ function describeRelations(
     .filter((group): group is NonNullable<typeof group> => group !== undefined);
   return {
     requirements: Object.freeze(requirements),
+    defaultIf: Object.freeze(defaultIf),
     conditionalRequirements: Object.freeze(conditionalRequirements),
     conditionalSetRequirements: Object.freeze(conditionalSetRequirements),
     requiredUnless: Object.freeze(requiredUnless),
@@ -638,6 +688,15 @@ function appendMarkdownRelations(
 
 function relationDescriptions(command: CommandMetadata): readonly string[] {
   const lines: string[] = [];
+  if (command.argsOverrideSelf) {
+    lines.push('Later occurrences replace earlier values for non-repeatable options and ordinary flags');
+  }
+  for (const { source, target, hasEquals, equals, value } of command.defaultIf) {
+    const condition = hasEquals
+      ? `${markdownInline(source)} = ${formatMarkdownValue(equals)}`
+      : `${markdownInline(source)} is explicitly provided`;
+    lines.push(`${markdownInline(target)} defaults to ${formatMarkdownValue(value)} when ${condition}`);
+  }
   for (const { source, target } of command.requirements) {
     lines.push(`${markdownInline(source)} requires ${markdownInline(target)}`);
   }
@@ -843,6 +902,17 @@ function argumentDescription(argument: ArgumentMetadata): string {
   details.push(`arity ${formatArity(argument.arity)}`);
   if (argument.parser !== undefined) {
     details.push(`parser ${argument.parser.label}`);
+    for (const choice of argument.parser.choices ?? []) {
+      if (choice.describe !== undefined) {
+        details.push(`${choice.value}: ${choice.describe}`);
+      }
+      if (choice.aliases !== undefined && choice.aliases.length > 0) {
+        details.push(`${choice.value} aliases: ${choice.aliases.join(', ')}`);
+      }
+    }
+    if (argument.parser.ignoreCase) {
+      details.push('case-insensitive values');
+    }
     if (argument.parser.completions !== undefined) {
       details.push(`completions: ${argument.parser.completions.join(', ')}`);
     }
@@ -860,10 +930,11 @@ function argumentDescription(argument: ArgumentMetadata): string {
     details.push(`env: ${argument.env}`);
   }
   if (argument.hasDefaultValue) {
+    const value = argument.defaultValues ?? argument.defaultValue;
     details.push(
-      argument.defaultValue === undefined
+      value === undefined
         ? 'default: unavailable'
-        : `default: ${formatPlainValue(argument.defaultValue)}`,
+        : `default: ${formatPlainValue(value)}`,
     );
   }
   if (argument.hasDefaultMissingValue) {

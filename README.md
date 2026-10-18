@@ -11,6 +11,7 @@ clap. It is not a source port.
 - Value parsers determine the returned TypeScript type.
 - `required: true` removes `undefined` when the configured arity guarantees a value.
 - `default` keeps a value present.
+- `defaultValues` keeps a collection present, preserving fixed tuple types.
 - `repeatable: true` returns `readonly Value[]`.
 - `numArgs: 2` returns an exact readonly tuple for a non-repeated argument.
 - Ranged and repeated arity return readonly arrays.
@@ -81,41 +82,43 @@ options object.
 
 `command(name, options)` accepts these fields:
 
-| Field                         | Purpose                                                        |
-| ----------------------------- | -------------------------------------------------------------- |
-| `version`                     | Text printed by `-V` and `--version`.                          |
-| `about`                       | Short help and completion description.                         |
-| `longAbout`                   | Extended help description.                                     |
-| `author`                      | Author line in help.                                           |
-| `beforeHelp`                  | Text before generated help.                                    |
-| `afterHelp`                   | Text after generated help.                                     |
-| `overrideUsage`               | Exact replacement for generated usage.                         |
-| `overrideHelp`                | Exact replacement for generated help.                          |
-| `aliases`                     | Parseable aliases hidden from help and completion.             |
-| `visibleAliases`              | Parseable aliases shown in help and completion.                |
-| `deprecated`                  | Replacement guidance emitted when the command is invoked.      |
-| `deprecatedAliases`           | Deprecation messages keyed by declared aliases.                |
-| `args`                        | Argument tuple in parse order.                                 |
-| `subcommands`                 | Subcommand tuple.                                              |
-| `inferSubcommands`            | Accept an unambiguous name or alias prefix.                    |
-| `subcommandRequired`          | Require a subcommand and make its result non-optional.         |
-| `argsConflictWithSubcommands` | Reject explicit local arguments when a subcommand is selected. |
-| `defaultToHelp`               | Display help when no argument or subcommand is supplied.       |
-| `disableHelpSubcommand`       | Disable the generated `help` subcommand.                       |
-| `disableHelpFlag`             | Disable generated `-h` and `--help`.                           |
-| `disableVersionFlag`          | Disable generated `-V` and `--version`.                        |
-| `hide`                        | Hide this command from parent help and completion.             |
-| `requires`                    | Unconditional argument dependencies.                           |
-| `requiresIf`                  | Single-value conditional dependencies.                         |
-| `requiredIfAny`               | Dependencies activated by any matching condition.              |
-| `requiredIfAll`               | Dependencies activated by all matching conditions.             |
-| `requiredUnlessPresent`       | Require a target unless one alternative is present.            |
-| `requiredUnlessAll`           | Require a target unless all alternatives are present.          |
-| `overrides`                   | Clear a target when a source is explicitly supplied.           |
-| `conflicts`                   | Mutually conflicting argument sets.                            |
-| `exclusive`                   | Arguments that conflict with every other supplied argument.    |
-| `groups`                      | Named argument groups and their relations.                     |
-| `handler`                     | Synchronous or asynchronous command callback.                  |
+| Field                         | Purpose                                                                 |
+| ----------------------------- | ----------------------------------------------------------------------- |
+| `version`                     | Text printed by `-V` and `--version`.                                   |
+| `about`                       | Short help and completion description.                                  |
+| `longAbout`                   | Extended help description.                                              |
+| `author`                      | Author line in help.                                                    |
+| `beforeHelp`                  | Text before generated help.                                             |
+| `afterHelp`                   | Text after generated help.                                              |
+| `overrideUsage`               | Exact replacement for generated usage.                                  |
+| `overrideHelp`                | Exact replacement for generated help.                                   |
+| `aliases`                     | Parseable aliases hidden from help and completion.                      |
+| `visibleAliases`              | Parseable aliases shown in help and completion.                         |
+| `deprecated`                  | Replacement guidance emitted when the command is invoked.               |
+| `deprecatedAliases`           | Deprecation messages keyed by declared aliases.                         |
+| `args`                        | Argument tuple in parse order.                                          |
+| `subcommands`                 | Subcommand tuple.                                                       |
+| `inferSubcommands`            | Accept an unambiguous name or alias prefix.                             |
+| `argsOverrideSelf`            | Let the last occurrence replace a non-repeated option or ordinary flag. |
+| `subcommandRequired`          | Require a subcommand and make its result non-optional.                  |
+| `argsConflictWithSubcommands` | Reject explicit local arguments when a subcommand is selected.          |
+| `defaultToHelp`               | Display help when no argument or subcommand is supplied.                |
+| `disableHelpSubcommand`       | Disable the generated `help` subcommand.                                |
+| `disableHelpFlag`             | Disable generated `-h` and `--help`.                                    |
+| `disableVersionFlag`          | Disable generated `-V` and `--version`.                                 |
+| `hide`                        | Hide this command from parent help and completion.                      |
+| `requires`                    | Unconditional argument dependencies.                                    |
+| `requiresIf`                  | Single-value conditional dependencies.                                  |
+| `requiredIfAny`               | Dependencies activated by any matching condition.                       |
+| `requiredIfAll`               | Dependencies activated by all matching conditions.                      |
+| `requiredUnlessPresent`       | Require a target unless one alternative is present.                     |
+| `requiredUnlessAll`           | Require a target unless all alternatives are present.                   |
+| `overrides`                   | Clear a target when a source is explicitly supplied.                    |
+| `defaultIf`                   | Supply a typed default when another argument matches.                   |
+| `conflicts`                   | Mutually conflicting argument sets.                                     |
+| `exclusive`                   | Arguments that conflict with every other supplied argument.             |
+| `groups`                      | Named argument groups and their relations.                              |
+| `handler`                     | Synchronous or asynchronous command callback.                           |
 
 Each field is optional. Duplicate primary argument and subcommand names are
 checked from literal tuples. Alias collisions, invalid layouts, and widened
@@ -396,6 +399,7 @@ Value options and positionals accept:
 | `complete`             | Dynamic completion provider.                                    |
 | `required`             | Require the argument occurrence.                                |
 | `default`              | Value used when the argument is absent.                         |
+| `defaultValues`        | Typed values used when a collection argument is absent.         |
 | `repeatable`           | Append occurrences into a readonly array.                       |
 | `numArgs`              | Fixed count or `{ min, max? }` value range.                     |
 | `valueDelimiter`       | Split each raw value by one character.                          |
@@ -442,6 +446,48 @@ Defaults belong to the argument, not its parser. A default must match the
 parser output. Use an explicit `parsers.string` when a string option or
 positional needs configuration.
 
+Use `defaultValues` for repeatable arguments or arguments that collect multiple
+values. The values must match the parser output and configured arity. `default`
+continues to mean one parsed value, including when a custom parser returns an
+array. `default` and `defaultValues` cannot be combined.
+
+```ts
+const serve = command('serve', {
+  args: [
+    option('mode', parsers.enum(['development', 'production']), {
+      default: 'development',
+    }),
+    option('port', parsers.integer, { default: 3000 }),
+    option('tags', parsers.string, {
+      repeatable: true,
+      defaultValues: ['local', 'debug'],
+    }),
+  ],
+  defaultIf: [
+    { source: 'mode', equals: 'production', target: 'port', value: 443 },
+  ],
+  argsOverrideSelf: true,
+});
+```
+
+Conditional defaults use parsed values. Omit `equals` to match an argument
+explicitly supplied through CLI, environment, or configuration. With `equals`,
+the source may also come from a default; a collection matches if any item is
+equal. The first matching rule for each target wins. Dependencies are resolved
+before their targets, and cyclic rules are rejected when creating the command.
+Precedence is CLI, environment, configuration, conditional default, then
+unconditional default. Both forms of default report the source `'default'`.
+For collection targets, the rule's `value` is the complete collection.
+Defaults do not count as explicit occurrences for required arguments or
+argument relations.
+
+`argsOverrideSelf: true` makes the last CLI occurrence of a non-repeatable option
+or flag replace its earlier value. A multi-value occurrence replaces the entire
+earlier collection. Repeatable arguments still append and counters still
+increment. Inherited global options use the setting of their declaring command.
+The default setting continues to reject duplicate non-repeatable occurrences.
+Paired `colorFlag()` switches retain their conflict behavior.
+
 ### Advanced value collection
 
 ```ts
@@ -483,6 +529,24 @@ parsers.range(1, 65_535, { integer: true });
 parsers.json(isMyConfig);
 parsers.custom('PORT', parsePort);
 ```
+
+Enum entries may include aliases, descriptions, and visibility settings:
+
+```ts
+const mode = parsers.enum([
+  { value: 'development', aliases: ['dev'], describe: 'Local development' },
+  { value: 'production', aliases: ['prod'], describe: 'Production deployment' },
+  { value: 'legacy', hide: true },
+], { ignoreCase: true });
+
+mode.parse('PROD'); // 'production'
+```
+
+Aliases and case variants return the canonical value, preserving the inferred
+literal union. Hidden entries remain accepted but are omitted from help, error
+suggestions, and completion. Duplicate or ambiguous spellings are rejected.
+`EnumValue` and `EnumParserOptions` describe these settings; `ValueParser.choices`
+and `ValueParser.ignoreCase` expose their immutable metadata.
 
 Compose parsers when conversion or an additional validation rule should be
 reused. `map` transforms the typed value and keeps the source parser's label,
@@ -747,6 +811,10 @@ unsupported element cannot shift array positions or partially rewrite a
 default. `hasDefaultValue` still reports that the argument was configured with
 a default. The same safe-value rules apply to relation expectations and
 `defaultMissingValue`.
+
+Metadata also includes `defaultIf`, `argsOverrideSelf`, collection defaults,
+and enum `choices` with aliases and descriptions. Hidden enum choices follow
+the same `includeHidden` setting as hidden arguments.
 
 ## Deprecation warnings
 

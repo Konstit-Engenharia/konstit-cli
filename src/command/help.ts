@@ -302,12 +302,30 @@ function annotateHelp(argument: ArgumentDefinition): string {
   if (argument.env !== undefined) {
     annotations.push(`[env: ${argument.env}]`);
   }
+  for (const choice of argument.parser?.choices ?? []) {
+    if (choice.hide === true) {
+      continue;
+    }
+    const details: string[] = [];
+    if (choice.describe !== undefined) {
+      details.push(sanitizeDiagnostic(choice.describe));
+    }
+    if (choice.aliases !== undefined && choice.aliases.length > 0) {
+      details.push(`aliases: ${choice.aliases.map(sanitizeDiagnostic).join(', ')}`);
+    }
+    if (details.length > 0) {
+      annotations.push(`[${sanitizeDiagnostic(choice.value)}: ${details.join('; ')}]`);
+    }
+  }
+  if (argument.parser?.ignoreCase) {
+    annotations.push('[case-insensitive values]');
+  }
   if (
     argument.presence === 'default'
     && argument.kind !== 'flag'
     && argument.kind !== 'count'
   ) {
-    annotations.push(`[default: ${String(argument.defaultValue)}]`);
+    annotations.push(`[default: ${String(argument.defaultValues ?? argument.defaultValue)}]`);
   }
   return annotations.join(' ');
 }

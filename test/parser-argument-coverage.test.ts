@@ -595,6 +595,9 @@ describe('argument configuration and metadata', () => {
     );
     expect(() => option('value', parsers.string, { long: 1 } as never)).toThrow('option \'long\' must be a string');
 
+    const sparseCompletions: unknown[] = [];
+    sparseCompletions.length = 1;
+
     for (
       const parser of [
         null,
@@ -602,10 +605,14 @@ describe('argument configuration and metadata', () => {
         { label: 1, parse: () => '' },
         { label: 'VALUE', parse: 'invalid' },
         { label: 'VALUE', parse: () => '', completions: ['ok', 1] },
+        { label: 'VALUE', parse: () => '', completions: sparseCompletions },
         { label: 'VALUE', parse: () => '', completionHint: 'database' },
+        { label: 'VALUE', parse: () => '', choices: [null] },
+        { label: 'VALUE', parse: () => '', ignoreCase: 'yes' },
       ]
     ) {
       expect(() => option('value', parser as never)).toThrow(/value parser/i);
+      expect(() => positional('value', parser as never)).toThrow(/value parser/i);
     }
 
     for (

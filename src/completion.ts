@@ -46,10 +46,16 @@ interface CompletionCandidate {
   readonly description: string;
 }
 
+interface CompletionValue {
+  readonly value: string;
+  readonly description?: string;
+}
+
 interface ValueCompletion {
   readonly tokens: readonly string[];
-  readonly values: readonly string[];
+  readonly values: readonly CompletionValue[];
   readonly hint?: CompletionValueHint;
+  readonly ignoreCase?: boolean;
 }
 
 const completionTemplates: Readonly<Record<CompletionShell, string>> = Object.freeze({
@@ -216,8 +222,9 @@ function optionTokens(argument: ArgumentDefinition): readonly string[] {
 function completionForArguments(
   argumentsToCombine: readonly ArgumentDefinition[],
 ): Omit<ValueCompletion, 'tokens'> {
-  const values = unique(
-    argumentsToCombine.flatMap((argument) => argument.parser?.completions ?? []),
+  const values = uniqueBy(
+    argumentsToCombine.flatMap((argument) => parserCompletionValues(argument)),
+    ({ value }) => value,
   );
   const hints = unique(
     argumentsToCombine.flatMap((argument) => {
@@ -228,7 +235,59 @@ function completionForArguments(
   return {
     values,
     ...(values.length === 0 && hints.length === 1 ? { hint: hints[0] } : {}),
+    ...(argumentsToCombine.some(({ parser }) => parser?.ignoreCase === true)
+      ? { ignoreCase: true }
+      : {}),
   };
+}
+
+function parserCompletionValues(
+  argument: ArgumentDefinition,
+): readonly CompletionValue[] {
+  const parser = argument.parser;
+  const choices = parser?.choices ?? [];
+  const normalize = (value: string): string =>
+    parser?.ignoreCase === true
+      ? value.toLowerCase()
+      : value;
+  const hiddenSpellings = new Set(
+    choices
+      .filter(({ hide }) => hide === true)
+      .flatMap(({ value, aliases }) => [value, ...(aliases ?? [])])
+      .map(normalize),
+  );
+  const aliases = new Set(
+    choices.flatMap(({ aliases: choiceAliases }) => choiceAliases ?? []).map(normalize),
+  );
+  const descriptions = new Map(
+    choices
+      .filter(({ hide }) => hide !== true)
+      .map(({ value, describe }) => [value, describe] as const),
+  );
+  const values = new Map<string, CompletionValue>();
+  for (const value of parser?.completions ?? []) {
+    const normalized = normalize(value);
+    if (hiddenSpellings.has(normalized) || aliases.has(normalized)) {
+      continue;
+    }
+    if (!values.has(value)) {
+      const description = descriptions.get(value);
+      values.set(value, {
+        value,
+        ...(description === undefined ? {} : { description }),
+      });
+    }
+  }
+  for (const choice of choices) {
+    if (choice.hide === true || values.has(choice.value)) {
+      continue;
+    }
+    values.set(choice.value, {
+      value: choice.value,
+      ...(choice.describe === undefined ? {} : { description: choice.describe }),
+    });
+  }
+  return [...values.values()];
 }
 
 function valueCompletions(node: CompletionNode): readonly ValueCompletion[] {
@@ -522,7 +581,9 @@ function generateBash(
     for (const completion of valueCompletions(node)) {
       if (completion.values.length > 0) {
         staticValueCases.push(
-          `    ${casePatterns(node.id, completion.tokens)}) candidates=(${completion.values.map(shellQuote).join(' ')}); handled=0 ;;`,
+          `    ${casePatterns(node.id, completion.tokens)}) candidates=(${
+            completion.values.map(({ value }) => shellQuote(value)).join(' ')
+          }); handled=0; ignore_case=${completion.ignoreCase === true ? 1 : 0} ;;`,
         );
       }
       if (completion.hint !== undefined) {
@@ -611,8 +672,11 @@ function generateZsh(
   for (const node of nodes) {
     for (const completion of valueCompletions(node)) {
       if (completion.values.length > 0) {
+        const descriptions = completion.values.map(({ description }) => description ?? '');
         staticValueCases.push(
-          `    ${casePatterns(node.id, completion.tokens)}) values=(${completion.values.map(shellQuote).join(' ')}) ;;`,
+          `    ${casePatterns(node.id, completion.tokens)}) values=(${
+            completion.values.map(({ value }) => shellQuote(value)).join(' ')
+          }); descriptions=(${descriptions.map(shellQuote).join(' ')}); ignore_case=${completion.ignoreCase === true ? 1 : 0} ;;`,
         );
       }
       if (completion.hint !== undefined) {
@@ -718,8 +782,7 @@ function generateFish(
       if (argument.help !== undefined) {
         baseParts.push(`-d ${fishQuote(argument.help)}`);
       }
-      appendFishValueCompletion(baseParts, argument);
-      registrations.push(baseParts.join(' '));
+      registrations.push(...appendFishValueCompletion(baseParts, argument));
       for (
         const alias of [
           ...(argument.negativeLong === undefined ? [] : [argument.negativeLong]),
@@ -733,8 +796,7 @@ function generateFish(
           ...(argument.kind === 'option' ? ['-r'] : []),
           ...(argument.help === undefined ? [] : [`-d ${fishQuote(argument.help)}`]),
         ];
-        appendFishValueCompletion(aliasParts, argument);
-        registrations.push(aliasParts.join(' '));
+        registrations.push(...appendFishValueCompletion(aliasParts, argument));
       }
     }
     if (!node.definition.disableHelpFlag) {
@@ -766,9 +828,13 @@ function generateFish(
       const positionalCondition = fishQuote(`test (${name}) = '${node.id}:${index}'`);
       const completion = completionForArguments([positional]);
       if (completion.values.length > 0) {
-        registrations.push(
-          `${commandPrefix} -f -n ${positionalCondition} -a ${fishWordList(completion.values)}`,
-        );
+        for (const value of completion.values) {
+          registrations.push(
+            `${commandPrefix} -f -n ${positionalCondition} -a ${fishQuote(fishQuote(value.value))}${
+              value.description === undefined ? '' : ` -d ${fishQuote(value.description)}`
+            }`,
+          );
+        }
       } else if (completion.hint === 'directory') {
         registrations.push(
           `${commandPrefix} -f -n ${positionalCondition} -a ${fishQuote('(__fish_complete_directories)')}`,
@@ -852,21 +918,24 @@ function generateFish(
 function appendFishValueCompletion(
   parts: string[],
   argument: ArgumentDefinition,
-): void {
+): readonly string[] {
   if (argument.kind !== 'option') {
-    return;
+    return [parts.join(' ')];
   }
   const completion = completionForArguments([argument]);
   if (completion.values.length > 0) {
-    parts.push('-f', `-a ${fishWordList(completion.values)}`);
+    return completion.values.map(({ value, description }) =>
+      [
+        ...parts,
+        '-f',
+        `-a ${fishQuote(fishQuote(value))}`,
+        ...(description === undefined ? [] : [`-d ${fishQuote(description)}`]),
+      ].join(' ')
+    );
   } else if (completion.hint === 'directory') {
     parts.push('-f', `-a ${fishQuote('(__fish_complete_directories)')}`);
   }
-}
-
-function fishWordList(values: readonly string[]): string {
-  const expression = values.map(fishQuote).join(' ');
-  return fishQuote(expression);
+  return [parts.join(' ')];
 }
 
 function generatePowerShell(
@@ -938,7 +1007,9 @@ function generatePowerShell(
         }
       }
       if (completion.values.length > 0) {
-        const values = completion.values.map(powerShellQuote).join(', ');
+        const values = completion.values.map(({ value, description }) =>
+          `[pscustomobject]@{ Value = ${powerShellQuote(value)}; Description = ${powerShellQuote(description ?? '')} }`
+        ).join(', ');
         for (const token of completion.tokens) {
           staticValueCases.push(
             `      ${powerShellQuote(`${node.id}:${token}`)} { return @(${values}) }`,

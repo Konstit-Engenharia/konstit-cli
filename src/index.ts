@@ -46,6 +46,7 @@ export {
   type CommandAliasMetadata,
   type CommandMetadata,
   type CommandMetadataOptions,
+  type ConditionalDefaultMetadata,
   type ConditionalRequirementMetadata,
   type ConditionalSetRequirementMetadata,
   describeCommand,
@@ -62,6 +63,8 @@ export {
 } from './metadata.js';
 export {
   type CompletionValueHint,
+  type EnumParserOptions,
+  type EnumValue,
   type KeyValuePair,
   parsers,
   type RangeParserOptions,

@@ -16,7 +16,12 @@ import {
   splitArgumentValue,
   stopsOptionValueCollection,
 } from './command/recognition.js';
+import {
+  applyConditionalDefaults,
+  type RelationState,
+} from './command/relations.js';
 import type { CompletionValueHint } from './parser.js';
+import type { ValueSource } from './value-source.js';
 
 /** A completion returned by a dynamic provider. */
 export interface DynamicCompletionCandidate {
@@ -98,18 +103,24 @@ interface CompletionEnabledArgument extends ArgumentDefinition {
 interface PendingValue {
   readonly argument: ArgumentDefinition;
   consumed: number;
+  started: boolean;
 }
 
 interface ScanState {
   command: CommandDefinition;
   commandPath: string[];
   inheritedGlobals: ArgumentDefinition[];
+  readonly owners: Map<string, CommandDefinition>;
+  readonly scopes: Map<CommandDefinition, RelationState>;
   positionalIndex: number;
   optionsEnabled: boolean;
   pending: PendingValue | undefined;
   readonly values: Record<string, unknown>;
   readonly rawValues: Record<string, string[]>;
   readonly cliProvided: Set<string>;
+  readonly provided: Set<string>;
+  readonly sources: Map<string, ValueSource>;
+  readonly valueCounts: Record<string, number>;
 }
 
 interface ValueTarget {
@@ -135,6 +146,7 @@ export async function resolveDynamicCompletion(
   const filter = options.filter ?? true;
   const state = createScanState(getCommandDefinition(configuredCommand));
   scanWords(state, input.slice(0, cursor));
+  applyConditionalDefaultsForDefinitions(state);
 
   const target = findValueTarget(state, currentWord);
   if (target !== undefined) {
@@ -214,15 +226,50 @@ function createScanState(root: CommandDefinition): ScanState {
     command: root,
     commandPath: [root.name],
     inheritedGlobals: [],
+    owners: new Map(),
+    scopes: new Map(),
     positionalIndex: 0,
     optionsEnabled: true,
     pending: undefined,
     values: {},
     rawValues: {},
     cliProvided: new Set(),
+    provided: new Set(),
+    sources: new Map(),
+    valueCounts: {},
   };
+  for (const argument of root.arguments) {
+    state.owners.set(argument.name, root);
+  }
   initializeArguments(root.arguments, state);
   return state;
+}
+
+function applyConditionalDefaultsForDefinitions(state: ScanState): void {
+  for (const [definition, scope,] of state.scopes) {
+    const globals = definition.arguments.filter(({ global }) => global);
+    // Globals can be supplied after a child is selected. Resolve the parent's
+    // rules using those final values and its saved, unshadowed local values.
+    for (const { name } of globals) {
+      scope.values[name] = state.values[name];
+      if (state.cliProvided.has(name)) {
+        scope.cliProvided.add(name);
+      }
+      const source = state.sources.get(name);
+      if (source !== undefined) {
+        scope.sources?.set(name, source);
+      }
+    }
+    applyConditionalDefaults(definition, scope);
+    for (const { name } of globals) {
+      state.values[name] = scope.values[name];
+      const source = scope.sources?.get(name);
+      if (source !== undefined) {
+        state.sources.set(name, source);
+      }
+    }
+  }
+  applyConditionalDefaults(state.command, state);
 }
 
 function initializeArguments(
@@ -230,14 +277,27 @@ function initializeArguments(
   state: ScanState,
 ): void {
   for (const argument of argumentsToInitialize) {
+    state.cliProvided.delete(argument.name);
+    state.provided.delete(argument.name);
+    state.sources.delete(argument.name);
+    delete state.rawValues[argument.name];
     if (argument.color) {
       state.values[argument.name] = Bun.env.NO_COLOR === undefined
         && process.stdout.isTTY === true
         && Bun.env.TERM !== 'dumb';
-    } else if (argument.repeatable || argument.trailingVarArg) {
-      state.values[argument.name] = [];
+      state.sources.set(argument.name, 'default');
+    } else if (
+      argument.repeatable
+      || argument.trailingVarArg
+      || argument.defaultValues !== undefined
+    ) {
+      state.values[argument.name] = argument.defaultValues === undefined
+        ? []
+        : [...argument.defaultValues];
+      state.sources.set(argument.name, 'default');
     } else if (argument.presence === 'default') {
       state.values[argument.name] = argument.defaultValue;
+      state.sources.set(argument.name, 'default');
     } else {
       state.values[argument.name] = undefined;
     }
@@ -254,6 +314,8 @@ function initializeArguments(
         const count = Number(environmentValue);
         if (Number.isSafeInteger(count) && count >= 0) {
           state.values[argument.name] = count;
+          state.provided.add(argument.name);
+          state.sources.set(argument.name, 'env');
         }
       } else {
         storeArgumentValues(
@@ -262,6 +324,11 @@ function initializeArguments(
           state,
           false,
         );
+        state.sources.set(argument.name, 'env');
+      }
+      if (argument.kind === 'flag') {
+        state.provided.add(argument.name);
+        state.sources.set(argument.name, 'env');
       }
     }
   }
@@ -441,14 +508,17 @@ function setPending(
   consumed: number,
 ): void {
   if (argument.maxValues === null || consumed < argument.maxValues) {
-    state.pending = { argument, consumed };
+    state.pending = { argument, consumed, started: consumed > 0 };
   } else {
     state.pending = undefined;
+    if (consumed === 0) {
+      storeDefaultMissing(argument, state);
+    }
   }
 }
 
 function applyDefaultMissing(pending: PendingValue, state: ScanState): void {
-  if (pending.consumed === 0) {
+  if (pending.consumed === 0 && !pending.started) {
     storeDefaultMissing(pending.argument, state);
   }
 }
@@ -458,12 +528,19 @@ function storeDefaultMissing(
   state: ScanState,
 ): void {
   if (!argument.hasDefaultMissingValue) {
+    if (argument.minValues === 0) {
+      storeArgumentValues(argument, [], state);
+      state.provided.add(argument.name);
+      state.sources.set(argument.name, 'cli');
+    }
     return;
   }
-  if (!state.cliProvided.has(argument.name)) {
+  const overrideSelf = shouldOverrideSelf(argument, state);
+  if (!state.cliProvided.has(argument.name) || overrideSelf) {
     state.cliProvided.add(argument.name);
     state.rawValues[argument.name] = [];
     state.values[argument.name] = collectsValues(argument) ? [] : undefined;
+    state.provided.delete(argument.name);
   }
   if (collectsValues(argument)) {
     const current = state.values[argument.name];
@@ -474,6 +551,8 @@ function storeDefaultMissing(
   } else {
     state.values[argument.name] = argument.defaultMissingValue;
   }
+  state.provided.add(argument.name);
+  state.sources.set(argument.name, 'cli');
 }
 
 function consumePending(
@@ -482,7 +561,8 @@ function consumePending(
   word: string,
 ): void {
   const values = splitValue(pending.argument, word);
-  storeArgumentValues(pending.argument, values, state);
+  storeArgumentValues(pending.argument, values, state, true, !pending.started);
+  pending.started = true;
   pending.consumed += values.length;
   if (
     pending.argument.maxValues !== null
@@ -557,9 +637,18 @@ function storeArgumentValues(
   rawValues: readonly string[],
   state: ScanState,
   cliProvided = true,
+  occurrenceStart = true,
 ): number {
-  if (cliProvided && !state.cliProvided.has(argument.name)) {
+  const overrideSelf = cliProvided
+    && occurrenceStart
+    && shouldOverrideSelf(argument, state);
+  if (cliProvided && (!state.cliProvided.has(argument.name) || overrideSelf)) {
     state.cliProvided.add(argument.name);
+    state.rawValues[argument.name] = [];
+    state.values[argument.name] = collectsValues(argument) ? [] : undefined;
+    state.provided.delete(argument.name);
+  } else if (!cliProvided) {
+    // Environment values replace collection defaults instead of appending to them.
     state.rawValues[argument.name] = [];
     state.values[argument.name] = collectsValues(argument) ? [] : undefined;
   }
@@ -588,7 +677,19 @@ function storeArgumentValues(
   } else {
     state.values[argument.name] = parsed.at(-1);
   }
+  state.provided.add(argument.name);
+  state.sources.set(argument.name, cliProvided ? 'cli' : 'env');
   return storedRaw.length;
+}
+
+function shouldOverrideSelf(
+  argument: ArgumentDefinition,
+  state: ScanState,
+): boolean {
+  return argument.kind === 'option'
+    && !argument.repeatable
+    && state.cliProvided.has(argument.name)
+    && state.owners.get(argument.name)?.argsOverrideSelf === true;
 }
 
 function collectsValues(argument: ArgumentDefinition): boolean {
@@ -616,6 +717,8 @@ function storeSwitch(
       ? current + 1
       : 1;
   }
+  state.provided.add(argument.name);
+  state.sources.set(argument.name, 'cli');
 }
 
 function resolveSubcommand(
@@ -629,14 +732,28 @@ function resolveSubcommand(
 }
 
 function enterSubcommand(state: ScanState, child: CommandDefinition): void {
+  const parent = state.command;
+  state.scopes.set(parent, {
+    values: { ...state.values },
+    provided: new Set(state.provided),
+    cliProvided: new Set(state.cliProvided),
+    sources: new Map(state.sources),
+    valueCounts: {},
+  });
   state.inheritedGlobals = [
     ...state.inheritedGlobals,
-    ...state.command.arguments.filter(({ global }) => global),
+    ...parent.arguments.filter(({ global }) => global),
   ];
+  for (const argument of parent.arguments.filter(({ global }) => global)) {
+    state.owners.set(argument.name, parent);
+  }
   state.command = child;
   state.commandPath.push(child.name);
   state.positionalIndex = 0;
   state.pending = undefined;
+  for (const argument of child.arguments) {
+    state.owners.set(argument.name, child);
+  }
   initializeArguments(child.arguments, state);
 }
 
@@ -748,7 +865,7 @@ async function completeArgument(
   });
   const provider = (target.argument as CompletionEnabledArgument).completion;
   const inputs = provider === undefined
-    ? target.argument.parser?.completions ?? []
+    ? parserCompletionCandidates(target.argument)
     : await collectProvider(provider, context);
   const candidates = normalizeCandidates(inputs).map((candidate) =>
     Object.freeze({
@@ -764,12 +881,62 @@ async function completeArgument(
       candidates,
       `${target.outputPrefix}${target.current}`,
       filter,
+      provider === undefined && target.argument.parser?.ignoreCase === true,
     ),
     commandPath: state.commandPath,
     current: target.current,
     argument: target.argument,
     ...(hint === undefined ? {} : { valueHint: hint }),
   });
+}
+
+function parserCompletionCandidates(
+  argument: ArgumentDefinition,
+): readonly DynamicCompletionCandidateInput[] {
+  const parser = argument.parser;
+  const choices = parser?.choices ?? [];
+  const normalize = (value: string): string =>
+    parser?.ignoreCase === true
+      ? value.toLowerCase()
+      : value;
+  const hiddenSpellings = new Set(
+    choices
+      .filter(({ hide }) => hide === true)
+      .flatMap(({ value, aliases }) => [value, ...(aliases ?? [])])
+      .map(normalize),
+  );
+  const aliases = new Set(
+    choices.flatMap(({ aliases: choiceAliases }) => choiceAliases ?? []).map(normalize),
+  );
+  const descriptions = new Map(
+    choices
+      .filter(({ hide }) => hide !== true)
+      .map(({ value, describe }) => [value, describe] as const),
+  );
+  const values = new Map<string, DynamicCompletionCandidate>();
+  for (const value of parser?.completions ?? []) {
+    const normalized = normalize(value);
+    if (hiddenSpellings.has(normalized) || aliases.has(normalized)) {
+      continue;
+    }
+    if (!values.has(value)) {
+      const description = descriptions.get(value);
+      values.set(value, {
+        value,
+        ...(description === undefined ? {} : { description }),
+      });
+    }
+  }
+  for (const choice of choices) {
+    if (choice.hide === true || values.has(choice.value)) {
+      continue;
+    }
+    values.set(choice.value, {
+      value: choice.value,
+      ...(choice.describe === undefined ? {} : { description: choice.describe }),
+    });
+  }
+  return [...values.values()];
 }
 
 async function collectProvider(
@@ -867,11 +1034,14 @@ function filterAndDedupe(
   candidates: readonly DynamicCompletionCandidate[],
   current: string,
   filter: boolean,
+  ignoreCase = false,
 ): readonly DynamicCompletionCandidate[] {
   const seen = new Set<string>();
+  const normalizedCurrent = ignoreCase ? current.toLowerCase() : current;
   return Object.freeze(
     candidates.filter(({ value }) => {
-      if (filter && !value.startsWith(current)) {
+      const normalizedValue = ignoreCase ? value.toLowerCase() : value;
+      if (filter && !normalizedValue.startsWith(normalizedCurrent)) {
         return false;
       }
       if (seen.has(value)) {

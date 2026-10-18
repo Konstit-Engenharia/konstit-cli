@@ -2,6 +2,7 @@ import { validateDeprecatedAliases } from './deprecation.js';
 import type { DynamicCompletionProvider } from './dynamic-completion.js';
 import {
   parsers,
+  validateValueParser,
   type CompletionValueHint,
   type ValueParser,
 } from './parser.js';
@@ -50,6 +51,7 @@ export interface ArgumentDefinition {
   readonly valueName?: string;
   readonly presence: ArgumentPresence;
   readonly defaultValue?: unknown;
+  readonly defaultValues?: readonly unknown[];
   readonly defaultMissingValue?: unknown;
   readonly hasDefaultMissingValue: boolean;
   readonly repeatable: boolean;
@@ -111,6 +113,8 @@ interface ValueMetadataOptions<Value> extends ArgumentOptions {
   readonly required?: boolean;
   /** Supplies a value when the user omits the argument. */
   readonly default?: NoInfer<Value>;
+  /** Supplies parsed values when a collection argument is omitted. */
+  readonly defaultValues?: readonly NoInfer<Value>[];
   /** Collects each occurrence into an array. */
   readonly repeatable?: boolean;
   /** Sets the number of values consumed by each occurrence. */
@@ -190,6 +194,27 @@ type CheckedDefaultOptions<Value, Options> = Options extends { readonly default:
   : { readonly default: NoInfer<Value>; }
   : unknown;
 
+type CollectionNumArgs<NumArgs> = NumArgs extends number ? NumArgs extends 1 ? false : true
+  : NumArgs extends { readonly max?: infer Maximum extends number | undefined; } ? Maximum extends 1 ? false : true
+  : false;
+
+type HasCollectionShape<Options> = true extends Field<Options, 'repeatable'> ? true
+  : true extends Field<Options, 'trailingVarArg'> ? true
+  : true extends CollectionNumArgs<Field<Options, 'numArgs'>> ? true
+  : false;
+
+type CheckedDefaultValuesOptions<Value, Options> = Options extends {
+  readonly defaultValues: infer DefaultValues;
+}
+  ? [DefaultValues] extends [readonly NoInfer<Value>[]]
+    ? HasCollectionShape<Options> extends true
+      ? true extends Field<Options, 'required'> ? ConfigurationError<'An argument cannot be required and have default values'>
+      : 'default' extends keyof Options ? ConfigurationError<'An argument cannot configure both default and defaultValues'>
+      : unknown
+    : ConfigurationError<'defaultValues requires a collection argument'>
+  : { readonly defaultValues: readonly NoInfer<Value>[]; }
+  : unknown;
+
 type CheckedCollectionOptions<Options> = Options extends { readonly trailingVarArg: true; }
   ? true extends Field<Options, 'repeatable'> ? ConfigurationError<'A trailing argument cannot be repeatable'>
   : 'numArgs' extends keyof Options ? ConfigurationError<'A trailing argument cannot configure numArgs'>
@@ -197,7 +222,10 @@ type CheckedCollectionOptions<Options> = Options extends { readonly trailingVarA
   : unknown
   : unknown;
 
-type CheckedValueOptions<Value, Options> = CheckedDefaultOptions<Value, Options> & CheckedCollectionOptions<Options>;
+type CheckedValueOptions<Value, Options> =
+  & CheckedDefaultOptions<Value, Options>
+  & CheckedDefaultValuesOptions<Value, Options>
+  & CheckedCollectionOptions<Options>;
 
 type CheckedDefaultMissingOptions<Value, Options> = Options extends { readonly defaultMissing: infer DefaultMissing; }
   ? [DefaultMissing] extends [Value]
@@ -215,7 +243,8 @@ type CheckedPositionalOptions<Options> = 'global' extends keyof Options ? Config
   : 'requireEquals' extends keyof Options ? ConfigurationError<'Positional arguments cannot require equals-form values'>
   : unknown;
 
-type ConfiguredScalarOutput<Value, Options> = Options extends { readonly default: unknown; } ? Value
+type ConfiguredScalarOutput<Value, Options> = Options extends { readonly defaultValues: unknown; } ? Value
+  : Options extends { readonly default: unknown; } ? Value
   : Options extends { readonly required: true; } ? Exclude<Value, undefined>
   : Value | undefined;
 
@@ -226,7 +255,8 @@ type ExactConfiguredCountOutput<
 > = number extends Count ? Output | PreserveUndefined<Output, readonly Value[]>
   : ExactCountOutput<Value, Output, Count>;
 
-type OptionalScalarOutput<Value, Output, Options> = Options extends { readonly default: unknown; } ? Output
+type OptionalScalarOutput<Value, Output, Options> = Options extends { readonly defaultValues: unknown; } ? Output
+  : Options extends { readonly default: unknown; } ? Output
   : Options extends { readonly defaultMissing: unknown; } ? Output
   : Output | Value | undefined;
 
@@ -303,6 +333,7 @@ type ConfiguredCardinality<Options> = CollectionCardinality<
 >;
 
 interface RuntimeValueOptions<Value> extends ValueMetadataOptions<Value> {
+  readonly defaultValues?: readonly Value[];
   readonly defaultMissing?: Value;
   readonly requireEquals?: boolean;
   readonly trailingVarArg?: boolean;
@@ -382,34 +413,6 @@ function validateName(name: string): void {
 
 function validateLongName(name: string): void {
   validateName(name);
-}
-
-function validateValueParser(parser: unknown): asserts parser is ValueParser<unknown> {
-  if (parser === null || typeof parser !== 'object' || Array.isArray(parser)) {
-    throw new TypeError('A value parser must be an object');
-  }
-  if (!('label' in parser) || typeof parser.label !== 'string') {
-    throw new TypeError('A value parser label must be a string');
-  }
-  if (!('parse' in parser) || typeof parser.parse !== 'function') {
-    throw new TypeError('A value parser parse field must be a function');
-  }
-  if ('completions' in parser && parser.completions !== undefined) {
-    if (
-      !Array.isArray(parser.completions)
-      || parser.completions.some((value) => typeof value !== 'string')
-    ) {
-      throw new TypeError('Value parser completions must be an array of strings');
-    }
-  }
-  if (
-    'completionHint' in parser
-    && parser.completionHint !== undefined
-    && parser.completionHint !== 'file'
-    && parser.completionHint !== 'directory'
-  ) {
-    throw new TypeError('A value parser completion hint must be \'file\' or \'directory\'');
-  }
 }
 
 function validateValueCount(minimum: number, maximum: number | undefined): void {
@@ -519,8 +522,70 @@ function validateConfiguredValueOptions(
 ): void {
   validateArgumentOptionKeys(kind, options);
   const hasDefault = Object.hasOwn(options, 'default');
+  const hasDefaultValues = Object.hasOwn(options, 'defaultValues');
   const hasDefaultMissing = Object.hasOwn(options, 'defaultMissing');
   const hasNumArgs = Object.hasOwn(options, 'numArgs');
+
+  if (hasDefaultValues) {
+    if (!Array.isArray(options.defaultValues)) {
+      throw new TypeError('Argument defaultValues must be an array');
+    }
+    for (let index = 0; index < options.defaultValues.length; index += 1) {
+      if (!Object.hasOwn(options.defaultValues, index)) {
+        throw new TypeError('Argument defaultValues cannot contain sparse entries');
+      }
+    }
+    if (hasDefault) {
+      throw new TypeError('An argument cannot configure both default and defaultValues');
+    }
+    if (options.required === true) {
+      throw new TypeError('An argument cannot be required and have default values');
+    }
+    const numArgsCollectsValues = options.numArgs === undefined
+      ? false
+      : typeof options.numArgs === 'number'
+      ? options.numArgs !== 1
+      : options.numArgs.max !== 1;
+    const collectsValues = options.repeatable === true
+      || options.trailingVarArg === true
+      || numArgsCollectsValues;
+    if (!collectsValues) {
+      throw new TypeError('defaultValues requires a collection argument');
+    }
+    const minimum = options.numArgs === undefined
+      ? 0
+      : typeof options.numArgs === 'number'
+      ? options.numArgs
+      : options.numArgs.min;
+    const maximum = options.numArgs === undefined
+      ? undefined
+      : typeof options.numArgs === 'number'
+      ? options.numArgs
+      : options.numArgs.max;
+    const count = options.defaultValues.length;
+    if (options.repeatable) {
+      if (
+        count > 0
+        && maximum === undefined
+        && count < minimum
+      ) {
+        throw new TypeError('Argument defaultValues does not contain a complete occurrence');
+      }
+      if (
+        count > 0
+        && maximum !== undefined
+        && minimum > 0
+        && Math.ceil(count / maximum) > Math.floor(count / minimum)
+      ) {
+        throw new TypeError('Argument defaultValues does not contain complete occurrences');
+      }
+    } else if (
+      count < minimum
+      || (maximum !== undefined && count > maximum)
+    ) {
+      throw new TypeError('Argument defaultValues does not satisfy its value count');
+    }
+  }
 
   if (kind === 'option' && Object.hasOwn(options, 'trailingVarArg')) {
     throw new TypeError('Options cannot be trailing positional arguments');
@@ -590,6 +655,7 @@ function validateArgumentOptionKeys(
         'complete',
         'required',
         'default',
+        'defaultValues',
         'repeatable',
         'numArgs',
         'valueDelimiter',
@@ -732,10 +798,17 @@ function applyValueArgumentOptions(
   }
 
   const hasDefault = Object.hasOwn(options, 'default');
+  const hasDefaultValues = Object.hasOwn(options, 'defaultValues');
   if (hasDefault) {
     configured = copyDefinition(configured, {
       presence: 'default',
       defaultValue: options.default,
+    });
+  }
+  if (hasDefaultValues) {
+    configured = copyDefinition(configured, {
+      presence: 'default',
+      defaultValues: Object.freeze([...(options.defaultValues ?? [])]),
     });
   }
   if (Object.hasOwn(options, 'defaultMissing')) {
@@ -767,7 +840,11 @@ function applyValueArgumentOptions(
     configured = copyDefinition(configured, {
       action: ArgumentAction.Append,
       repeatable: true,
-      presence: configured.presence === 'required' ? 'required' : 'optional',
+      presence: configured.presence === 'required'
+        ? 'required'
+        : configured.presence === 'default'
+        ? 'default'
+        : 'optional',
       defaultValue: undefined,
     });
   }

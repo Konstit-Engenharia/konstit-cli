@@ -233,9 +233,12 @@ Register-ArgumentCompleter -Native -CommandName {{EXECUTABLE_QUOTED}} -ScriptBlo
   $completeValue = {
     param([string]$mode, [string]$token, [string]$partial, [string]$prefix = '')
     if ($mode -eq 'static') {
-      foreach ($value in @(& $getStaticValues $context $token)) {
+      foreach ($entry in @(& $getStaticValues $context $token)) {
+        $value = [string]$entry.Value
         if ($value.StartsWith($partial, [System.StringComparison]::OrdinalIgnoreCase)) {
-          & $emit $value $value $prefix
+          $description = [string]$entry.Description
+          if ([string]::IsNullOrEmpty($description)) { $description = $value }
+          & $emit $value $description $prefix
         }
       }
       return

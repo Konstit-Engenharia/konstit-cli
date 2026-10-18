@@ -15,7 +15,10 @@ import {
   renderMarkdown,
   type CommandConfig,
   type CommandMetadata,
+  type ConditionalDefaultMetadata,
   type DeprecationWarning,
+  type EnumParserOptions,
+  type EnumValue,
   type Infer,
   type KeyValuePair,
   type ParseOutcome,
@@ -138,6 +141,45 @@ void (() => {
     },
   });
   void [label, warnings, metadata, markdown, man, run];
+});
+
+void (() => {
+  const choice: EnumValue<'production'> = {
+    value: 'production',
+    aliases: ['prod'],
+    describe: 'Production mode',
+  };
+  const options: EnumParserOptions = { ignoreCase: true };
+  const mode = parsers.enum(['development', choice], options);
+  const app = command('defaults', {
+    args: [
+      option('mode', mode, { default: 'development' }),
+      option('port', parsers.integer, { default: 3000 }),
+      option('tags', parsers.string, { repeatable: true, defaultValues: ['local'] }),
+      option('pair', parsers.integer, { numArgs: 2, defaultValues: [1, 2] }),
+    ],
+    defaultIf: [{ source: 'mode', equals: 'production', target: 'port', value: 443 }],
+    argsOverrideSelf: true,
+  });
+  type ExpectedDefaults = {
+    readonly mode: 'development' | 'production';
+    readonly port: number;
+    readonly tags: readonly string[];
+    readonly pair: readonly [number, number];
+  };
+  type _DefaultsContract = Expect<Equal<Infer<typeof app>, ExpectedDefaults>>;
+  const rule: ConditionalDefaultMetadata | undefined = describeCommand(app).defaultIf[0];
+  void rule;
+  command('invalid-condition', {
+    args: [option('mode', mode), option('port', parsers.integer)],
+    // @ts-expect-error conditions compare canonical values, not enum aliases
+    defaultIf: [{ source: 'mode', equals: 'prod', target: 'port', value: 443 }],
+  });
+  command('invalid-default', {
+    args: [option('mode', mode), option('port', parsers.integer)],
+    // @ts-expect-error conditional values must match the target parser output
+    defaultIf: [{ source: 'mode', target: 'port', value: '443' }],
+  });
 });
 
 void [

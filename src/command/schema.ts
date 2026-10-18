@@ -26,6 +26,14 @@ export interface RequiredUnlessDefinition {
   readonly alternatives: readonly string[];
 }
 
+export interface ConditionalDefaultDefinition {
+  readonly source: string;
+  readonly equals?: unknown;
+  readonly target: string;
+  readonly value: unknown;
+  readonly hasEquals: boolean;
+}
+
 export interface OverrideDefinition extends RequirementDefinition {}
 
 export interface CommandAliasDefinition {
@@ -70,12 +78,14 @@ export interface CommandDefinition {
   readonly conditionalSetRequirements: readonly ConditionalSetRequirementDefinition[];
   readonly requiredUnless: readonly RequiredUnlessDefinition[];
   readonly requiredUnlessAll: readonly RequiredUnlessDefinition[];
+  readonly defaultIf: readonly ConditionalDefaultDefinition[];
   readonly exclusiveArguments: readonly string[];
   readonly overrides: readonly OverrideDefinition[];
   readonly conflicts: readonly (readonly string[])[];
   readonly groups: readonly GroupDefinition[];
   readonly subcommandRequired: boolean;
   readonly argsConflictWithSubcommands: boolean;
+  readonly argsOverrideSelf: boolean;
   readonly argRequiredElseHelp: boolean;
   readonly inferSubcommands: boolean;
   readonly disableHelpSubcommand: boolean;

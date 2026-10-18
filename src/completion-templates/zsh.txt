@@ -74,13 +74,19 @@
 
 {{NAME}}_complete_value() {
   local key="$1:$2" current="$3" prefix="$4"
-  local -a values
+  local ignore_case=0
+  local -a values descriptions
   values=()
+  descriptions=()
   case "$key" in
 {{STATIC_VALUE_CASES}}
   esac
   if (( ${#values[@]} )); then
-    compadd -Q -p "$prefix" -- "${values[@]}"
+    if (( ignore_case )); then
+      compadd -Q -M 'm:{a-z}={A-Z} m:{A-Z}={a-z}' -p "$prefix" -d descriptions -- "${values[@]}"
+    else
+      compadd -Q -p "$prefix" -d descriptions -- "${values[@]}"
+    fi
     return 0
   fi
   case "$key" in

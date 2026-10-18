@@ -69,15 +69,20 @@
 }
 
 {{NAME}}_complete_value() {
-  local key="$1:$2" current="$3" candidate handled=1
+  local key="$1:$2" current="$3" candidate handled=1 ignore_case=0 restore_nocasematch=0
   local -a candidates=()
   case "$key" in
 {{STATIC_VALUE_CASES}}
   esac
   if (( handled == 0 )); then
+    if (( ignore_case )) && ! shopt -q nocasematch; then
+      shopt -s nocasematch
+      restore_nocasematch=1
+    fi
     for candidate in "${candidates[@]}"; do
       [[ "$candidate" == "$current"* ]] && COMPREPLY+=("$candidate")
     done
+    if (( restore_nocasematch )); then shopt -u nocasematch; fi
     return 0
   fi
   case "$key" in

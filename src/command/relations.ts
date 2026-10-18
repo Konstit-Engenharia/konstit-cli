@@ -1,5 +1,6 @@
 import type { ArgumentDefinition } from '../argument.js';
 import { ErrorKind } from '../error.js';
+import type { ValueSource } from '../value-source.js';
 import {
   commandError,
   displayName,
@@ -11,6 +12,86 @@ export interface RelationState {
   readonly provided: Set<string>;
   readonly cliProvided: Set<string>;
   readonly valueCounts: Record<string, number>;
+  readonly sources?: Map<string, ValueSource>;
+  readonly session?: {
+    colorMode?: 'auto' | 'always' | 'never';
+  };
+}
+
+function collectsValues(argument: ArgumentDefinition): boolean {
+  return (argument.kind === 'option' || argument.kind === 'positional')
+    && (argument.repeatable || argument.trailingVarArg || argument.maxValues !== 1);
+}
+
+function copyDefaultValues(argument: ArgumentDefinition): unknown[] {
+  return argument.defaultValues === undefined ? [] : [...argument.defaultValues];
+}
+
+function explicitlyProvided(state: RelationState, name: string): boolean {
+  const source = state.sources?.get(name);
+  return state.cliProvided.has(name) || source === 'env' || source === 'config';
+}
+
+export function applyConditionalDefaults(
+  definition: CommandDefinition,
+  state: RelationState,
+): void {
+  const rulesByTarget = new Map<string, typeof definition.defaultIf[number][]>();
+  for (const rule of definition.defaultIf) {
+    const rules = rulesByTarget.get(rule.target) ?? [];
+    rules.push(rule);
+    rulesByTarget.set(rule.target, rules);
+  }
+  const resolving = new Set<string>();
+  const resolved = new Set<string>();
+
+  const resolve = (targetName: string): void => {
+    if (resolved.has(targetName) || explicitlyProvided(state, targetName)) {
+      resolved.add(targetName);
+      return;
+    }
+    if (resolving.has(targetName)) {
+      throw new TypeError('Conditional defaults contain a dependency cycle');
+    }
+    resolving.add(targetName);
+    const target = definition.arguments.find(({ name }) => name === targetName);
+    const rules = rulesByTarget.get(targetName) ?? [];
+    if (target !== undefined) {
+      for (const rule of rules) {
+        if (rule.hasEquals) {
+          resolve(rule.source);
+          if (!matchesRelationValue(state.values[rule.source], rule.equals)) {
+            continue;
+          }
+        } else if (!explicitlyProvided(state, rule.source)) {
+          continue;
+        }
+        state.values[target.name] = collectsValues(target)
+          ? [...(rule.value as readonly unknown[])]
+          : rule.value;
+        state.sources?.set(target.name, 'default');
+        if (target.color) {
+          if (Bun.env.NO_COLOR !== undefined) {
+            state.values[target.name] = false;
+            if (state.session !== undefined) {
+              state.session.colorMode = 'never';
+            }
+          } else if (state.session !== undefined) {
+            state.session.colorMode = state.values[target.name] === true
+              ? 'always'
+              : 'never';
+          }
+        }
+        break;
+      }
+    }
+    resolving.delete(targetName);
+    resolved.add(targetName);
+  };
+
+  for (const target of rulesByTarget.keys()) {
+    resolve(target);
+  }
 }
 
 export function applyOverrides(
@@ -26,7 +107,9 @@ export function applyOverrides(
     if (argument === undefined) {
       continue;
     }
-    state.values[target] = argument.repeatable || argument.trailingVarArg
+    state.values[target] = argument.defaultValues !== undefined
+      ? copyDefaultValues(argument)
+      : argument.repeatable || argument.trailingVarArg
       ? []
       : argument.presence === 'default'
       ? argument.defaultValue
