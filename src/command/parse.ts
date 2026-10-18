@@ -3,6 +3,12 @@ import {
   type ArgumentDefinition,
 } from '../argument.js';
 import {
+  collectDeprecation,
+  getWarnings,
+  setWarnings,
+  type DeprecationWarning,
+} from '../deprecation.js';
+import {
   CliError,
   DisplayKind,
   ErrorKind,
@@ -12,10 +18,22 @@ import {
 } from '../error.js';
 import { parsers } from '../parser.js';
 import {
+  setValueSources,
+  updateValueSource,
+  type ValueSource,
+} from '../value-source.js';
+import {
+  validateConfigShape,
+  type CommandConfig,
+  type ConfigValue,
+  type ParseOptions,
+} from './config.js';
+import {
   commandError,
   displayArgument,
   renderHelp,
   suggestToken,
+  suggestTokenCandidates,
 } from './help.js';
 import {
   argumentLongNames,
@@ -41,6 +59,7 @@ export type ColorMode = 'auto' | 'always' | 'never';
 
 interface ParseSession {
   readonly defaultColor: boolean;
+  readonly warnings: DeprecationWarning[];
   colorMode?: ColorMode;
 }
 
@@ -50,17 +69,23 @@ export function parseConfigured<Value>(
   definition: CommandDefinition,
   argv: readonly string[],
   defaultColor: boolean,
+  options: ParseOptions = {},
 ): ParseOutcome<Value> {
-  const session: ParseSession = { defaultColor };
+  validateConfigShape(options.config);
+  const session: ParseSession = { defaultColor, warnings: [] };
   try {
     const value = parseDefinition(
       definition,
       [...argv],
+      0,
       [definition.name],
       [],
       session,
+      options.config,
     ) as Value;
-    return { ok: true, type: 'value', value };
+    const outcome = { ok: true, type: 'value', value } as const;
+    setWarnings(outcome, session.warnings);
+    return outcome;
   } catch (error) {
     if (session.colorMode !== undefined) {
       const target = error instanceof DisplayRequest ? error.outcome : error;
@@ -71,6 +96,9 @@ export function parseConfigured<Value>(
     if (error instanceof DisplayRequest) {
       return error.outcome;
     }
+    if (error instanceof CliError) {
+      setWarnings(error, session.warnings);
+    }
     throw error;
   }
 }
@@ -79,12 +107,15 @@ export function tryParseConfigured<Value>(
   definition: CommandDefinition,
   argv: readonly string[],
   defaultColor: boolean,
+  options: ParseOptions = {},
 ): ParseResult<Value> {
   try {
-    return parseConfigured<Value>(definition, argv, defaultColor);
+    return parseConfigured<Value>(definition, argv, defaultColor, options);
   } catch (error) {
     if (error instanceof CliError) {
-      return { ok: false, type: 'error', error };
+      const result = { ok: false, type: 'error', error } as const;
+      setWarnings(result, getWarnings(error));
+      return result;
     }
     throw error;
   }
@@ -92,36 +123,60 @@ export function tryParseConfigured<Value>(
 
 interface ParseState extends RelationState {
   readonly session: ParseSession;
+  readonly sources: Map<string, ValueSource>;
+  readonly tokenIndices: Map<string, number>;
   positionalIndex: number;
   subcommand?: { readonly name: string; readonly args: Record<string, unknown>; };
 }
 
 interface GlobalBinding {
   readonly argument: ArgumentDefinition;
+  readonly definition: CommandDefinition;
   readonly state: ParseState;
+}
+
+function deprecatedAliasMessage(
+  aliases: Readonly<Record<string, string>> | undefined,
+  name: string,
+): string | undefined {
+  return aliases !== undefined && Object.hasOwn(aliases, name)
+    ? aliases[name]
+    : undefined;
 }
 
 function parseDefinition(
   definition: CommandDefinition,
   argv: string[],
+  argvOffset: number,
   path: readonly string[],
   inheritedGlobals: readonly GlobalBinding[],
   session: ParseSession,
+  config: CommandConfig | undefined,
 ): Record<string, unknown> {
+  collectDeprecation(
+    session.warnings,
+    'command',
+    definition.name,
+    definition.deprecated,
+    path,
+  );
   const state: ParseState = {
     values: {},
     provided: new Set(),
     cliProvided: new Set(),
     valueCounts: {},
+    sources: new Map(),
+    tokenIndices: new Map(),
     session,
     positionalIndex: 0,
   };
   const positionals = definition.arguments.filter(({ kind }) => kind === 'positional');
   initializeValues(definition, state);
   validateGlobalArguments(definition, inheritedGlobals);
+  validateConfigForCommand(definition, config, path, inheritedGlobals);
   const localGlobals = definition.arguments
     .filter(({ global }) => global)
-    .map((argument) => ({ argument, state }));
+    .map((argument) => ({ argument, definition, state }));
   const globals = [...inheritedGlobals, ...localGlobals];
 
   let index = 0;
@@ -187,6 +242,7 @@ function parseDefinition(
         argv,
         index,
         token,
+        argvOffset,
         path,
         state,
         inheritedGlobals,
@@ -204,6 +260,7 @@ function parseDefinition(
         argv,
         index,
         token,
+        argvOffset,
         path,
         state,
         inheritedGlobals,
@@ -225,21 +282,39 @@ function parseDefinition(
           output: renderSubcommandHelp(
             definition,
             argv.slice(index + 1),
+            argvOffset + index + 1,
             path,
             inheritedGlobals,
           ),
         });
       }
-      const child = resolveSubcommand(definition, token, path, inheritedGlobals);
+      const child = resolveSubcommand(definition, token, path, inheritedGlobals, argvOffset + index);
       if (child !== undefined) {
+        const childPath = [...path, child.name];
+        collectDeprecation(
+          session.warnings,
+          'command',
+          child.name,
+          child.deprecated,
+          childPath,
+        );
+        collectDeprecation(
+          session.warnings,
+          'alias',
+          token,
+          deprecatedAliasMessage(child.deprecatedAliases, token),
+          childPath,
+        );
         state.subcommand = Object.freeze({
           name: child.name,
           args: parseDefinition(
             child,
             argv.slice(index + 1),
+            argvOffset + index + 1,
             [...path, child.name],
             globals,
             session,
+            config?.subcommands?.[child.name],
           ),
         });
         index = argv.length;
@@ -248,6 +323,11 @@ function parseDefinition(
     }
 
     if (positionalArgument === undefined) {
+      const suggestions = suggestTokenCandidates(
+        token,
+        definition,
+        inheritedGlobals.map(({ argument }) => argument),
+      );
       const suggestion = suggestToken(
         token,
         definition,
@@ -262,6 +342,10 @@ function parseDefinition(
         definition,
         path,
         inheritedGlobals.map(({ argument }) => argument),
+        {
+          tokenIndex: argvOffset + index,
+          suggestions,
+        },
       );
     }
     if (positionalArgument.valueTerminator === token) {
@@ -269,7 +353,22 @@ function parseDefinition(
       index += 1;
       continue;
     }
-    storePositionalValue(positionalArgument, token, definition, path, state);
+    collectDeprecation(
+      session.warnings,
+      'argument',
+      positionalArgument.name,
+      positionalArgument.deprecated,
+      path,
+      positionalArgument.name,
+    );
+    storePositionalValue(
+      positionalArgument,
+      token,
+      argvOffset + index,
+      definition,
+      path,
+      state,
+    );
     const count = state.valueCounts[positionalArgument.name] ?? 0;
     if (
       !positionalArgument.repeatable
@@ -289,7 +388,11 @@ function parseDefinition(
     ? definition.arguments.find((argument) => !argument.global && state.cliProvided.has(argument.name))
     : undefined;
   applyEnvironmentFallbacks(definition, state, path);
+  applyConfigValues(definition, config, path, state, inheritedGlobals);
+  const cliProvidedBeforeOverrides = new Set(state.cliProvided);
   applyOverrides(definition, state);
+  resetOverriddenSources(definition, state, cliProvidedBeforeOverrides);
+  refreshInheritedSources(state.subcommand, localGlobals);
   validateParsedValues(
     definition,
     path,
@@ -305,7 +408,42 @@ function parseDefinition(
       Object.freeze(value);
     }
   }
-  return Object.freeze(state.values);
+  const result = Object.freeze(state.values);
+  const sources = new Map(state.sources);
+  for (const { argument, state: inheritedState } of inheritedGlobals) {
+    const source = inheritedState.sources.get(argument.name);
+    if (source !== undefined) {
+      sources.set(argument.name, source);
+    }
+  }
+  setValueSources(result, sources);
+  return result;
+}
+
+function refreshInheritedSources(
+  subcommand: ParseState['subcommand'],
+  globals: readonly GlobalBinding[],
+): void {
+  if (subcommand === undefined) {
+    return;
+  }
+  for (const { argument, state } of globals) {
+    updateValueSource(subcommand.args, argument.name, state.sources.get(argument.name));
+  }
+  const nested = subcommand.args.subcommand;
+  if (
+    typeof nested === 'object'
+    && nested !== null
+    && 'name' in nested
+    && 'args' in nested
+    && typeof nested.args === 'object'
+    && nested.args !== null
+  ) {
+    refreshInheritedSources(
+      nested as ParseState['subcommand'],
+      globals,
+    );
+  }
 }
 
 function initializeValues(
@@ -316,13 +454,243 @@ function initializeValues(
     if (argument.color) {
       const disabled = Bun.env.NO_COLOR !== undefined;
       state.values[argument.name] = disabled ? false : state.session.defaultColor;
+      state.sources.set(argument.name, disabled ? 'env' : 'default');
       state.session.colorMode = disabled ? 'never' : 'auto';
     } else if (argument.repeatable || argument.trailingVarArg) {
       state.values[argument.name] = [];
     } else if (argument.presence === 'default') {
       state.values[argument.name] = argument.defaultValue;
+      state.sources.set(argument.name, 'default');
     } else {
       state.values[argument.name] = undefined;
+    }
+  }
+}
+
+function configSubcommand(
+  definition: CommandDefinition,
+  name: string,
+): CommandDefinition | undefined {
+  return definition.subcommands.find(
+    (child) => child.name === name,
+  );
+}
+
+function validateConfigForCommand(
+  definition: CommandDefinition,
+  config: CommandConfig | undefined,
+  path: readonly string[],
+  inheritedGlobals: readonly GlobalBinding[],
+): void {
+  if (config === undefined) {
+    return;
+  }
+  const values = config.values;
+  if (values !== undefined) {
+    const bindings = availableArgumentBindings(
+      definition,
+      {
+        values: {},
+        provided: new Set(),
+        cliProvided: new Set(),
+        valueCounts: {},
+        sources: new Map(),
+        tokenIndices: new Map(),
+        session: { defaultColor: false, warnings: [] },
+        positionalIndex: 0,
+      },
+      inheritedGlobals,
+    );
+    for (const name of Object.keys(values)) {
+      if (!bindings.some(({ argument }) => argument.name === name)) {
+        throw commandError(
+          ErrorKind.UnknownArgument,
+          `unknown config argument '${name}' for command '${path.join(' ')}'`,
+          definition,
+          path,
+          inheritedGlobals.map(({ argument }) => argument),
+        );
+      }
+    }
+  }
+  if (config.subcommands !== undefined) {
+    for (const [name, childConfig,] of Object.entries(config.subcommands)) {
+      if (configSubcommand(definition, name) === undefined) {
+        throw commandError(
+          ErrorKind.InvalidSubcommand,
+          `unknown config subcommand '${name}' for command '${path.join(' ')}'`,
+          definition,
+          path,
+          inheritedGlobals.map(({ argument }) => argument),
+        );
+      }
+      // Structural validation for every configured branch happens up front;
+      // argument validation is intentionally deferred to the selected branch.
+      validateConfigShape(childConfig, ['config', ...path.slice(1), 'subcommands', name]);
+    }
+  }
+}
+
+function configArgumentValue(
+  value: ConfigValue,
+  argument: ArgumentDefinition,
+  display: string,
+  definition: CommandDefinition,
+  path: readonly string[],
+  state: ParseState,
+  inheritedArguments: readonly ArgumentDefinition[],
+): void {
+  if (argument.kind === 'flag') {
+    if (typeof value !== 'boolean') {
+      throw new TypeError(`Config value for '${display}' must be a boolean`);
+    }
+    state.values[argument.name] = argument.color && Bun.env.NO_COLOR !== undefined
+      ? false
+      : value;
+    state.provided.add(argument.name);
+    state.sources.set(argument.name, 'config');
+    if (argument.color) {
+      state.session.colorMode = state.values[argument.name] === true
+        ? 'always'
+        : 'never';
+    }
+    return;
+  }
+  if (argument.kind === 'count') {
+    if (
+      typeof value !== 'number'
+      || !Number.isSafeInteger(value)
+      || value < 0
+    ) {
+      throw new TypeError(`Config value for '${display}' must be a nonnegative integer`);
+    }
+    state.values[argument.name] = value;
+    state.provided.add(argument.name);
+    state.sources.set(argument.name, 'config');
+    return;
+  }
+  if (
+    typeof value !== 'string'
+    && !(Array.isArray(value) && value.every((item) => typeof item === 'string'))
+  ) {
+    throw new TypeError(`Config value for '${display}' must be a string or string array`);
+  }
+  const rawValues = typeof value === 'string' ? [value] : value;
+  const values = rawValues.flatMap((raw) => splitRawValue(argument, raw));
+  if (
+    (!argument.repeatable || argument.maxValues === 0)
+    && argument.maxValues !== null
+    && values.length > argument.maxValues
+  ) {
+    throw commandError(
+      ErrorKind.TooManyValues,
+      `argument '${display}' accepts at most ${argument.maxValues} value(s)`,
+      definition,
+      path,
+      inheritedArguments,
+      { argumentName: argument.name },
+    );
+  }
+  if (
+    argument.repeatable
+    && argument.minValues > 0
+    && argument.maxValues !== null
+    && Math.ceil(values.length / argument.maxValues) > Math.floor(values.length / argument.minValues)
+  ) {
+    throw commandError(
+      ErrorKind.TooFewValues,
+      `argument '${display}' requires complete occurrences of ${argument.minValues} to ${argument.maxValues} value(s)`,
+      definition,
+      path,
+      inheritedArguments,
+      { argumentName: argument.name },
+    );
+  }
+  storeRawValues(
+    argument,
+    values,
+    display,
+    definition,
+    path,
+    state,
+    true,
+    'config',
+  );
+}
+
+function applyConfigValues(
+  definition: CommandDefinition,
+  config: CommandConfig | undefined,
+  path: readonly string[],
+  state: ParseState,
+  inheritedGlobals: readonly GlobalBinding[],
+): void {
+  if (config?.values === undefined) {
+    return;
+  }
+  const inheritedArguments = inheritedGlobals.map(({ argument }) => argument);
+  for (const [name, value,] of Object.entries(config.values)) {
+    const binding = availableArgumentBindings(definition, state, inheritedGlobals).find(
+      ({ argument }) => argument.name === name,
+    );
+    if (
+      binding === undefined
+      || binding.state.cliProvided.has(name)
+      || binding.state.sources.get(name) === 'env'
+      || binding.state.sources.get(name) === 'config'
+      || hasEnvironmentValue(binding.argument)
+      || isOverriddenTarget(binding.definition, binding.state, name)
+    ) {
+      continue;
+    }
+    configArgumentValue(
+      value,
+      binding.argument,
+      `config:${name}`,
+      definition,
+      path,
+      binding.state,
+      inheritedArguments,
+    );
+  }
+}
+
+function hasEnvironmentValue(argument: ArgumentDefinition): boolean {
+  return argument.env !== undefined && Bun.env[argument.env] !== undefined;
+}
+
+function isOverriddenTarget(
+  definition: CommandDefinition,
+  state: ParseState,
+  name: string,
+): boolean {
+  return definition.overrides.some(
+    ({ source, target }) => target === name && state.cliProvided.has(source),
+  );
+}
+
+function resetOverriddenSources(
+  definition: CommandDefinition,
+  state: ParseState,
+  cliProvidedBeforeOverrides: ReadonlySet<string>,
+): void {
+  for (const { source, target } of definition.overrides) {
+    if (!cliProvidedBeforeOverrides.has(source)) {
+      continue;
+    }
+    const argument = definition.arguments.find(({ name }) => name === target);
+    if (argument === undefined) {
+      continue;
+    }
+    const collectsValues = argument.repeatable || argument.trailingVarArg;
+    if (argument.presence === 'default') {
+      state.sources.set(target, 'default');
+    } else {
+      state.sources.delete(target);
+    }
+    if (collectsValues) {
+      // relation application already restored an empty collection
+      state.values[target] = [];
     }
   }
 }
@@ -357,6 +725,7 @@ function applyEnvironmentFallbacks(
         state.session.colorMode = 'never';
       }
       state.provided.add(argument.name);
+      state.sources.set(argument.name, 'env');
       continue;
     }
     const display = `env:${argument.env}`;
@@ -376,10 +745,13 @@ function applyEnvironmentFallbacks(
           `invalid value for '${display}'`,
           definition,
           path,
+          [],
+          { argumentName: argument.name },
         );
       }
       state.values[argument.name] = count;
       state.provided.add(argument.name);
+      state.sources.set(argument.name, 'env');
       continue;
     }
 
@@ -395,9 +767,11 @@ function applyEnvironmentFallbacks(
         `argument '${display}' accepts at most ${argument.maxValues} value(s)`,
         definition,
         path,
+        [],
+        { argumentName: argument.name },
       );
     }
-    storeRawValues(argument, values, display, definition, path, state, true);
+    storeRawValues(argument, values, display, definition, path, state, true, 'env');
     state.cliProvided.delete(argument.name);
   }
 }
@@ -449,7 +823,7 @@ function availableArgumentBindings(
   inheritedGlobals: readonly GlobalBinding[],
 ): readonly GlobalBinding[] {
   return [
-    ...definition.arguments.map((argument) => ({ argument, state })),
+    ...definition.arguments.map((argument) => ({ argument, definition, state })),
     ...inheritedGlobals,
   ];
 }
@@ -487,12 +861,14 @@ function resolveSubcommand(
   token: string,
   path: readonly string[],
   inheritedGlobals: readonly GlobalBinding[],
+  tokenIndex: number,
 ): CommandDefinition | undefined {
   return resolveSubcommandWithArguments(
     definition,
     token,
     path,
     inheritedGlobals.map(({ argument }) => argument),
+    tokenIndex,
   );
 }
 
@@ -501,6 +877,7 @@ function resolveSubcommandWithArguments(
   token: string,
   path: readonly string[],
   inheritedArguments: readonly ArgumentDefinition[],
+  tokenIndex: number,
 ): CommandDefinition | undefined {
   const match = matchSubcommand(definition, token);
   if (match.kind === 'exact' || match.kind === 'unique') {
@@ -513,6 +890,7 @@ function resolveSubcommandWithArguments(
       definition,
       path,
       inheritedArguments,
+      { tokenIndex, suggestions: match.commands.map(({ name }) => name) },
     );
   }
   return undefined;
@@ -521,6 +899,7 @@ function resolveSubcommandWithArguments(
 function renderSubcommandHelp(
   definition: CommandDefinition,
   tokens: readonly string[],
+  argvOffset: number,
   path: readonly string[],
   inheritedGlobals: readonly GlobalBinding[],
 ): string {
@@ -528,7 +907,7 @@ function renderSubcommandHelp(
   let currentPath = [...path];
   let inheritedArguments = inheritedGlobals.map(({ argument }) => argument);
 
-  for (const token of tokens) {
+  for (const [tokenIndex, token,] of tokens.entries()) {
     const globalsForChild = [
       ...inheritedArguments,
       ...current.arguments.filter(({ global }) => global),
@@ -538,14 +917,20 @@ function renderSubcommandHelp(
       token,
       currentPath,
       globalsForChild,
+      argvOffset + tokenIndex,
     );
     if (child === undefined) {
+      const suggestions = suggestTokenCandidates(token, current, globalsForChild);
       throw commandError(
         ErrorKind.InvalidSubcommand,
         `unrecognized subcommand '${token}'${suggestToken(token, current, globalsForChild)}`,
         current,
         currentPath,
         inheritedArguments,
+        {
+          tokenIndex: argvOffset + tokenIndex,
+          suggestions,
+        },
       );
     }
     current = child;
@@ -560,6 +945,7 @@ function parseLongOption(
   argv: readonly string[],
   index: number,
   token: string,
+  argvOffset: number,
   path: readonly string[],
   state: ParseState,
   inheritedGlobals: readonly GlobalBinding[],
@@ -569,6 +955,11 @@ function parseLongOption(
     ({ argument }) => argumentLongNames(argument).includes(name),
   );
   if (binding === undefined || binding.argument.kind === 'positional') {
+    const suggestions = suggestTokenCandidates(
+      `--${name}`,
+      definition,
+      inheritedGlobals.map(({ argument }) => argument),
+    );
     throw commandError(
       ErrorKind.UnknownArgument,
       `unexpected argument '--${name}'${
@@ -581,9 +972,31 @@ function parseLongOption(
       definition,
       path,
       inheritedGlobals.map(({ argument }) => argument),
+      {
+        tokenIndex: argvOffset + index,
+        suggestions,
+      },
     );
   }
   const { argument } = binding;
+  collectDeprecation(
+    state.session.warnings,
+    'argument',
+    argument.name,
+    argument.deprecated,
+    path,
+    argument.name,
+  );
+  if (argument.aliases.includes(name)) {
+    collectDeprecation(
+      state.session.warnings,
+      'alias',
+      name,
+      deprecatedAliasMessage(argument.deprecatedAliases, name),
+      path,
+      argument.name,
+    );
+  }
   if (argument.kind === 'flag' || argument.kind === 'count') {
     if (inlineValue !== undefined) {
       throw commandError(
@@ -591,6 +1004,8 @@ function parseLongOption(
         `argument '--${name}' does not accept a value`,
         definition,
         path,
+        [],
+        { argumentName: argument.name, tokenIndex: argvOffset + index },
       );
     }
     storeSwitch(
@@ -601,6 +1016,7 @@ function parseLongOption(
       binding.state,
       inheritedGlobals.map(({ argument: inherited }) => inherited),
       argument.negativeLong === name ? false : undefined,
+      argvOffset + index,
     );
     return index + 1;
   }
@@ -613,6 +1029,8 @@ function parseLongOption(
         definition,
         path,
         binding.state,
+        'cli',
+        argvOffset + index,
       );
       return index + 1;
     }
@@ -622,6 +1040,10 @@ function parseLongOption(
       definition,
       path,
       inheritedGlobals.map(({ argument }) => argument),
+      {
+        argumentName: argument.name,
+        tokenIndex: argvOffset + index,
+      },
     );
   }
   const consumed = consumeOptionValues(
@@ -629,6 +1051,7 @@ function parseLongOption(
     argv,
     index,
     inlineValue,
+    argvOffset,
     definition,
     path,
     `--${name}`,
@@ -642,6 +1065,8 @@ function parseLongOption(
       definition,
       path,
       binding.state,
+      'cli',
+      argvOffset + index,
     );
   } else {
     storeRawValues(
@@ -651,6 +1076,10 @@ function parseLongOption(
       definition,
       path,
       binding.state,
+      false,
+      'cli',
+      consumed.valueIndices,
+      argvOffset + index,
     );
   }
   return consumed.nextIndex;
@@ -661,6 +1090,7 @@ function parseShortOptions(
   argv: readonly string[],
   index: number,
   token: string,
+  argvOffset: number,
   path: readonly string[],
   state: ParseState,
   inheritedGlobals: readonly GlobalBinding[],
@@ -675,6 +1105,11 @@ function parseShortOptions(
       ({ argument }) => argument.short === short,
     );
     if (binding === undefined || binding.argument.kind === 'positional') {
+      const suggestions = suggestTokenCandidates(
+        `-${short}`,
+        definition,
+        inheritedGlobals.map(({ argument }) => argument),
+      );
       throw commandError(
         ErrorKind.UnknownArgument,
         `unexpected argument '-${short}'${
@@ -687,9 +1122,21 @@ function parseShortOptions(
         definition,
         path,
         inheritedGlobals.map(({ argument }) => argument),
+        {
+          tokenIndex: argvOffset + index,
+          suggestions,
+        },
       );
     }
     const { argument } = binding;
+    collectDeprecation(
+      state.session.warnings,
+      'argument',
+      argument.name,
+      argument.deprecated,
+      path,
+      argument.name,
+    );
     if (argument.kind === 'flag' || argument.kind === 'count') {
       storeSwitch(
         argument,
@@ -698,6 +1145,8 @@ function parseShortOptions(
         path,
         binding.state,
         inheritedGlobals.map(({ argument: inherited }) => inherited),
+        undefined,
+        argvOffset + index,
       );
       continue;
     }
@@ -715,6 +1164,8 @@ function parseShortOptions(
           definition,
           path,
           binding.state,
+          'cli',
+          argvOffset + index,
         );
         return index + 1;
       }
@@ -724,6 +1175,10 @@ function parseShortOptions(
         definition,
         path,
         inheritedGlobals.map(({ argument }) => argument),
+        {
+          argumentName: argument.name,
+          tokenIndex: argvOffset + index,
+        },
       );
     }
     const consumed = consumeOptionValues(
@@ -731,6 +1186,7 @@ function parseShortOptions(
       argv,
       index,
       hasAttachedValue ? attached : undefined,
+      argvOffset,
       definition,
       path,
       `-${short}`,
@@ -744,6 +1200,8 @@ function parseShortOptions(
         definition,
         path,
         binding.state,
+        'cli',
+        argvOffset + index,
       );
     } else {
       storeRawValues(
@@ -753,6 +1211,10 @@ function parseShortOptions(
         definition,
         path,
         binding.state,
+        false,
+        'cli',
+        consumed.valueIndices,
+        argvOffset + index,
       );
     }
     return consumed.nextIndex;
@@ -762,6 +1224,7 @@ function parseShortOptions(
 
 interface ConsumedOptionValues {
   readonly values: readonly string[];
+  readonly valueIndices: readonly number[];
   readonly nextIndex: number;
 }
 
@@ -770,16 +1233,18 @@ function consumeOptionValues(
   argv: readonly string[],
   optionIndex: number,
   inlineValue: string | undefined,
+  argvOffset: number,
   definition: CommandDefinition,
   path: readonly string[],
   display: string,
   inheritedArguments: readonly ArgumentDefinition[],
 ): ConsumedOptionValues {
   const values: string[] = [];
+  const valueIndices: number[] = [];
   let rawCount = 0;
   let nextIndex = optionIndex + 1;
 
-  const append = (raw: string): void => {
+  const append = (raw: string, rawIndex: number): void => {
     const parts = splitRawValue(argument, raw);
     const delimiterCanExpandSingle = argument.repeatable && argument.maxValues === 1;
     if (
@@ -793,14 +1258,19 @@ function consumeOptionValues(
         definition,
         path,
         inheritedArguments,
+        {
+          argumentName: argument.name,
+          tokenIndex: argvOffset + rawIndex,
+        },
       );
     }
     values.push(...parts);
+    valueIndices.push(...parts.map(() => argvOffset + rawIndex));
     rawCount += 1;
   };
 
   if (inlineValue !== undefined) {
-    append(inlineValue);
+    append(inlineValue, optionIndex);
   }
   while (
     (argument.maxValues === null || values.length < argument.maxValues)
@@ -823,12 +1293,13 @@ function consumeOptionValues(
             raw,
             path,
             inheritedArguments,
+            argvOffset + nextIndex,
           ) !== undefined
       )
     ) {
       break;
     }
-    append(raw);
+    append(raw, nextIndex);
     nextIndex += 1;
   }
 
@@ -839,9 +1310,13 @@ function consumeOptionValues(
       definition,
       path,
       inheritedArguments,
+      {
+        argumentName: argument.name,
+        tokenIndex: argvOffset + optionIndex,
+      },
     );
   }
-  return { values, nextIndex };
+  return { values, valueIndices, nextIndex };
 }
 
 function splitRawValue(argument: ArgumentDefinition, raw: string): readonly string[] {
@@ -851,12 +1326,15 @@ function splitRawValue(argument: ArgumentDefinition, raw: string): readonly stri
 function storePositionalValue(
   argument: ArgumentDefinition,
   raw: string,
+  tokenIndex: number,
   definition: CommandDefinition,
   path: readonly string[],
   state: ParseState,
 ): void {
   const values = splitRawValue(argument, raw);
-  const currentCount = state.valueCounts[argument.name] ?? 0;
+  const currentCount = state.sources.get(argument.name) === 'cli'
+    ? state.valueCounts[argument.name] ?? 0
+    : 0;
   if (
     !argument.repeatable
     && argument.maxValues !== null
@@ -867,9 +1345,25 @@ function storePositionalValue(
       `argument '${displayArgument(argument)}' accepts at most ${argument.maxValues} value(s)`,
       definition,
       path,
+      [],
+      {
+        argumentName: argument.name,
+        tokenIndex,
+      },
     );
   }
-  storeRawValues(argument, values, raw, definition, path, state);
+  storeRawValues(
+    argument,
+    values,
+    raw,
+    definition,
+    path,
+    state,
+    false,
+    'cli',
+    values.map(() => tokenIndex),
+    tokenIndex,
+  );
 }
 
 function storeRawValues(
@@ -880,10 +1374,13 @@ function storeRawValues(
   path: readonly string[],
   state: ParseState,
   redactRaw = false,
+  source: ValueSource = 'cli',
+  tokenIndices?: readonly number[],
+  tokenIndex?: number,
 ): void {
   storeParsedValues(
     argument,
-    rawValues.map((raw) =>
+    rawValues.map((raw, index) =>
       parseWith(
         argument,
         raw,
@@ -892,12 +1389,15 @@ function storeRawValues(
         path,
         argument.parser,
         redactRaw,
+        tokenIndices?.[index],
       )
     ),
     display,
     definition,
     path,
     state,
+    source,
+    tokenIndex ?? tokenIndices?.[0],
   );
 }
 
@@ -908,22 +1408,23 @@ function storeParsedValues(
   definition: CommandDefinition,
   path: readonly string[],
   state: ParseState,
+  source: ValueSource = 'cli',
+  tokenIndex?: number,
 ): void {
   const collectsValues = argument.repeatable
     || argument.trailingVarArg
     || argument.maxValues !== 1;
-  if (
-    argument.env !== undefined
-    && state.provided.has(argument.name)
-    && !state.cliProvided.has(argument.name)
-  ) {
+  const previousSource = state.sources.get(argument.name);
+  if (previousSource !== source && previousSource !== undefined) {
     state.values[argument.name] = collectsValues ? [] : undefined;
     state.provided.delete(argument.name);
+    state.cliProvided.delete(argument.name);
     delete state.valueCounts[argument.name];
   }
   if (
     argument.kind === 'option'
     && !argument.repeatable
+    && source === 'cli'
     && state.cliProvided.has(argument.name)
   ) {
     throw commandError(
@@ -931,6 +1432,11 @@ function storeParsedValues(
       `argument '${display}' cannot be used more than once`,
       definition,
       path,
+      [],
+      {
+        argumentName: argument.name,
+        ...(tokenIndex === undefined ? {} : { tokenIndex }),
+      },
     );
   }
 
@@ -948,7 +1454,13 @@ function storeParsedValues(
   }
   state.valueCounts[argument.name] = (state.valueCounts[argument.name] ?? 0) + values.length;
   state.provided.add(argument.name);
-  state.cliProvided.add(argument.name);
+  state.sources.set(argument.name, source);
+  if (source === 'cli' && tokenIndex !== undefined) {
+    state.tokenIndices.set(argument.name, tokenIndex);
+  }
+  if (source === 'cli') {
+    state.cliProvided.add(argument.name);
+  }
 }
 
 function storeSwitch(
@@ -959,6 +1471,7 @@ function storeSwitch(
   state: ParseState,
   inheritedArguments: readonly ArgumentDefinition[],
   explicitValue?: boolean,
+  tokenIndex?: number,
 ): void {
   if (
     argument.action === ArgumentAction.Help
@@ -990,13 +1503,11 @@ function storeSwitch(
       output: `${definition.name} ${definition.version}\n`,
     });
   }
-  if (
-    argument.env !== undefined
-    && state.provided.has(argument.name)
-    && !state.cliProvided.has(argument.name)
-  ) {
-    state.values[argument.name] = argument.defaultValue;
+  const previousSource = state.sources.get(argument.name);
+  if (!state.cliProvided.has(argument.name)) {
     state.provided.delete(argument.name);
+    state.cliProvided.delete(argument.name);
+    delete state.valueCounts[argument.name];
   }
   if (
     argument.action === ArgumentAction.SetTrue
@@ -1008,6 +1519,11 @@ function storeSwitch(
         `argument '${display}' cannot be used more than once`,
         definition,
         path,
+        inheritedArguments,
+        {
+          argumentName: argument.name,
+          ...(tokenIndex === undefined ? {} : { tokenIndex }),
+        },
       );
     }
     const value = explicitValue ?? argument.action === ArgumentAction.SetTrue;
@@ -1021,11 +1537,17 @@ function storeSwitch(
     }
   } else if (argument.action === ArgumentAction.Count) {
     const current = state.values[argument.name];
-    state.values[argument.name] = typeof current === 'number' ? current + 1 : 1;
+    state.values[argument.name] = previousSource === 'cli' && typeof current === 'number'
+      ? current + 1
+      : 1;
   } else {
     throw new Error(`Action '${argument.action}' is not a switch action`);
   }
   state.provided.add(argument.name);
+  state.sources.set(argument.name, argument.color && Bun.env.NO_COLOR !== undefined ? 'env' : 'cli');
+  if (tokenIndex !== undefined) {
+    state.tokenIndices.set(argument.name, tokenIndex);
+  }
   state.cliProvided.add(argument.name);
 }
 
@@ -1037,6 +1559,7 @@ function parseWith(
   path: readonly string[],
   overrideParser = argument.parser,
   redactRaw = false,
+  tokenIndex?: number,
 ): unknown {
   if (overrideParser === undefined) {
     throw new Error(`Argument '${argument.name}' has no value parser`);
@@ -1056,6 +1579,11 @@ function parseWith(
         : `invalid value '${raw}' for '${display}': ${detail}`,
       definition,
       path,
+      [],
+      {
+        argumentName: argument.name,
+        ...(tokenIndex === undefined ? {} : { tokenIndex }),
+      },
     );
   }
 }
@@ -1067,16 +1595,22 @@ function validateParsedValues(
   inheritedArguments: readonly ArgumentDefinition[],
   subcommandConflict: ArgumentDefinition | undefined,
 ): void {
-  const missing = definition.arguments
-    .filter((argument) => argument.presence === 'required' && !state.provided.has(argument.name))
-    .map(displayArgument);
-  if (missing.length > 0) {
+  const missingArguments = definition.arguments.filter(
+    (argument) => argument.presence === 'required' && !state.provided.has(argument.name),
+  );
+  const firstMissing = missingArguments[0];
+  if (firstMissing !== undefined) {
+    const missing = missingArguments.map(displayArgument);
     throw commandError(
       ErrorKind.MissingRequiredArgument,
       `the following required arguments were not provided: ${missing.join(', ')}`,
       definition,
       path,
       inheritedArguments,
+      {
+        argumentName: firstMissing.name,
+        relatedArguments: missingArguments.slice(1).map(({ name }) => name),
+      },
     );
   }
   const tooShort = definition.arguments.find(
@@ -1086,12 +1620,17 @@ function validateParsedValues(
       && (state.valueCounts[argument.name] ?? 0) < argument.minValues,
   );
   if (tooShort !== undefined) {
+    const tokenIndex = state.tokenIndices.get(tooShort.name);
     throw commandError(
       ErrorKind.TooFewValues,
       `argument '${displayArgument(tooShort)}' requires at least ${tooShort.minValues} value(s)`,
       definition,
       path,
       inheritedArguments,
+      {
+        argumentName: tooShort.name,
+        ...(tokenIndex === undefined ? {} : { tokenIndex }),
+      },
     );
   }
   if (
@@ -1117,12 +1656,17 @@ function validateParsedValues(
   }
   validateRelations(definition, path, state, inheritedArguments);
   if (subcommandConflict !== undefined && state.subcommand !== undefined) {
+    const tokenIndex = state.tokenIndices.get(subcommandConflict.name);
     throw commandError(
       ErrorKind.ArgumentConflict,
       `argument '${displayArgument(subcommandConflict)}' cannot be used with subcommand '${state.subcommand.name}'`,
       definition,
       path,
       inheritedArguments,
+      {
+        argumentName: subcommandConflict.name,
+        ...(tokenIndex === undefined ? {} : { tokenIndex }),
+      },
     );
   }
 }

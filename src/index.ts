@@ -14,19 +14,24 @@ export {
 } from './argument.js';
 export {
   command,
+  type CommandConfig,
   type CommandGroupOptions,
   type CommandHandler,
   type CommandOptions,
+  type ConfigValue,
   type HandledCommand,
   type HandlerContext,
   type HandlerResult,
   type Infer,
+  type ParseOptions,
   type RunOptions,
   type RunParsedOptions,
 } from './command.js';
 export { type CompletionShell, completionShells, isCompletionShell } from './completion-shell.js';
+export { type DeprecationWarning, getWarnings } from './deprecation.js';
 export {
   CliError,
+  type CliErrorDetails,
   DisplayKind,
   ErrorKind,
   type ParseDisplay,
@@ -36,6 +41,26 @@ export {
   type ParseValue,
 } from './error.js';
 export {
+  type ArgumentArityMetadata,
+  type ArgumentMetadata,
+  type CommandAliasMetadata,
+  type CommandMetadata,
+  type CommandMetadataOptions,
+  type ConditionalRequirementMetadata,
+  type ConditionalSetRequirementMetadata,
+  describeCommand,
+  type GroupMetadata,
+  type ManPageOptions,
+  type MarkdownOptions,
+  type MetadataValue,
+  type ParserMetadata,
+  renderManPage,
+  renderMarkdown,
+  type RequiredUnlessMetadata,
+  type RequirementMetadata,
+  type ValueConditionMetadata,
+} from './metadata.js';
+export {
   type CompletionValueHint,
   type KeyValuePair,
   parsers,
@@ -43,3 +68,4 @@ export {
   type ValueParser,
   type ValueParserOptions,
 } from './parser.js';
+export { getValueSource, type ValueSource } from './value-source.js';

@@ -51,6 +51,8 @@ export interface GroupOptions {
 
 export interface CommandDefinition {
   readonly name: string;
+  readonly deprecated?: string;
+  readonly deprecatedAliases?: Readonly<Record<string, string>>;
   readonly aliases: readonly CommandAliasDefinition[];
   readonly about?: string;
   readonly longAbout?: string;

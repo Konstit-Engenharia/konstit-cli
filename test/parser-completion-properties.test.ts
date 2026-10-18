@@ -133,6 +133,19 @@ function parseSnapshot(result: ParseResult<unknown>): object {
   return { ok: result.ok, type: result.type, value: result.value };
 }
 
+function diagnosticSnapshot(result: ParseResult<unknown>): object {
+  if (result.type !== 'error') {
+    return parseSnapshot(result);
+  }
+  return {
+    ...parseSnapshot(result),
+    argumentName: result.error.argumentName,
+    commandPath: result.error.commandPath,
+    relatedArguments: result.error.relatedArguments,
+    suggestions: result.error.suggestions,
+  };
+}
+
 function completionSnapshot(result: DynamicCompletionResult): object {
   return {
     candidates: result.candidates,
@@ -290,7 +303,25 @@ describe('parser and completion properties', () => {
         const clustered = [`-${shorts.join('')}`];
         const separated = shorts.map((short) => `-${short}`);
         try {
-          expect(cli.tryParse(clustered)).toEqual(cli.tryParse(separated));
+          const clusteredResult = cli.tryParse(clustered);
+          const separatedResult = cli.tryParse(separated);
+          expect(diagnosticSnapshot(clusteredResult)).toEqual(
+            diagnosticSnapshot(separatedResult),
+          );
+          const repeatedShortIndex = shorts.findIndex((short, shortIndex) => short !== 'v' && shorts.slice(0, shortIndex).includes(short));
+          if (repeatedShortIndex !== -1) {
+            expect(clusteredResult.type).toBe('error');
+            expect(separatedResult.type).toBe('error');
+            if (clusteredResult.type === 'error' && separatedResult.type === 'error') {
+              expect(clusteredResult.error.tokenIndex).toBe(0);
+              expect(separatedResult.error.tokenIndex).toBe(repeatedShortIndex);
+              const repeatedArgument = shorts[repeatedShortIndex] === 'q'
+                ? 'quiet'
+                : 'force';
+              expect(clusteredResult.error.argumentName).toBe(repeatedArgument);
+              expect(separatedResult.error.argumentName).toBe(repeatedArgument);
+            }
+          }
           expect(await scan(clustered)).toEqual(await scan(separated));
         } catch (error) {
           throw propertyFailure(seed, index, clustered, error);

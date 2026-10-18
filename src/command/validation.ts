@@ -1,4 +1,5 @@
 import type { ArgumentDefinition } from '../argument.js';
+import { validateDeprecatedAliases } from '../deprecation.js';
 import { argumentLongNames } from './recognition.js';
 import type { CommandDefinition } from './schema.js';
 
@@ -28,6 +29,8 @@ export interface RuntimeCommandRelations {
 }
 
 const commandOptionKeys = new Set([
+  'deprecated',
+  'deprecatedAliases',
   'version',
   'about',
   'longAbout',
@@ -62,6 +65,7 @@ const commandOptionKeys = new Set([
 ]);
 
 const commandStringOptionKeys = [
+  'deprecated',
   'version',
   'about',
   'longAbout',
@@ -258,6 +262,10 @@ export function validateCommandOptions(options: unknown): void {
       validateStringArray(options[key], `Command option '${key}'`);
     }
   }
+  validateDeprecatedAliases(options.deprecatedAliases, [
+    ...((options.aliases ?? []) as readonly string[]),
+    ...((options.visibleAliases ?? []) as readonly string[]),
+  ]);
   for (const key of ['args', 'subcommands'] as const) {
     if (options[key] !== undefined) {
       validateArray(options[key], `Command option '${key}'`);

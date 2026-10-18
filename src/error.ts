@@ -16,14 +16,39 @@ export const ErrorKind = Object.freeze(
 
 export type ErrorKind = (typeof ErrorKind)[keyof typeof ErrorKind];
 
+/** Optional context attached to a structured parser failure. */
+export interface CliErrorDetails {
+  /** The schema name of the argument associated with the failure. */
+  readonly argumentName?: string;
+  /** The command path active when the failure was detected. */
+  readonly commandPath?: readonly string[];
+  /** The index of the offending token in the original argv, when applicable. */
+  readonly tokenIndex?: number;
+  /** Machine-readable suggestions for recovering from the failure. */
+  readonly suggestions?: readonly string[];
+  /** Other argument names involved in a relation or conflict. */
+  readonly relatedArguments?: readonly string[];
+}
+
 /** A structured parser failure. */
 export class CliError extends Error {
   override readonly name = 'CliError';
   readonly kind: ErrorKind;
   readonly exitCode: number;
   readonly output: string;
+  readonly argumentName?: string;
+  readonly commandPath: readonly string[];
+  readonly tokenIndex?: number;
+  readonly suggestions: readonly string[];
+  readonly relatedArguments: readonly string[];
 
-  constructor(kind: ErrorKind, message: string, output: string, exitCode = 2) {
+  constructor(
+    kind: ErrorKind,
+    message: string,
+    output: string,
+    exitCode = 2,
+    details: CliErrorDetails = {},
+  ) {
     super(message);
     if (!Number.isSafeInteger(exitCode) || exitCode < 1 || exitCode > 255) {
       throw new RangeError('A CLI error exit code must be an integer from 1 to 255');
@@ -31,6 +56,15 @@ export class CliError extends Error {
     this.kind = kind;
     this.output = output;
     this.exitCode = exitCode;
+    if (details.argumentName !== undefined) {
+      this.argumentName = details.argumentName;
+    }
+    this.commandPath = Object.freeze([...(details.commandPath ?? [])]);
+    if (details.tokenIndex !== undefined) {
+      this.tokenIndex = details.tokenIndex;
+    }
+    this.suggestions = Object.freeze([...(details.suggestions ?? [])]);
+    this.relatedArguments = Object.freeze([...(details.relatedArguments ?? [])]);
   }
 }
 

@@ -46,6 +46,73 @@ function createValueParser<Value>(
   });
 }
 
+function composedParserOptions<Value>(
+  parser: ValueParser<Value>,
+  options: ValueParserOptions,
+  completions: readonly string[] | undefined = options.completions ?? parser.completions,
+): ValueParserOptions {
+  const completionHint = options.completionHint ?? parser.completionHint;
+  return {
+    ...(completions === undefined ? {} : { completions }),
+    ...(completionHint === undefined ? {} : { completionHint }),
+  };
+}
+
+/** Creates a parser that transforms the value produced by another parser. */
+function mapParser<Value, MappedValue>(
+  parser: ValueParser<Value>,
+  transform: (value: Value) => MappedValue,
+  options: ValueParserOptions = {},
+): ValueParser<MappedValue> {
+  return createValueParser(
+    parser.label,
+    (input) => transform(parser.parse(input)),
+    composedParserOptions(parser, options),
+  );
+}
+
+function refineParser<Value, NarrowedValue extends Value>(
+  parser: ValueParser<Value>,
+  predicate: (value: Value) => value is NarrowedValue,
+  message?: string,
+  options?: ValueParserOptions,
+): ValueParser<NarrowedValue>;
+function refineParser<Value>(
+  parser: ValueParser<Value>,
+  predicate: (value: Value) => boolean,
+  message?: string,
+  options?: ValueParserOptions,
+): ValueParser<Value>;
+/** Creates a parser that accepts only values satisfying a predicate. */
+function refineParser<Value>(
+  parser: ValueParser<Value>,
+  predicate: (value: Value) => boolean,
+  message?: string,
+  options: ValueParserOptions = {},
+): ValueParser<Value> {
+  const sourceCompletions = options.completions ?? parser.completions;
+  const completions = sourceCompletions === undefined
+    ? undefined
+    : sourceCompletions.filter((candidate) => {
+      try {
+        return predicate(parser.parse(candidate));
+      } catch {
+        return false;
+      }
+    });
+  return createValueParser(
+    parser.label,
+    (input) => {
+      const value = parser.parse(input);
+      if (!predicate(value)) {
+        throw new Error(message ?? 'expected a value satisfying the refinement');
+      }
+      return value;
+    },
+    composedParserOptions(parser, options, completions),
+  );
+}
+
 function finiteNumber(input: string): number {
   if (input.trim() === '') {
     throw new Error('expected a number');
@@ -284,6 +351,12 @@ export const parsers = Object.freeze({
 
   /** Parses JSON and optionally checks its decoded shape with a type guard. */
   json: jsonParser,
+
+  /** Maps a parsed value while preserving raw completion metadata by default. */
+  map: mapParser,
+
+  /** Refines a parsed value and filters static completions rejected by the predicate. */
+  refine: refineParser,
 
   /** Creates a parser from a label and conversion callback. */
   custom<Value>(

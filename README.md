@@ -81,39 +81,41 @@ options object.
 
 `command(name, options)` accepts these fields:
 
-| Field                   | Purpose                                                     |
-| ----------------------- | ----------------------------------------------------------- |
-| `version`               | Text printed by `-V` and `--version`.                       |
-| `about`                 | Short help and completion description.                      |
-| `longAbout`             | Extended help description.                                  |
-| `author`                | Author line in help.                                        |
-| `beforeHelp`            | Text before generated help.                                 |
-| `afterHelp`             | Text after generated help.                                  |
-| `overrideUsage`         | Exact replacement for generated usage.                      |
-| `overrideHelp`          | Exact replacement for generated help.                       |
-| `aliases`               | Parseable aliases hidden from help and completion.          |
-| `visibleAliases`        | Parseable aliases shown in help and completion.             |
-| `args`                  | Argument tuple in parse order.                              |
-| `subcommands`           | Subcommand tuple.                                           |
-| `inferSubcommands`      | Accept an unambiguous name or alias prefix.                 |
-| `subcommandRequired`    | Require a subcommand and make its result non-optional.      |
+| Field                         | Purpose                                                        |
+| ----------------------------- | -------------------------------------------------------------- |
+| `version`                     | Text printed by `-V` and `--version`.                          |
+| `about`                       | Short help and completion description.                         |
+| `longAbout`                   | Extended help description.                                     |
+| `author`                      | Author line in help.                                           |
+| `beforeHelp`                  | Text before generated help.                                    |
+| `afterHelp`                   | Text after generated help.                                     |
+| `overrideUsage`               | Exact replacement for generated usage.                         |
+| `overrideHelp`                | Exact replacement for generated help.                          |
+| `aliases`                     | Parseable aliases hidden from help and completion.             |
+| `visibleAliases`              | Parseable aliases shown in help and completion.                |
+| `deprecated`                  | Replacement guidance emitted when the command is invoked.      |
+| `deprecatedAliases`           | Deprecation messages keyed by declared aliases.                |
+| `args`                        | Argument tuple in parse order.                                 |
+| `subcommands`                 | Subcommand tuple.                                              |
+| `inferSubcommands`            | Accept an unambiguous name or alias prefix.                    |
+| `subcommandRequired`          | Require a subcommand and make its result non-optional.         |
 | `argsConflictWithSubcommands` | Reject explicit local arguments when a subcommand is selected. |
-| `defaultToHelp`         | Display help when no argument or subcommand is supplied.    |
-| `disableHelpSubcommand` | Disable the generated `help` subcommand.                    |
-| `disableHelpFlag`       | Disable generated `-h` and `--help`.                        |
-| `disableVersionFlag`    | Disable generated `-V` and `--version`.                     |
-| `hide`                  | Hide this command from parent help and completion.          |
-| `requires`              | Unconditional argument dependencies.                        |
-| `requiresIf`            | Single-value conditional dependencies.                      |
-| `requiredIfAny`         | Dependencies activated by any matching condition.           |
-| `requiredIfAll`         | Dependencies activated by all matching conditions.          |
-| `requiredUnlessPresent` | Require a target unless one alternative is present.         |
-| `requiredUnlessAll`     | Require a target unless all alternatives are present.       |
-| `overrides`             | Clear a target when a source is explicitly supplied.        |
-| `conflicts`             | Mutually conflicting argument sets.                         |
-| `exclusive`             | Arguments that conflict with every other supplied argument. |
-| `groups`                | Named argument groups and their relations.                  |
-| `handler`               | Synchronous or asynchronous command callback.               |
+| `defaultToHelp`               | Display help when no argument or subcommand is supplied.       |
+| `disableHelpSubcommand`       | Disable the generated `help` subcommand.                       |
+| `disableHelpFlag`             | Disable generated `-h` and `--help`.                           |
+| `disableVersionFlag`          | Disable generated `-V` and `--version`.                        |
+| `hide`                        | Hide this command from parent help and completion.             |
+| `requires`                    | Unconditional argument dependencies.                           |
+| `requiresIf`                  | Single-value conditional dependencies.                         |
+| `requiredIfAny`               | Dependencies activated by any matching condition.              |
+| `requiredIfAll`               | Dependencies activated by all matching conditions.             |
+| `requiredUnlessPresent`       | Require a target unless one alternative is present.            |
+| `requiredUnlessAll`           | Require a target unless all alternatives are present.          |
+| `overrides`                   | Clear a target when a source is explicitly supplied.           |
+| `conflicts`                   | Mutually conflicting argument sets.                            |
+| `exclusive`                   | Arguments that conflict with every other supplied argument.    |
+| `groups`                      | Named argument groups and their relations.                     |
+| `handler`                     | Synchronous or asynchronous command callback.                  |
 
 Each field is optional. Duplicate primary argument and subcommand names are
 checked from literal tuples. Alias collisions, invalid layouts, and widened
@@ -183,6 +185,81 @@ Each command path that can be selected by `run()` needs a handler. Set
 
 Use `renderHelp()` and `renderUsage()` when output must be generated without
 parsing arguments.
+
+Expected failures expose structured details through `CliError`: `kind`,
+`argumentName`, `commandPath`, `tokenIndex`, `suggestions`, and
+`relatedArguments`, alongside the existing message, rendered `output`, and
+`exitCode`. `tokenIndex` is zero-based in the original argv array, including
+across nested subcommands. It is absent when no input token caused the error,
+such as a missing required argument or an invalid environment/configuration
+value. The path and suggestion arrays are immutable copies.
+
+```ts
+const result = serve.tryParse(['--port', 'invalid', '.']);
+if (result.type === 'error') {
+  console.log(result.error.argumentName); // port
+  console.log(result.error.tokenIndex); // 1
+  console.log(result.error.commandPath); // ['serve']
+}
+```
+
+## Configuration and value sources
+
+`parse()` and `tryParse()` accept an optional second `ParseOptions` argument.
+`run()` accepts the same tree under `RunOptions.config`:
+
+```ts
+const result = cli.parse([], {
+  config: {
+    values: { host: '127.0.0.1', verbose: 1 },
+    subcommands: {
+      serve: { values: { port: '8080' } },
+    },
+  },
+});
+```
+
+Configuration keys use canonical argument and subcommand names. Each
+`config.values` entry must be a string, a readonly string array, a boolean, or
+a nonnegative safe integer. Value options and positionals accept strings or
+string arrays; each raw item goes through the argument parser after delimiter
+splitting and arity checks. Flags accept booleans, and counters accept
+nonnegative integer counts. Parser errors, too many values, and relations use
+the same validation as CLI input. A lower-priority configuration value is
+parsed only when no CLI or environment value wins, so an invalid configuration
+fallback does not hide a valid higher-priority value.
+
+For a repeatable argument, a string array is one flat sequence of values. A
+fixed `numArgs` must divide that sequence into complete occurrences; for a
+ranged `numArgs`, the sequence must be partitionable into occurrences whose
+counts are within the configured range. For example, eight values satisfy a
+repeatable `{ min: 4, max: 5 }` argument (4 + 4), while six values do not.
+
+Configuration for the selected command tree is applied; values under another
+valid subcommand are retained in the config object but are not parsed for that
+invocation. For an inherited global argument, configuration at the deepest
+selected command wins among configuration entries. CLI and environment values
+still take priority over every configuration entry. Unknown argument or
+subcommand keys produce a structured CLI error. Malformed configuration nodes
+produce a `TypeError`.
+
+Values are resolved in this order: CLI, environment, configuration, then the
+argument default. A higher-priority repeated value replaces lower-priority
+collections. `getValueSource(parsedValue, argumentName)` returns the source of
+the final value (`'cli'`, `'env'`, `'config'`, or `'default'`); you can also
+pass the original argument declaration instead of its name. Absent optional
+arguments return `undefined`.
+
+`NO_COLOR` is a source exception for `colorFlag()`: when the variable is
+present, the final color value is `false` and its source is reported as `'env'`,
+even when the CLI or configuration supplied the color switch.
+
+Source metadata is attached to the parsed object identity and is preserved by
+`runParsed()`. For an inherited global, pass its original argument declaration
+to look it up on the root parsed value or on each selected nested
+`subcommand.args` object, even when that object also has local arguments. The
+global value is owned by its declaring command. A spread or clone creates a new
+object without source metadata.
 
 ## Subcommands
 
@@ -291,10 +368,10 @@ const color = option(
 );
 ```
 
-All argument kinds accept `describe`, `env`, and `hide`. For value arguments
+All argument kinds accept `describe`, `env`, `hide`, and `deprecated`. For value arguments
 and counters, `env` parses the variable content. For flags, `env` tests only
 whether the variable exists; an empty value counts as present. Named arguments
-also accept `global`, `short`, `long`, and `aliases`.
+also accept `global`, `short`, `long`, `aliases`, and `deprecatedAliases`.
 
 ```ts
 const ci = flag('ci', { env: 'CI' });
@@ -407,6 +484,34 @@ parsers.json(isMyConfig);
 parsers.custom('PORT', parsePort);
 ```
 
+Compose parsers when conversion or an additional validation rule should be
+reused. `map` transforms the typed value and keeps the source parser's label,
+static raw completions, and completion hint unless completion options are
+provided. `refine` keeps values that satisfy its predicate; a type-guard
+predicate narrows the parser output type. Static completions rejected by the
+source parser or predicate are removed when the refined parser is created:
+
+```ts
+const seconds = parsers.map(
+  parsers.duration,
+  (milliseconds) => milliseconds / 1_000,
+);
+const httpsUrl = parsers.refine(
+  parsers.url,
+  (value) => value.protocol === 'https:',
+  'URL must use HTTPS',
+);
+const mode = parsers.refine(
+  parsers.enum(['dev', 'prod', 'test']),
+  (value): value is 'dev' | 'prod' => value !== 'test',
+);
+```
+
+Pass `ValueParserOptions` as the final argument to either function to replace
+static completions or completion hints. Refinement predicates run again when
+input is parsed, so predicates should be deterministic when completion output
+needs to stay aligned with accepted values.
+
 A regex parser returns the original string when the pattern matches. Add `^`
 and `$` when the complete argument must match.
 
@@ -487,6 +592,12 @@ Each conflict entry makes its members mutually exclusive. Each `exclusive`
 argument conflicts with every other supplied argument. A group allows one
 member by default. Set `multiple: true` to allow more than one. Group
 `requires` and `conflicts` activate when any member is present.
+
+`overrides` evaluates source presence from a snapshot of the arguments supplied
+on the CLI before any target is cleared. Every override relation uses that same
+snapshot, so a chain such as `a -> b` and `b -> c` clears both targets in either
+declaration order. Environment, configuration, and default values do not make
+an override source explicit.
 
 ## Global arguments and custom help
 
@@ -590,6 +701,89 @@ const packageOption = option('package', parsers.string, {
 
 Providers can return an array, a promise, or an async iterable. Scripts can
 also be generated directly with `generateCompletion(cli, shell, options)`.
+
+## Command metadata and documentation
+
+Export an immutable, callback-free command tree with `describeCommand()`:
+
+```ts
+import {
+  describeCommand,
+  renderManPage,
+  renderMarkdown,
+} from '@konstit/cli';
+
+const metadata = describeCommand(cli);
+const markdown = renderMarkdown(cli, { title: 'Tiny Git reference' });
+const man = renderManPage(cli, {
+  title: 'tiny-git',
+  section: '1',
+  source: 'Tiny Git',
+  manual: 'Tiny Git manual',
+});
+
+await Bun.write('tiny-git.md', markdown);
+await Bun.write('tiny-git.1', man);
+```
+
+Handlers, parser `parse` functions, and dynamic completion callbacks are
+omitted. Metadata arrays and nested records are frozen. Hidden arguments,
+aliases, and subcommands are omitted by default; pass `{ includeHidden: true }`
+to `describeCommand()`, `renderMarkdown()`, or `renderManPage()` to include
+them.
+
+Nested command metadata keeps local arguments in `arguments` and ancestor
+globals in `inheritedArguments`. The root command has an empty
+`inheritedArguments` array. Documentation renderers include each inherited
+global once in the nested command's options.
+
+Defaults are exposed only when they can be represented by `MetadataValue`.
+Strings, booleans, `null`, finite numbers, plain objects, and arrays are
+copied recursively; `bigint`, `Date`, `URL`, and `RegExp` values use stable
+string forms. Functions, symbols, `undefined`, non-finite numbers, class
+instances, accessor properties, sparse arrays, cycles, and other unsupported
+values omit `defaultValue`. Composite values are copied all-or-nothing so an
+unsupported element cannot shift array positions or partially rewrite a
+default. `hasDefaultValue` still reports that the argument was configured with
+a default. The same safe-value rules apply to relation expectations and
+`defaultMissingValue`.
+
+## Deprecation warnings
+
+Set `deprecated` to a replacement message on a command or argument. Use
+`deprecatedAliases` to warn only for specific aliases already declared in
+`aliases` or `visibleAliases`:
+
+```ts
+import {
+  command,
+  getWarnings,
+  option,
+  parsers,
+} from '@konstit/cli';
+
+const cli = command('build', {
+  args: [
+    option('output', parsers.string, {
+      aliases: ['out'],
+      deprecatedAliases: { out: 'Use --output instead.' },
+    }),
+  ],
+  handler: ({ output }) => console.log(output),
+});
+
+const result = cli.tryParse(['--out', 'dist']);
+console.log(getWarnings(result));
+await cli.runParsed(result);
+```
+
+Parsing collects immutable structured warnings without printing them.
+`run()` and `runParsed()` write warnings to stderr before execution or a parse
+failure. Set `onWarning` to receive each warning yourself; a no-op callback
+suppresses output. Help, version, and completion output do not emit warnings.
+Warnings are collected once per deprecated spelling and command path.
+Argument warnings require explicit CLI input; environment values, configuration,
+and defaults do not warn. Alias warnings apply to exact alias spellings.
 
 ## Supported behavior
 

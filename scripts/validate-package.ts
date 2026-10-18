@@ -30,6 +30,8 @@ assert.deepEqual(cli.parsers.keyValue.parse('MODE=safe'), {
 });
 assert.equal(cli.parsers.cron.parse('*/15 * * * *'), '*/15 * * * *');
 assert.equal(cli.parsers.color.parse('oklch(65% 0.2 30)'), 'oklch(65% 0.2 30)');
+assert.equal(cli.parsers.map(cli.parsers.integer, (value) => value * 2).parse('3'), 6);
+assert.equal(cli.parsers.refine(cli.parsers.integer, (value) => value > 0).parse('3'), 3);
 assert.equal(typeof completion.generateCompletion, 'function');
 assert.equal(typeof completion.resolveDynamicCompletion, 'function');
 
@@ -72,6 +74,26 @@ assert.deepEqual(parsed.value, {
   subcommand: undefined,
 });
 assert.deepEqual(cli.completionShells, completion.completionShells);
+
+const documented = cli.command('documented', {
+  args: [cli.option('port', cli.parsers.integer, {
+    aliases: ['listen'],
+    deprecatedAliases: { listen: 'Use --port.' },
+    default: 3000,
+  })],
+  handler: () => 0,
+});
+const fromConfig = documented.parse([], { config: { values: { port: '8080' } } });
+assert.equal(fromConfig.type, 'value');
+if (fromConfig.type !== 'value') {
+  throw new Error('Expected parsed config value');
+}
+assert.equal(fromConfig.value.port, 8080);
+assert.equal(cli.getValueSource(fromConfig.value, 'port'), 'config');
+assert.equal(cli.describeCommand(documented).arguments[0]?.name, 'port');
+assert.match(cli.renderMarkdown(documented), /documented/);
+assert.match(cli.renderManPage(documented), /\.TH/);
+assert.equal(cli.getWarnings(documented.parse(['--listen', '9000'])).length, 1);
 
 const consumerDirectory = await mkdtemp(resolve(root, '.node-next-consumer-'));
 try {

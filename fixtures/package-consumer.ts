@@ -4,16 +4,25 @@ import {
   command,
   completionShells,
   count,
+  describeCommand,
   flag,
+  getValueSource,
+  getWarnings,
   option,
   parsers,
   positional,
+  renderManPage,
+  renderMarkdown,
+  type CommandConfig,
+  type CommandMetadata,
+  type DeprecationWarning,
   type Infer,
   type KeyValuePair,
   type ParseOutcome,
   type RunOptions,
   type RunParsedOptions,
   type ValueParser,
+  type ValueSource,
 } from '@konstit/cli';
 import {
   dynamicCompletionEnvironment,
@@ -91,6 +100,44 @@ void (() => {
   void cli.runParsed(child.parse(['--region', 'us']));
   // @ts-expect-error runParsed cannot take argv
   void cli.runParsed(outcome, { argv: [] });
+});
+
+void (() => {
+  const port = parsers.refine(parsers.integer, (value) => value > 0, 'Expected a positive port');
+  const label: ValueParser<string> = parsers.map(port, (value) => `port:${value}`);
+  const app = command('serve', {
+    args: [option('port', port, {
+      aliases: ['listen'],
+      deprecatedAliases: { listen: 'Use --port.' },
+      default: 3000,
+    })],
+    handler: ({ port }) => {
+      void port;
+    },
+  });
+  const config: CommandConfig = { values: { port: '8080' } };
+  const result = app.tryParse([], { config });
+  const warnings: readonly DeprecationWarning[] = getWarnings(result);
+  if (result.type === 'value') {
+    const source: ValueSource | undefined = getValueSource(result.value, 'port');
+    void source;
+    // @ts-expect-error source lookup requires a declared argument name
+    getValueSource(result.value, 'unknown');
+  } else if (result.type === 'error') {
+    const position: number | undefined = result.error.tokenIndex;
+    const path: readonly string[] = result.error.commandPath;
+    void [position, path];
+  }
+  const metadata: CommandMetadata = describeCommand(app);
+  const markdown: string = renderMarkdown(app);
+  const man: string = renderManPage(app, { section: '1', date: '2026-10-18' });
+  const run: Promise<number> = app.run({
+    config,
+    onWarning: (warning) => {
+      void warning.message;
+    },
+  });
+  void [label, warnings, metadata, markdown, man, run];
 });
 
 void [

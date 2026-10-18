@@ -17,8 +17,9 @@ export function applyOverrides(
   definition: CommandDefinition,
   state: RelationState,
 ): void {
+  const cliProvided = new Set(state.cliProvided);
   for (const { source, target } of definition.overrides) {
-    if (!state.cliProvided.has(source)) {
+    if (!cliProvided.has(source)) {
       continue;
     }
     const argument = definition.arguments.find(({ name }) => name === target);
@@ -56,6 +57,7 @@ export function validateRelations(
         definition,
         path,
         inheritedArguments,
+        { argumentName: target, relatedArguments: [source] },
       );
     }
   }
@@ -72,6 +74,7 @@ export function validateRelations(
         definition,
         path,
         inheritedArguments,
+        { argumentName: target, relatedArguments: [source] },
       );
     }
   }
@@ -94,6 +97,10 @@ export function validateRelations(
         definition,
         path,
         inheritedArguments,
+        {
+          argumentName: requirement.target,
+          relatedArguments: requirement.conditions.map(({ source }) => source),
+        },
       );
     }
   }
@@ -110,6 +117,7 @@ export function validateRelations(
         definition,
         path,
         inheritedArguments,
+        { argumentName: target, relatedArguments: alternatives },
       );
     }
   }
@@ -126,6 +134,7 @@ export function validateRelations(
         definition,
         path,
         inheritedArguments,
+        { argumentName: target, relatedArguments: alternatives },
       );
     }
   }
@@ -143,23 +152,30 @@ export function validateRelations(
         definition,
         path,
         inheritedArguments,
+        { argumentName: exclusive, relatedArguments: others },
       );
     }
   }
   for (const conflict of definition.conflicts) {
     const present = conflict.filter((name) => state.provided.has(name));
-    if (present.length > 1) {
+    const first = present[0];
+    if (present.length > 1 && first !== undefined) {
       throw commandError(
         ErrorKind.ArgumentConflict,
         `arguments ${present.map((name) => `'${displayName(definition, name)}'`).join(' and ')} cannot be used together`,
         definition,
         path,
         inheritedArguments,
+        {
+          argumentName: first,
+          relatedArguments: present.slice(1),
+        },
       );
     }
   }
   for (const group of definition.groups) {
     const present = group.members.filter((name) => state.provided.has(name));
+    const first = present[0];
     if (group.required && present.length === 0) {
       throw commandError(
         ErrorKind.MissingRequiredArgument,
@@ -167,15 +183,23 @@ export function validateRelations(
         definition,
         path,
         inheritedArguments,
+        {
+          ...(group.members[0] === undefined ? {} : { argumentName: group.members[0] }),
+          relatedArguments: group.members.slice(1),
+        },
       );
     }
-    if (!group.multiple && present.length > 1) {
+    if (!group.multiple && present.length > 1 && first !== undefined) {
       throw commandError(
         ErrorKind.ArgumentConflict,
         `arguments in group '${group.name}' cannot be used together: ${present.map((name) => displayName(definition, name)).join(', ')}`,
         definition,
         path,
         inheritedArguments,
+        {
+          argumentName: first,
+          relatedArguments: present.slice(1),
+        },
       );
     }
     if (present.length > 0) {
@@ -189,6 +213,7 @@ export function validateRelations(
           definition,
           path,
           inheritedArguments,
+          { argumentName: missingRequirement, relatedArguments: present },
         );
       }
       const conflict = group.conflicts.find((name) => state.provided.has(name));
@@ -199,6 +224,7 @@ export function validateRelations(
           definition,
           path,
           inheritedArguments,
+          { argumentName: conflict, relatedArguments: present },
         );
       }
     }

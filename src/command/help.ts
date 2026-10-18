@@ -1,6 +1,7 @@
 import type { ArgumentDefinition } from '../argument.js';
 import {
   CliError,
+  type CliErrorDetails,
   type ErrorKind,
 } from '../error.js';
 import { argumentLongNames } from './recognition.js';
@@ -30,6 +31,7 @@ export function commandError(
   definition: CommandDefinition,
   path: readonly string[],
   inheritedArguments: readonly ArgumentDefinition[] = [],
+  details: Omit<CliErrorDetails, 'commandPath'> = {},
 ): CliError {
   const usage = renderUsage(definition, path, inheritedArguments);
   const safeMessage = sanitizeDiagnostic(message);
@@ -37,10 +39,12 @@ export function commandError(
     kind,
     safeMessage,
     `error: ${safeMessage}\n\n${usage}\n\nFor more information, try '--help'.\n`,
+    2,
+    { ...details, commandPath: path },
   );
 }
 
-function sanitizeDiagnostic(message: string): string {
+export function sanitizeDiagnostic(message: string): string {
   return message.replace(/[\p{Cc}\p{Cf}]/gu, (character) => {
     if (character === '\n') {
       return '\\n';
@@ -56,11 +60,11 @@ function sanitizeDiagnostic(message: string): string {
   });
 }
 
-export function suggestToken(
+export function suggestTokenCandidates(
   token: string,
   definition: CommandDefinition,
   inheritedArguments: readonly ArgumentDefinition[] = [],
-): string {
+): readonly string[] {
   const candidates = [
     ...[...definition.arguments, ...inheritedArguments].flatMap((argument) => [
       ...argumentLongNames(argument).map((name) => `--${name}`),
@@ -81,7 +85,16 @@ export function suggestToken(
     }
   }
   const limit = Math.max(1, Math.floor(token.length / 3));
-  return best !== undefined && bestDistance <= limit ? `; a similar argument exists: '${best}'` : '';
+  return best !== undefined && bestDistance <= limit ? [best] : [];
+}
+
+export function suggestToken(
+  token: string,
+  definition: CommandDefinition,
+  inheritedArguments: readonly ArgumentDefinition[] = [],
+): string {
+  const [suggestion,] = suggestTokenCandidates(token, definition, inheritedArguments);
+  return suggestion === undefined ? '' : `; a similar argument exists: '${suggestion}'`;
 }
 
 function editDistance(left: string, right: string): number {
@@ -166,6 +179,9 @@ export function renderHelp(
   if (definition.author !== undefined) {
     lines.push(`Author: ${definition.author}`, '');
   }
+  if (definition.deprecated !== undefined) {
+    lines.push(`[deprecated: ${sanitizeDiagnostic(definition.deprecated)}]`, '');
+  }
   lines.push(renderUsage(definition, path, inheritedArguments));
 
   const positionals = definition.arguments.filter(
@@ -191,7 +207,13 @@ export function renderHelp(
       const label = aliases.length === 0
         ? child.name
         : `${child.name} (aliases: ${aliases.join(', ')})`;
-      return [`  ${label}`, child.about ?? ''] as const;
+      const description = [
+        child.about,
+        child.deprecated === undefined
+          ? undefined
+          : `[deprecated: ${sanitizeDiagnostic(child.deprecated)}]`,
+      ].filter((value): value is string => value !== undefined).join(' ');
+      return [`  ${label}`, description] as const;
     });
     if (subcommands.length > 0 && !definition.disableHelpSubcommand) {
       commandEntries.push(['  help', 'Print help for a subcommand']);
@@ -327,6 +349,9 @@ function renderPositionalCount(
 
 function annotateHelp(argument: ArgumentDefinition): string {
   const annotations: string[] = [];
+  if (argument.deprecated !== undefined) {
+    annotations.push(`[deprecated: ${sanitizeDiagnostic(argument.deprecated)}]`);
+  }
   if (argument.help !== undefined) {
     annotations.push(argument.help);
   }

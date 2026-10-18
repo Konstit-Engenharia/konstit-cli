@@ -1,3 +1,4 @@
+import { validateDeprecatedAliases } from './deprecation.js';
 import type { DynamicCompletionProvider } from './dynamic-completion.js';
 import {
   parsers,
@@ -43,6 +44,8 @@ export interface ArgumentDefinition {
   readonly long?: string;
   readonly negativeLong?: string;
   readonly aliases: readonly string[];
+  readonly deprecated?: string;
+  readonly deprecatedAliases?: Readonly<Record<string, string>>;
   readonly help?: string;
   readonly valueName?: string;
   readonly presence: ArgumentPresence;
@@ -73,6 +76,8 @@ type OneCharacter<Value extends string> = string extends Value ? Value
 
 /** Settings shared by every argument factory. */
 export interface ArgumentOptions {
+  /** Warns when explicitly supplied, with guidance for its replacement. */
+  readonly deprecated?: string;
   /** Sets the argument description shown in generated help. */
   readonly describe?: string;
   /** Reads a missing value from this environment variable. Flags use its presence. */
@@ -83,6 +88,8 @@ export interface ArgumentOptions {
 
 /** Settings shared by named argument factories. */
 export interface NamedArgumentOptions extends ArgumentOptions {
+  /** Maps declared long aliases to deprecation messages. */
+  readonly deprecatedAliases?: Readonly<Record<string, string>>;
   /** Makes the argument available to nested subcommands. */
   readonly global?: boolean;
   /** Adds a one-character short form. */
@@ -460,6 +467,9 @@ function applyArgumentOptions(
   options: ArgumentOptions,
 ): ArgumentDefinition {
   let configured = definition;
+  if (options.deprecated !== undefined) {
+    configured = copyDefinition(configured, { deprecated: options.deprecated });
+  }
   if (options.describe !== undefined) {
     configured = copyDefinition(configured, { help: options.describe });
   }
@@ -491,6 +501,11 @@ function applyNamedArgumentOptions(
     validateLongName(alias);
     configured = copyDefinition(configured, {
       aliases: [...configured.aliases, alias],
+    });
+  }
+  if (options.deprecatedAliases !== undefined) {
+    configured = copyDefinition(configured, {
+      deprecatedAliases: Object.freeze({ ...options.deprecatedAliases }),
     });
   }
   return options.global === true
@@ -563,10 +578,11 @@ function validateArgumentOptionKeys(
     throw new TypeError(`${kind} argument configuration must be an object`);
   }
   const allowed = [
+    'deprecated',
     'describe',
     'env',
     'hide',
-    ...(kind === 'positional' ? [] : ['global', 'short', 'long', 'aliases']),
+    ...(kind === 'positional' ? [] : ['global', 'short', 'long', 'aliases', 'deprecatedAliases']),
     ...(kind === 'option' || kind === 'positional'
       ? [
         'valueName',
@@ -601,6 +617,7 @@ function validateArgumentOptionKeys(
   const configured = options as Record<string, unknown>;
   for (
     const key of [
+      'deprecated',
       'describe',
       'env',
       'long',
@@ -646,6 +663,10 @@ function validateArgumentOptionKeys(
       throw new TypeError(`${kind} argument option 'aliases' must be an array of strings`);
     }
   }
+  validateDeprecatedAliases(
+    configured.deprecatedAliases,
+    (configured.aliases ?? []) as readonly string[],
+  );
   if (
     configured.valueHint !== undefined
     && configured.valueHint !== 'file'

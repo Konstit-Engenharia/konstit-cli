@@ -8,6 +8,10 @@ import {
   type ArgumentOutput,
   type ArgumentType,
 } from './argument.js';
+import type {
+  CommandConfig,
+  ParseOptions,
+} from './command/config.js';
 import {
   renderHelp,
   renderUsageText,
@@ -38,6 +42,7 @@ import {
   validateCommandOptions,
   validateCommandRelations,
 } from './command/validation.js';
+import type { DeprecationWarning } from './deprecation.js';
 import type {
   ParseOutcome,
   ParseResult,
@@ -45,6 +50,7 @@ import type {
 
 export { getCommandDefinition };
 export type { CommandDefinition };
+export type { CommandConfig, ConfigValue, ParseOptions } from './command/config.js';
 
 // biome-ignore lint/suspicious/noConfusingVoidType: Handlers intentionally support callbacks with no return value.
 export type HandlerResult = void | number;
@@ -147,9 +153,9 @@ export interface HandledCommand<
   out Groups extends string = string,
 > extends CommandType<Name, Fields, Subcommands, SubcommandRequired, Groups> {
   /** Parses explicit argv. User-facing failures throw CliError. */
-  parse(argv: readonly string[]): ParseOutcome<Infer<this>>;
+  parse(argv: readonly string[], options?: ParseOptions): ParseOutcome<Infer<this>>;
   /** Parses argv without exceptions for expected CLI outcomes. */
-  tryParse(argv: readonly string[]): ParseResult<Infer<this>>;
+  tryParse(argv: readonly string[], options?: ParseOptions): ParseResult<Infer<this>>;
   /** Parses argv and runs the deepest configured handler. */
   run(argv?: readonly string[]): Promise<number>;
   /** Parses configured argv and runs the deepest configured handler. */
@@ -692,22 +698,24 @@ class Command<
   }
 
   /** Parses explicit argv. User-facing failures throw CliError. */
-  parse(argv: readonly string[]): ParseOutcome<Infer<this>> {
+  parse(argv: readonly string[], options: ParseOptions = {}): ParseOutcome<Infer<this>> {
     const definition = getCommandDefinition(this);
     return parseConfigured<Infer<this>>(
       definition,
       argv,
       handlerColorEnabled(),
+      options,
     );
   }
 
   /** Parses argv without exceptions for expected CLI outcomes. */
-  tryParse(argv: readonly string[]): ParseResult<Infer<this>> {
+  tryParse(argv: readonly string[], options: ParseOptions = {}): ParseResult<Infer<this>> {
     const definition = getCommandDefinition(this);
     return tryParseConfigured<Infer<this>>(
       definition,
       argv,
       handlerColorEnabled(),
+      options,
     );
   }
 
@@ -735,6 +743,7 @@ class Command<
         definition,
         argv,
         handlerColorEnabled(options),
+        options,
       ),
       options,
     );
@@ -922,6 +931,10 @@ export interface CommandOptions<
     StringKeyOf<FieldsFromArguments<Arguments>>
   >[],
 > {
+  /** Warns when this command is invoked, with guidance for its replacement. */
+  readonly deprecated?: string;
+  /** Maps declared aliases to messages emitted only for exact alias invocations. */
+  readonly deprecatedAliases?: Readonly<Record<string, string>>;
   /** Sets the version text printed by `-V` and `--version`. */
   readonly version?: string;
   /** Sets the short command description shown in help and completion. */
@@ -1106,6 +1119,14 @@ export function command(
 ): HandledCommand {
   validateCommandOptions(options);
   let configured = emptyCommand(name);
+  if (options.deprecated !== undefined || options.deprecatedAliases !== undefined) {
+    configured = new Command(copyCommand(getCommandDefinition(configured), {
+      ...(options.deprecated === undefined ? {} : { deprecated: options.deprecated }),
+      ...(options.deprecatedAliases === undefined ? {} : {
+        deprecatedAliases: Object.freeze({ ...options.deprecatedAliases }),
+      }),
+    }));
+  }
   if (options.about !== undefined) {
     configured = configured.about(options.about);
   }
@@ -1244,8 +1265,8 @@ export function command(
 }
 
 interface InternalTerminalCommand {
-  parse(argv: readonly string[]): ParseOutcome<unknown>;
-  tryParse(argv: readonly string[]): ParseResult<unknown>;
+  parse(argv: readonly string[], options?: ParseOptions): ParseOutcome<unknown>;
+  tryParse(argv: readonly string[], options?: ParseOptions): ParseResult<unknown>;
   run(argv?: readonly string[]): Promise<number>;
   run(options?: RunOptions): Promise<number>;
   runParsed(result: ParseResult<unknown>, options?: RunParsedOptions): Promise<number>;
@@ -1255,8 +1276,8 @@ interface InternalTerminalCommand {
 
 function terminalCommand(configured: InternalTerminalCommand): HandledCommand {
   const terminal = Object.freeze({
-    parse: (argv: readonly string[]) => configured.parse(argv),
-    tryParse: (argv: readonly string[]) => configured.tryParse(argv),
+    parse: (argv: readonly string[], options?: ParseOptions) => configured.parse(argv, options),
+    tryParse: (argv: readonly string[], options?: ParseOptions) => configured.tryParse(argv, options),
     run: (argvOrOptions?: readonly string[] | RunOptions) =>
       Array.isArray(argvOrOptions)
         ? configured.run(argvOrOptions)
@@ -1274,6 +1295,8 @@ function terminalCommand(configured: InternalTerminalCommand): HandledCommand {
 
 /** Output and exit-code options for executing an existing parse result. */
 export interface RunParsedOptions {
+  /** Receives deprecation warnings instead of writing them to stderr. */
+  readonly onWarning?: (warning: DeprecationWarning) => void;
   /** Receives help and version output. run() also writes completion output here. */
   readonly stdout?: (output: string) => void;
   /** Receives user-facing parse errors. */
@@ -1289,4 +1312,6 @@ export interface RunOptions extends RunParsedOptions {
   readonly argv?: readonly string[];
   /** Controls ANSI styling and the automatic color-flag value. */
   readonly color?: boolean;
+  /** Caller supplied values used below CLI and environment values. */
+  readonly config?: CommandConfig;
 }

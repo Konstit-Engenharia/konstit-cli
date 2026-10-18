@@ -9,12 +9,14 @@ import type {
   HandlerResult,
   RunOptions,
 } from '../command.js';
+import { getWarnings } from '../deprecation.js';
 import {
   DisplayKind,
   type CliError,
   type ParseDisplay,
   type ParseResult,
 } from '../error.js';
+import { sanitizeDiagnostic } from './help.js';
 import { outputColorModes } from './parse.js';
 import type { CommandDefinition } from './schema.js';
 
@@ -249,6 +251,7 @@ export async function runConfiguredHandler<Args extends object>(
     throw new RangeError('parseErrorExitCode must be an integer from 1 to 255');
   }
   if (result.type === 'error') {
+    writeWarnings(result, options);
     return writeParseFailure(result.error, options);
   }
   if (result.type === 'display') {
@@ -265,6 +268,7 @@ export async function runConfiguredHandler<Args extends object>(
       `No handler is configured for command '${selected.path.join(' ')}'`,
     );
   }
+  writeWarnings(result, options);
   const context: HandlerContext = Object.freeze({
     commandPath: Object.freeze([...selected.path]),
     global<ArgumentType extends AnyGlobalArgument>(argument: ArgumentType) {
@@ -285,4 +289,16 @@ export async function runConfiguredHandler<Args extends object>(
   });
   const exitCode = await selected.definition.handler(selected.args as never, context);
   return normalizeHandlerExitCode(exitCode);
+}
+
+function writeWarnings(result: object, options: RunOptions): void {
+  for (const warning of getWarnings(result)) {
+    if (options.onWarning !== undefined) {
+      options.onWarning(warning);
+    } else {
+      const message = sanitizeDiagnostic(`${warning.target} '${warning.name}' is deprecated: ${warning.message}`);
+      const write = options.stderr ?? ((output: string) => console.error(output.trimEnd()));
+      write(`warning: ${message}\n`);
+    }
+  }
 }
