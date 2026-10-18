@@ -195,6 +195,7 @@ describe('command coverage', () => {
       'renderHelp',
       'renderUsage',
       'run',
+      'runParsed',
       'tryParse',
     ]);
     expect('arg' in cli).toBe(false);

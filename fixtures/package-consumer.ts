@@ -11,6 +11,8 @@ import {
   type Infer,
   type KeyValuePair,
   type ParseOutcome,
+  type RunOptions,
+  type RunParsedOptions,
   type ValueParser,
 } from '@konstit/cli';
 import {
@@ -77,6 +79,19 @@ const script: string = generateCompletion(
   completionOptions,
 );
 const errorType: typeof CliError = CliError;
+
+void (() => {
+  const options: RunParsedOptions = { parseErrorExitCode: 1, color: false };
+  const runOptions: RunOptions = { ...options, argv: [] };
+  const executed: Promise<number> = cli.runParsed(outcome, options);
+  const attempted: Promise<number> = cli.runParsed(cli.tryParse([]), options);
+  const run: Promise<number> = cli.run(runOptions);
+  void [executed, attempted, run];
+  // @ts-expect-error a child parse result cannot replace the root result
+  void cli.runParsed(child.parse(['--region', 'us']));
+  // @ts-expect-error runParsed cannot take argv
+  void cli.runParsed(outcome, { argv: [] });
+});
 
 void [
   parser,

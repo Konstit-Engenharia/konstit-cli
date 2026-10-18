@@ -129,7 +129,7 @@ function writeParseFailure(error: CliError, options: RunOptions): number {
       ? styleParseFailure(error.output, decision.force)
       : error.output,
   );
-  return error.exitCode;
+  return options.parseErrorExitCode ?? error.exitCode;
 }
 
 const helpAnsi = Object.freeze({ strong: '\x1b[1m', reset: '\x1b[0m' });
@@ -240,6 +240,14 @@ export async function runConfiguredHandler<Args extends object>(
   result: ParseResult<Args>,
   options: RunOptions,
 ): Promise<number> {
+  if (
+    options.parseErrorExitCode !== undefined
+    && (!Number.isSafeInteger(options.parseErrorExitCode)
+      || options.parseErrorExitCode < 1
+      || options.parseErrorExitCode > 255)
+  ) {
+    throw new RangeError('parseErrorExitCode must be an integer from 1 to 255');
+  }
   if (result.type === 'error') {
     return writeParseFailure(result.error, options);
   }

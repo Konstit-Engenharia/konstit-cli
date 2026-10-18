@@ -154,6 +154,8 @@ export interface HandledCommand<
   run(argv?: readonly string[]): Promise<number>;
   /** Parses configured argv and runs the deepest configured handler. */
   run(options?: RunOptions): Promise<number>;
+  /** Executes a result from this command's parse or tryParse without parsing again. */
+  runParsed(result: ParseResult<Infer<this>>, options?: RunParsedOptions): Promise<number>;
   /** Renders the complete help text for this command. */
   renderHelp(): string;
   /** Renders the usage line for this command. */
@@ -738,6 +740,14 @@ class Command<
     );
   }
 
+  /** Executes a result from this command's parse or tryParse without parsing again. */
+  runParsed(
+    result: ParseResult<Infer<this>>,
+    options: RunParsedOptions = {},
+  ): Promise<number> {
+    return runConfiguredHandler(getCommandDefinition(this), result, options);
+  }
+
   /** Renders the complete help text for this command. */
   renderHelp(): string {
     const definition = getCommandDefinition(this);
@@ -1238,6 +1248,7 @@ interface InternalTerminalCommand {
   tryParse(argv: readonly string[]): ParseResult<unknown>;
   run(argv?: readonly string[]): Promise<number>;
   run(options?: RunOptions): Promise<number>;
+  runParsed(result: ParseResult<unknown>, options?: RunParsedOptions): Promise<number>;
   renderHelp(): string;
   renderUsage(): string;
 }
@@ -1250,6 +1261,7 @@ function terminalCommand(configured: InternalTerminalCommand): HandledCommand {
       Array.isArray(argvOrOptions)
         ? configured.run(argvOrOptions)
         : configured.run((argvOrOptions ?? {}) as RunOptions),
+    runParsed: (result: ParseResult<unknown>, options?: RunParsedOptions) => configured.runParsed(result, options),
     renderHelp: () => configured.renderHelp(),
     renderUsage: () => configured.renderUsage(),
   });
@@ -1260,13 +1272,21 @@ function terminalCommand(configured: InternalTerminalCommand): HandledCommand {
   return terminal as unknown as HandledCommand;
 }
 
-export interface RunOptions {
-  /** Arguments to parse. Defaults to Bun.argv without the executable. */
-  readonly argv?: readonly string[];
-  /** Receives help, version, and completion output. */
+/** Output and exit-code options for executing an existing parse result. */
+export interface RunParsedOptions {
+  /** Receives help and version output. run() also writes completion output here. */
   readonly stdout?: (output: string) => void;
   /** Receives user-facing parse errors. */
   readonly stderr?: (output: string) => void;
+  /** Controls ANSI styling. Parsed argument values are unchanged. */
+  readonly color?: boolean;
+  /** Overrides parse-failure exit codes with an integer from 1 to 255. Defaults to CliError.exitCode (2). */
+  readonly parseErrorExitCode?: number;
+}
+
+export interface RunOptions extends RunParsedOptions {
+  /** Arguments to parse. Defaults to Bun.argv without the executable. */
+  readonly argv?: readonly string[];
   /** Controls ANSI styling and the automatic color-flag value. */
   readonly color?: boolean;
 }

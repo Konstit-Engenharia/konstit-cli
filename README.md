@@ -143,6 +143,41 @@ the deepest selected handler, and returns an exit code. Pass an explicit array
 to `run(argv)` for tests or embedding. Pass `run({ color: true })` or
 `run({ color: false })` to control styling.
 
+Set `parseErrorExitCode` to choose the status returned for parse failures:
+
+```ts
+process.exitCode = await serve.run({ parseErrorExitCode: 1 });
+```
+
+The option accepts integers from `1` to `255` and defaults to the error's
+`exitCode` (`2`). Handler exit codes, including `2`, pass through unchanged;
+help, version, and completion return `0`. Handler exceptions still propagate.
+The original `CliError` is unchanged.
+
+`run()` parses each normal invocation once and handles shell completion
+requests before normal argument validation. Together with
+`argsConflictWithSubcommands: true`, this supports a single command tree for
+root operations and maintenance subcommands.
+
+To inspect a parse result before dispatch, pass the result from the same
+command's `parse()` or `tryParse()` to `runParsed()`:
+
+```ts
+const result = serve.tryParse(['--port', '8080', '.']);
+if (result.type === 'value') {
+  console.log('Selected port:', result.value.port);
+}
+process.exitCode = await serve.runParsed(result, { parseErrorExitCode: 1 });
+```
+
+`runParsed()` runs the deepest selected handler or writes the stored help,
+version, or error output. It reuses parsed values and inherited globals without
+parsing or applying environment fallbacks again. Its `RunParsedOptions` accepts
+`stdout`, `stderr`, `color`, and `parseErrorExitCode`; `color` controls output
+styling while preserving resolved argument values. Use `run()` for executable
+entry points that must detect shell completion requests; `runParsed()` only
+executes the supplied result.
+
 Each command path that can be selected by `run()` needs a handler. Set
 `subcommandRequired: true` when only subcommands are runnable.
 
@@ -230,8 +265,8 @@ positional do not select subcommands. Help and version requests retain their
 normal display behavior.
 
 `parse()` throws a `CliError` with `ErrorKind.ArgumentConflict`; `tryParse()`
-returns that error, and `run()` reports it and returns exit code `2` without
-calling a handler. Existing required-argument and relation checks still run.
+returns that error, and `run()` reports it and returns exit code `2` by default
+without calling a handler. Existing required-argument and relation checks still run.
 In particular, this setting does not waive a parent's required local arguments:
 if one must be supplied on the CLI, a subcommand invocation cannot satisfy both
 rules. Use this constraint with local arguments that can be absent for

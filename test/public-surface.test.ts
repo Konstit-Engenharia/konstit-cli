@@ -148,6 +148,7 @@ test('hides runtime definitions and type carriers from factory values', () => {
     'parse',
     'tryParse',
     'run',
+    'runParsed',
     'renderHelp',
     'renderUsage',
   ]);

@@ -22,6 +22,7 @@ export {
   type HandlerResult,
   type Infer,
   type RunOptions,
+  type RunParsedOptions,
 } from './command.js';
 export { type CompletionShell, completionShells, isCompletionShell } from './completion-shell.js';
 export {
