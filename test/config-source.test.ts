@@ -169,6 +169,263 @@ describe('caller supplied config and value sources', () => {
     }
   });
 
+  test('rejects local arguments that reuse an inherited global name', () => {
+    const profile = option('profile', parsers.string, {
+      global: true,
+      long: 'global-profile',
+    });
+    const cli = command('tool', {
+      args: [profile],
+      subcommands: [command('child', {
+        args: [option('profile', parsers.string, { long: 'local-profile' })],
+      })],
+    });
+    expect(() => cli.parse(['child'])).toThrow(
+      'Argument \'profile\' conflicts with inherited global \'profile\'',
+    );
+  });
+
+  test('requires complete occurrences for repeatable positional arity', () => {
+    const cli = command('tool', {
+      args: [positional('pair', parsers.string, { repeatable: true, numArgs: 2 })],
+    });
+    expect(cli.tryParse(['one', 'two', 'three'])).toMatchObject({
+      ok: false,
+      type: 'error',
+      error: { kind: 'too-few-values', argumentName: 'pair' },
+    });
+    expect(cli.tryParse(['one', 'two', 'three', 'four'])).toMatchObject({
+      ok: true,
+      type: 'value',
+      value: { pair: ['one', 'two', 'three', 'four'] },
+    });
+  });
+
+  test('keeps inherited globals in nested value error usage', () => {
+    const profile = option('profile', parsers.string, { global: true, required: true });
+    const cli = command('tool', {
+      args: [profile],
+      subcommands: [command('child', {
+        args: [option('port', parsers.integer)],
+      })],
+    });
+    const result = cli.tryParse(['child', '--port', 'invalid']);
+    expect(result).toMatchObject({ ok: false, error: { kind: 'invalid-value' } });
+    if (result.type === 'error') {
+      expect(result.error.output).toContain('--profile');
+    }
+  });
+
+  test('keeps inherited globals in nested duplicate and arity diagnostics', () => {
+    const profile = option('profile', parsers.string, { global: true, required: true });
+    const duplicate = command('tool', {
+      args: [profile],
+      subcommands: [command('child', {
+        args: [option('port', parsers.integer)],
+      })],
+    });
+    const duplicateResult = duplicate.tryParse([
+      'child',
+      '--port',
+      '1',
+      '--port',
+      '2',
+    ]);
+    expect(duplicateResult).toMatchObject({
+      ok: false,
+      error: { kind: 'argument-conflict' },
+    });
+    if (duplicateResult.type === 'error') {
+      expect(duplicateResult.error.output).toContain('--profile');
+    }
+
+    const environmentName = 'KONSTIT_CONFIG_NESTED_ARITY';
+    const previous = Bun.env[environmentName];
+    Bun.env[environmentName] = 'one,two,three';
+    try {
+      const fromEnvironment = command('tool', {
+        args: [profile],
+        subcommands: [command('child', {
+          args: [option('pair', parsers.string, {
+            numArgs: 2,
+            valueDelimiter: ',',
+            env: environmentName,
+          })],
+        })],
+      }).tryParse(['child']);
+      expect(fromEnvironment).toMatchObject({
+        ok: false,
+        error: { kind: 'too-many-values' },
+      });
+      if (fromEnvironment.type === 'error') {
+        expect(fromEnvironment.error.output).toContain('--profile');
+      }
+    } finally {
+      if (previous === undefined) {
+        delete Bun.env[environmentName];
+      } else {
+        Bun.env[environmentName] = previous;
+      }
+    }
+  });
+
+  test('keeps inherited globals in nested positional and short-option diagnostics', () => {
+    const profile = option('profile', parsers.string, { global: true, required: true });
+    const cli = command('tool', {
+      args: [profile],
+      subcommands: [command('child', {
+        args: [
+          positional('input', parsers.string, { valueDelimiter: ',' }),
+          option('port', parsers.integer, { short: 'p' }),
+        ],
+      })],
+    });
+    const tooMany = cli.tryParse(['child', 'one,two']);
+    expect(tooMany).toMatchObject({
+      ok: false,
+      error: { kind: 'too-many-values' },
+    });
+    if (tooMany.type === 'error') {
+      expect(tooMany.error.output).toContain('--profile');
+    }
+
+    const unknownShort = cli.tryParse(['child', '-x']);
+    expect(unknownShort).toMatchObject({
+      ok: false,
+      error: { kind: 'unknown-argument' },
+    });
+    if (unknownShort.type === 'error') {
+      expect(unknownShort.error.output).toContain('--profile');
+    }
+
+    const inlineFlagCli = command('tool', {
+      args: [profile],
+      subcommands: [command('child', { args: [flag('verbose')] })],
+    });
+    const inlineFlag = inlineFlagCli.tryParse(['child', '--verbose=true']);
+    expect(inlineFlag).toMatchObject({
+      ok: false,
+      error: { kind: 'too-many-values' },
+    });
+    if (inlineFlag.type === 'error') {
+      expect(inlineFlag.error.output).toContain('--profile');
+    }
+  });
+
+  test('parses nested default-missing long and short options with inherited globals', () => {
+    const profile = option('profile', parsers.string, { global: true, required: true });
+    const longCli = command('tool', {
+      args: [profile],
+      subcommands: [command('child', {
+        args: [option('mode', parsers.string, {
+          defaultMissing: 'auto',
+          requireEquals: false,
+        })],
+      })],
+    });
+    expect(unwrapValue(longCli.parse(['child', '--mode', '--profile', 'root']))).toMatchObject({
+      profile: 'root',
+      subcommand: { args: { mode: 'auto' } },
+    });
+
+    const longStrictCli = command('tool', {
+      args: [profile],
+      subcommands: [command('child', {
+        args: [option('mode', parsers.string, {
+          defaultMissing: 'auto',
+        })],
+      })],
+    });
+    expect(unwrapValue(longStrictCli.parse(['child', '--mode', '--profile', 'root']))).toMatchObject({
+      profile: 'root',
+      subcommand: { args: { mode: 'auto' } },
+    });
+
+    const shortCli = command('tool', {
+      args: [profile],
+      subcommands: [command('child', {
+        args: [option('mode', parsers.string, {
+          short: 'm',
+          defaultMissing: 'auto',
+          requireEquals: false,
+        })],
+      })],
+    });
+    expect(unwrapValue(shortCli.parse(['child', '-m', '--profile', 'root']))).toMatchObject({
+      profile: 'root',
+      subcommand: { args: { mode: 'auto' } },
+    });
+
+    const shortStrictCli = command('tool', {
+      args: [profile],
+      subcommands: [command('child', {
+        args: [option('mode', parsers.string, {
+          short: 'm',
+          defaultMissing: 'auto',
+        })],
+      })],
+    });
+    expect(unwrapValue(shortStrictCli.parse(['child', '-m', '--profile', 'root']))).toMatchObject({
+      profile: 'root',
+      subcommand: { args: { mode: 'auto' } },
+    });
+  });
+
+  test('validates repeatable ranged arity for CLI and environment values', () => {
+    const cli = command('tool', {
+      args: [option('chunk', parsers.string, {
+        repeatable: true,
+        numArgs: { min: 2, max: 3 },
+      })],
+    });
+    expect(cli.tryParse([
+      '--chunk',
+      'one',
+      'two',
+      'three',
+      '--chunk',
+      'four',
+      'five',
+    ])).toMatchObject({
+      ok: true,
+      type: 'value',
+      value: { chunk: ['one', 'two', 'three', 'four', 'five'] },
+    });
+    expect(cli.tryParse(['--chunk', 'one'])).toMatchObject({
+      ok: false,
+      error: { kind: 'too-few-values' },
+    });
+
+    const environmentName = 'KONSTIT_CONFIG_REPEATABLE_ENV';
+    const previous = Bun.env[environmentName];
+    Bun.env[environmentName] = 'one,two';
+    try {
+      const fromEnvironment = command('tool', {
+        args: [option('chunk', parsers.string, {
+          repeatable: true,
+          numArgs: { min: 2, max: 3 },
+          valueDelimiter: ',',
+          env: environmentName,
+        })],
+      });
+      expect(fromEnvironment.parse([])).toMatchObject({
+        type: 'value',
+        value: { chunk: ['one', 'two'] },
+      });
+      Bun.env[environmentName] = 'one';
+      expect(fromEnvironment.tryParse([])).toMatchObject({
+        ok: false,
+        error: { kind: 'too-few-values' },
+      });
+    } finally {
+      if (previous === undefined) {
+        delete Bun.env[environmentName];
+      } else {
+        Bun.env[environmentName] = previous;
+      }
+    }
+  });
+
   test('CLI wins over config on inherited globals', () => {
     const profile = option('profile', parsers.string, { global: true });
     const cli = command('tool', {
@@ -307,6 +564,14 @@ describe('caller supplied config and value sources', () => {
         ok: false,
         error: { kind: 'argument-conflict' },
       });
+
+      const overridden = command('tool', {
+        args: [flag('offline'), color],
+        overrides: [['offline', 'color']],
+      });
+      const fromOverride = unwrapValue(overridden.parse(['--offline', '--color']));
+      expect(fromOverride.color).toBe(false);
+      expect(getValueSource(fromOverride, color)).toBe('env');
     } finally {
       if (previous === undefined) {
         delete Bun.env.NO_COLOR;

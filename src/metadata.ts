@@ -4,6 +4,11 @@ import {
   type CommandDefinition,
   type CommandType,
 } from './command.js';
+import {
+  renderEqualsValueCount,
+  renderPositionalCount,
+  renderValueCount,
+} from './command/syntax.js';
 import type {
   CompletionValueHint,
   ValueParser,
@@ -803,7 +808,7 @@ function usageText(command: CommandMetadata): string {
 function argumentSyntax(argument: ArgumentMetadata): string {
   const label = argument.valueName ?? argument.parser?.label ?? argument.name.toUpperCase();
   if (argument.kind === 'positional') {
-    return argument.presence === 'required' ? `<${label}>` : `[${label}]`;
+    return renderPositionalCount(argument, label);
   }
   const name = argument.long === undefined
     ? argument.short === undefined ? argument.name : `-${argument.short}`
@@ -811,7 +816,9 @@ function argumentSyntax(argument: ArgumentMetadata): string {
   if (argument.kind === 'flag' || argument.kind === 'count' || argument.maxValues === 0) {
     return name;
   }
-  return `${name} <${label}>`;
+  return argument.requireEquals
+    ? `${name}${renderEqualsValueCount(argument, label)}`
+    : `${name}${renderValueCount(argument, label)}`;
 }
 
 function argumentDisplay(argument: ArgumentMetadata): string {

@@ -803,7 +803,8 @@ and defaults do not warn. Alias warnings apply to exact alias spellings.
 ```sh
 bun install
 bun run check
-bun run coverage
+bun run lint
+bun run format:check
 bun run examples/gitlike.ts --help
 ```
 

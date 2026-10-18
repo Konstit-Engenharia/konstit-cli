@@ -6,6 +6,7 @@ import {
 } from 'bun:test';
 import {
   command,
+  flag,
   option,
   parsers,
   positional,
@@ -14,6 +15,8 @@ import {
   dynamicCompletionEnvironment,
   generateCompletion,
 } from '../src/completion';
+
+const bash = Bun.which('bash');
 
 describe('completion edge behavior', () => {
   test('uses the default output writer through Command.run', async () => {
@@ -92,6 +95,40 @@ describe('completion edge behavior', () => {
     expect(generateCompletion(files, 'bash')).toContain('_allows_files');
     expect(generateCompletion(files, 'zsh')).toContain('_allows_files');
     expect(generateCompletion(files, 'powershell')).toContain('$allowsFiles');
+  });
+
+  test.skipIf(bash === null)('hides aliases from candidates but recognizes them while scanning', () => {
+    if (bash === null) {
+      return;
+    }
+    const cli = command('tool', {
+      subcommands: [command('run', {
+        aliases: ['legacy'],
+        visibleAliases: ['execute'],
+        args: [flag('child')],
+      })],
+    });
+
+    const script = `${generateCompletion(cli, 'bash')}
+COMP_WORDS=(tool "")
+COMP_CWORD=1
+_bun_clap_tool
+printf 'ROOT:%s\\n' "\${COMPREPLY[*]}"
+COMP_WORDS=(tool legacy --c)
+COMP_CWORD=2
+_bun_clap_tool
+printf 'HIDDEN_ALIAS:%s\\n' "\${COMPREPLY[*]}"
+`;
+    const result = Bun.spawnSync([bash], {
+      stdin: Buffer.from(script),
+      stdout: 'pipe',
+      stderr: 'pipe',
+    });
+    expect(result.exitCode).toBe(0);
+    const rootCandidates = result.stdout.toString().split('\n').find((line) => line.startsWith('ROOT:'));
+    expect(rootCandidates).toBeDefined();
+    expect(rootCandidates).not.toContain('legacy');
+    expect(result.stdout.toString()).toContain('HIDDEN_ALIAS:--child');
   });
 
   test('rejects an unsupported shell in dynamic mode', () => {

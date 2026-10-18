@@ -6,6 +6,11 @@ import {
 } from '../error.js';
 import { argumentLongNames } from './recognition.js';
 import type { CommandDefinition } from './schema.js';
+import {
+  renderEqualsValueCount as renderSyntaxEqualsValueCount,
+  renderPositionalCount as renderSyntaxPositionalCount,
+  renderValueCount as renderSyntaxValueCount,
+} from './syntax.js';
 
 export function displayArgument(argument: ArgumentDefinition): string {
   if (argument.kind === 'positional') {
@@ -135,7 +140,12 @@ export function renderUsageText(
       && presence !== 'required'
       && !hidden,
   );
-  const requiredOptionUsage = requiredOptions.map((argument) => `${displayArgument(argument)}${renderValueCount(argument)}`);
+  const requiredOptionUsage = requiredOptions.map((argument) => {
+    const value = argument.requireEquals
+      ? renderEqualsValueCount(argument)
+      : renderValueCount(argument);
+    return `${displayArgument(argument)}${value}`;
+  });
   const positionalUsage = definition.arguments
     .filter(({ kind, hidden }) => kind === 'positional' && !hidden)
     .map((argument) => {
@@ -260,24 +270,6 @@ function valueLabel(argument: ArgumentDefinition): string {
   return argument.valueName ?? argument.parser?.label ?? 'VALUE';
 }
 
-const expandedValueCountLimit = 8;
-
-function compactValueCount(
-  minimum: number,
-  maximum: number | null,
-): string | undefined {
-  if (
-    minimum <= expandedValueCountLimit
-    && (maximum === null || maximum <= expandedValueCountLimit)
-  ) {
-    return undefined;
-  }
-  if (maximum === null) {
-    return `{${minimum}..}`;
-  }
-  return minimum === maximum ? `{${minimum}}` : `{${minimum}..${maximum}}`;
-}
-
 function renderValueCount(
   argument: ArgumentDefinition,
   minimum = argument.minValues,
@@ -285,66 +277,18 @@ function renderValueCount(
   if (argument.kind !== 'option' || argument.maxValues === 0) {
     return '';
   }
-  const label = `<${valueLabel(argument)}>`;
-  const compact = compactValueCount(minimum, argument.maxValues);
-  if (compact !== undefined) {
-    return ` ${label}${compact}${argument.repeatable ? '...' : ''}`;
-  }
-  if (argument.maxValues === null) {
-    if (minimum === 0) {
-      return ` [${label}...]`;
-    }
-    const required = Array<string>(Math.max(0, minimum - 1)).fill(label);
-    return ` ${[...required, `${label}...`].join(' ')}`;
-  }
-  const required = Array<string>(minimum).fill(label);
-  const optional = Array<string>(argument.maxValues - minimum).fill(
-    `[${label}]`,
-  );
-  const values = [...required, ...optional];
-  const repeated = argument.repeatable ? '...' : '';
-  return values.length === 0 ? '' : ` ${values.join(' ')}${repeated}`;
+  return renderSyntaxValueCount(argument, valueLabel(argument), minimum);
 }
 
 function renderEqualsValueCount(argument: ArgumentDefinition): string {
-  const minimum = argument.minValues === 0 && argument.maxValues !== 0
-    ? 1
-    : argument.minValues;
-  const values = renderValueCount(argument, minimum).trimStart();
-  return argument.minValues === 0 ? `[=${values}]` : `=${values}`;
+  return renderSyntaxEqualsValueCount(argument, valueLabel(argument));
 }
 
 function renderPositionalCount(
   argument: ArgumentDefinition,
   name: string,
 ): string {
-  const label = `<${name}>`;
-  const optionalLabel = `[${name}]`;
-  const compact = compactValueCount(argument.minValues, argument.maxValues);
-  if (compact !== undefined) {
-    const compactLabel = argument.presence === 'required' ? label : optionalLabel;
-    return `${compactLabel}${compact}${argument.repeatable ? '...' : ''}`;
-  }
-  if (argument.maxValues === null) {
-    if (argument.presence !== 'required') {
-      if (argument.minValues <= 1) {
-        return `${optionalLabel}...`;
-      }
-      const values = Array<string>(argument.minValues - 1).fill(label);
-      return `[${[...values, `${label}...`].join(' ')}]`;
-    }
-    const required = Array<string>(
-      Math.max(0, argument.minValues - 1),
-    ).fill(label);
-    return [...required, `${label}...`].join(' ');
-  }
-  const requiredCount = argument.presence === 'required' ? argument.minValues : 0;
-  const required = Array<string>(requiredCount).fill(label);
-  const optional = Array<string>(
-    argument.maxValues - requiredCount,
-  ).fill(optionalLabel);
-  const repeated = argument.repeatable ? '...' : '';
-  return `${[...required, ...optional].join(' ')}${repeated}`;
+  return renderSyntaxPositionalCount(argument, name);
 }
 
 function annotateHelp(argument: ArgumentDefinition): string {

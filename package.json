@@ -55,6 +55,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "check": "bun run --parallel typecheck coverage build",
     "format": "dprint fmt",
+    "format:check": "dprint check",
     "tsc": "bunx --bun tsc --noEmit --skipLibCheck",
     "lint": "bun run --parallel tsc lint:biome lint:oxlint",
     "lint:biome": "bunx @biomejs/biome check",

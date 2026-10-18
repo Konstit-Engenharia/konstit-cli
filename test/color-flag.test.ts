@@ -218,14 +218,18 @@ describe('color flag', () => {
       const help: string[] = [];
       const errors: string[] = [];
       await withColorEnvironment({ noColor: null, term: 'dumb' }, async () => {
-        expect(await cli.run({
-          argv: ['--color', '--help'],
-          stdout: (output) => help.push(output),
-        })).toBe(0);
-        expect(await cli.run({
-          argv: ['--color', '--unknown'],
-          stderr: (output) => errors.push(output),
-        })).toBe(2);
+        expect(
+          await cli.run({
+            argv: ['--color', '--help'],
+            stdout: (output) => help.push(output),
+          }),
+        ).toBe(0);
+        expect(
+          await cli.run({
+            argv: ['--color', '--unknown'],
+            stderr: (output) => errors.push(output),
+          }),
+        ).toBe(2);
       });
       expect(help[0]).toContain('\x1b[');
       expect(errors[0]).toContain('\x1b[');
@@ -233,14 +237,18 @@ describe('color flag', () => {
       help.length = 0;
       errors.length = 0;
       await withColorEnvironment({ noColor: '', term: 'xterm-256color' }, async () => {
-        expect(await cli.run({
-          argv: ['--color', '--help'],
-          stdout: (output) => help.push(output),
-        })).toBe(0);
-        expect(await cli.run({
-          argv: ['--color', '--unknown'],
-          stderr: (output) => errors.push(output),
-        })).toBe(2);
+        expect(
+          await cli.run({
+            argv: ['--color', '--help'],
+            stdout: (output) => help.push(output),
+          }),
+        ).toBe(0);
+        expect(
+          await cli.run({
+            argv: ['--color', '--unknown'],
+            stderr: (output) => errors.push(output),
+          }),
+        ).toBe(2);
       });
       expect(help[0]).not.toContain('\x1b[');
       expect(errors[0]).not.toContain('\x1b[');
@@ -251,16 +259,22 @@ describe('color flag', () => {
   });
 
   test('rejects conflicting definitions and completes both switches', async () => {
-    expect(() => command('tool', {
-      args: [colorFlag('color'), flag('no-color')],
-    })).toThrow('Duplicate long option: --no-color');
-    expect(() => command('tool', {
-      args: [colorFlag('color'), colorFlag('ansi')],
-    })).toThrow('more than one color flag');
-    expect(() => command('tool', {
-      args: [colorFlag('color')],
-      subcommands: [command('child', { args: [colorFlag('ansi')] })],
-    })).toThrow('more than one color flag');
+    expect(() =>
+      command('tool', {
+        args: [colorFlag('color'), flag('no-color')],
+      })
+    ).toThrow('Duplicate long option: --no-color');
+    expect(() =>
+      command('tool', {
+        args: [colorFlag('color'), colorFlag('ansi')],
+      })
+    ).toThrow('more than one color flag');
+    expect(() =>
+      command('tool', {
+        args: [colorFlag('color')],
+        subcommands: [command('child', { args: [colorFlag('ansi')] })],
+      })
+    ).toThrow('more than one color flag');
 
     let context: DynamicCompletionContext | undefined;
     const cli = command('tool', {

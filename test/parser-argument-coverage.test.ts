@@ -74,6 +74,9 @@ describe('built-in value parsers', () => {
         '-1s',
         '1 s',
         '1w',
+        '1toString',
+        '1constructor',
+        '1valueOf',
         '0.5ms',
         '9007199254740992ms',
       ]
@@ -97,6 +100,9 @@ describe('built-in value parsers', () => {
         '-1KB',
         '1 KB',
         '1kb',
+        '1toString',
+        '1constructor',
+        '1valueOf',
         '0.5B',
         '9007199254740992B',
       ]
@@ -222,6 +228,66 @@ describe('built-in value parsers', () => {
     expect(() => parsers.range(0, Number.POSITIVE_INFINITY)).toThrow(RangeError);
     expect(() => parsers.range(2, 1)).toThrow(
       'A parser range must have finite, ascending bounds',
+    );
+  });
+
+  test('validates parser factory inputs at construction', () => {
+    expect(() => parsers.enum([] as never)).toThrow(
+      'non-empty array of strings',
+    );
+    expect(() => parsers.enum(['ok', 1] as never)).toThrow(
+      'non-empty array of strings',
+    );
+    const sparseValues: string[] = [];
+    sparseValues.length = 1;
+    expect(() => parsers.enum(sparseValues as never)).toThrow(
+      'non-empty array of strings',
+    );
+    expect(() => parsers.custom('VALUE', (input) => input, { completions: sparseValues }))
+      .toThrow('Value parser completions must be an array of strings');
+    expect(() => parsers.json(1 as never)).toThrow(
+      'JSON parser guard must be a function',
+    );
+    expect(() => parsers.custom(1 as never, (input) => input)).toThrow(
+      'value parser label must be a string',
+    );
+    expect(() => parsers.custom('VALUE', 1 as never)).toThrow(
+      'value parser parse field must be a function',
+    );
+    expect(() => parsers.custom('VALUE', (input) => input, null as never)).toThrow(
+      'Value parser options must be an object',
+    );
+    expect(() =>
+      parsers.custom('VALUE', (input) => input, {
+        completions: [1],
+      } as never)
+    ).toThrow('Value parser completions must be an array of strings');
+    expect(() =>
+      parsers.custom('VALUE', (input) => input, {
+        completionHint: 'socket',
+      } as never)
+    ).toThrow('completion hint must be \'file\' or \'directory\'');
+    expect(() => parsers.map({ label: 1, parse: () => 'value' } as never, () => 'value'))
+      .toThrow('value parser label must be a string');
+    expect(() => parsers.map({ label: 'VALUE', parse: 1 } as never, () => 'value'))
+      .toThrow('value parser parse field must be a function');
+    expect(() => parsers.map(null as never, () => 'value')).toThrow(
+      'A value parser must be an object',
+    );
+    expect(() => parsers.map(parsers.string, null as never)).toThrow(
+      'map parser transform must be a function',
+    );
+    expect(() => parsers.refine(parsers.string, null as never)).toThrow(
+      'refine parser predicate must be a function',
+    );
+    expect(() => parsers.refine(parsers.string, () => true, 1 as never)).toThrow(
+      'refine parser message must be a string',
+    );
+    expect(() => parsers.range(0, 1, 1 as never)).toThrow(
+      'Range parser options must be an object',
+    );
+    expect(() => parsers.range(0, 1, { integer: 1 } as never)).toThrow(
+      'Range parser option \'integer\' must be a boolean',
     );
   });
 

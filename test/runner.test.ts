@@ -63,6 +63,15 @@ describe('runner exit codes', () => {
     expect(handler).not.toHaveBeenCalled();
   });
 
+  test('applies explicit color settings to parse failures without a color flag', async () => {
+    const cli = command('tool', { handler: () => {} });
+    const result = cli.tryParse(['--unknown']);
+    const stderr = mock((_output: string) => {});
+
+    expect(await cli.runParsed(result, { stderr, color: true })).toBe(2);
+    expect(stderr.mock.calls[0]?.[0]).toContain('\x1b[');
+  });
+
   test.each([-1, 0, 256, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(
     'rejects invalid parse error status %s before dispatch',
     async (code) => {

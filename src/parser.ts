@@ -28,12 +28,54 @@ export interface KeyValuePair {
   readonly value: string;
 }
 
+function validateParserOptions(options: unknown): asserts options is ValueParserOptions {
+  if (options === null || typeof options !== 'object' || Array.isArray(options)) {
+    throw new TypeError('Value parser options must be an object');
+  }
+  const configured = options as Record<string, unknown>;
+  if (configured.completions !== undefined) {
+    if (
+      !Array.isArray(configured.completions)
+      || Array.from(configured.completions).some((value) => typeof value !== 'string')
+    ) {
+      throw new TypeError('Value parser completions must be an array of strings');
+    }
+  }
+  if (
+    configured.completionHint !== undefined
+    && configured.completionHint !== 'file'
+    && configured.completionHint !== 'directory'
+  ) {
+    throw new TypeError('A value parser completion hint must be \'file\' or \'directory\'');
+  }
+}
+
+function validateValueParser(parser: unknown): asserts parser is ValueParser<unknown> {
+  if (parser === null || typeof parser !== 'object' || Array.isArray(parser)) {
+    throw new TypeError('A value parser must be an object');
+  }
+  if (!('label' in parser) || typeof parser.label !== 'string') {
+    throw new TypeError('A value parser label must be a string');
+  }
+  if (!('parse' in parser) || typeof parser.parse !== 'function') {
+    throw new TypeError('A value parser parse field must be a function');
+  }
+  validateParserOptions(parser);
+}
+
 /** Creates an immutable parser for the public parsers namespace. */
 function createValueParser<Value>(
   label: string,
   parse: (input: string) => Value,
   options: ValueParserOptions = {},
 ): ValueParser<Value> {
+  if (typeof label !== 'string') {
+    throw new TypeError('A value parser label must be a string');
+  }
+  if (typeof parse !== 'function') {
+    throw new TypeError('A value parser parse field must be a function');
+  }
+  validateParserOptions(options);
   return Object.freeze({
     label,
     parse,
@@ -64,6 +106,11 @@ function mapParser<Value, MappedValue>(
   transform: (value: Value) => MappedValue,
   options: ValueParserOptions = {},
 ): ValueParser<MappedValue> {
+  validateValueParser(parser);
+  if (typeof transform !== 'function') {
+    throw new TypeError('A map parser transform must be a function');
+  }
+  validateParserOptions(options);
   return createValueParser(
     parser.label,
     (input) => transform(parser.parse(input)),
@@ -90,6 +137,14 @@ function refineParser<Value>(
   message?: string,
   options: ValueParserOptions = {},
 ): ValueParser<Value> {
+  validateValueParser(parser);
+  if (typeof predicate !== 'function') {
+    throw new TypeError('A refine parser predicate must be a function');
+  }
+  if (message !== undefined && typeof message !== 'string') {
+    throw new TypeError('A refine parser message must be a string');
+  }
+  validateParserOptions(options);
   const sourceCompletions = options.completions ?? parser.completions;
   const completions = sourceCompletions === undefined
     ? undefined
@@ -135,10 +190,10 @@ function scaledInteger(
   }
 
   const [, whole = '0', fraction, unit = '',] = match;
-  const multiplier = units[unit];
-  if (multiplier === undefined) {
+  if (!Object.hasOwn(units, unit)) {
     throw new Error(errorMessage);
   }
+  const multiplier = units[unit] as number;
 
   const multiplierValue = BigInt(multiplier);
   let value = BigInt(whole) * multiplierValue;
@@ -184,6 +239,9 @@ function jsonParser<Value>(
 function jsonParser<Value>(
   guard?: (value: unknown) => value is Value,
 ): ValueParser<unknown> {
+  if (guard !== undefined && typeof guard !== 'function') {
+    throw new TypeError('A JSON parser guard must be a function');
+  }
   return createValueParser('JSON', (input) => {
     let value: unknown;
     try {
@@ -320,6 +378,13 @@ export const parsers = Object.freeze({
   enum<const Values extends readonly [string, ...string[]]>(
     values: Values,
   ): ValueParser<Values[number]> {
+    if (
+      !Array.isArray(values)
+      || values.length === 0
+      || Array.from(values).some((value) => typeof value !== 'string')
+    ) {
+      throw new TypeError('An enum parser requires a non-empty array of strings');
+    }
     const allowed = new Set<string>(values);
     return createValueParser(
       values.join('|'),
@@ -371,8 +436,12 @@ export const parsers = Object.freeze({
   range(
     minimum: number,
     maximum: number,
-    { integer = false }: RangeParserOptions = {},
+    options: RangeParserOptions = {},
   ): ValueParser<number> {
+    if (options === null || typeof options !== 'object' || Array.isArray(options)) {
+      throw new TypeError('Range parser options must be an object');
+    }
+    const { integer = false } = options;
     if (!Number.isFinite(minimum) || !Number.isFinite(maximum) || minimum > maximum) {
       throw new RangeError('A parser range must have finite, ascending bounds');
     }

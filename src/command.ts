@@ -407,6 +407,11 @@ class Command<
       childDefinition.name,
       ...childDefinition.aliases.map(({ name }) => name),
     ]);
+    if (!definition.disableHelpSubcommand && childNames.has('help')) {
+      throw new TypeError(
+        'Subcommand name or alias \'help\' conflicts with the generated help subcommand',
+      );
+    }
     const duplicate = definition.subcommands
       .flatMap((current) => [
         current.name,

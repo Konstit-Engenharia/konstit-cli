@@ -720,10 +720,12 @@ function generateFish(
       }
       appendFishValueCompletion(baseParts, argument);
       registrations.push(baseParts.join(' '));
-      for (const alias of [
-        ...(argument.negativeLong === undefined ? [] : [argument.negativeLong]),
-        ...argument.aliases,
-      ]) {
+      for (
+        const alias of [
+          ...(argument.negativeLong === undefined ? [] : [argument.negativeLong]),
+          ...argument.aliases,
+        ]
+      ) {
         const aliasParts = [
           commandPrefix,
           `-n ${condition}`,

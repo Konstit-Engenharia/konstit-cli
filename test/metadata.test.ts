@@ -378,4 +378,69 @@ describe('documentation renderers', () => {
     expect(man).toContain('.SH ARGUMENTS');
     expect(man).toContain('.SH OPTIONS');
   });
+
+  test('renders complete argument arity in documentation usage', () => {
+    const cli = command('arity', {
+      args: [
+        option('pair', parsers.string, { numArgs: 2 }),
+        option('repeat', parsers.string, { numArgs: { min: 1, max: 2 }, repeatable: true }),
+        option('exact', parsers.string, { defaultMissing: 'auto' }),
+        positional('values', parsers.string, { numArgs: { min: 2, max: 3 }, repeatable: true }),
+      ],
+    });
+
+    const markdown = renderMarkdown(cli);
+    expect(markdown).toContain(
+      '`arity [OPTIONS] [STRING] [STRING] [STRING]...`',
+    );
+    expect(markdown).toContain('syntax --pair \\<STRING\\> \\<STRING\\>');
+    expect(markdown).toContain('syntax --repeat \\<STRING\\> \\[\\<STRING\\>\\]\\.\\.\\.');
+    expect(markdown).toContain('syntax --exact\\[\\=\\<STRING\\>\\]');
+    const man = renderManPage(cli);
+    expect(man).toContain(
+      '.B arity [OPTIONS] [STRING] [STRING] [STRING]...',
+    );
+    expect(man).toContain('syntax \\-\\-pair <STRING> <STRING>');
+    expect(man).toContain('syntax \\-\\-repeat <STRING> [<STRING>]...');
+    expect(man).toContain('syntax \\-\\-exact[=<STRING>]');
+  });
+
+  test('renders compact and unbounded documentation arity forms', () => {
+    const options = command('option-arity', {
+      args: [
+        option('many', parsers.string, { numArgs: 9 }),
+        option('range', parsers.string, { numArgs: { min: 9, max: 10 } }),
+        option('unbounded', parsers.string, { numArgs: { min: 0 } }),
+        option('unbounded-many', parsers.string, {
+          numArgs: { min: 9 },
+          repeatable: true,
+        }),
+      ],
+    });
+    const optionMarkdown = renderMarkdown(options);
+    expect(optionMarkdown).toContain('syntax --many \\<STRING\\>\\{9\\}');
+    expect(optionMarkdown).toContain('syntax --range \\<STRING\\>\\{9\\.\\.10\\}');
+    expect(optionMarkdown).toContain('syntax --unbounded \\[\\<STRING\\>\\.\\.\\.\\]');
+    expect(optionMarkdown).toContain('syntax --unbounded-many \\<STRING\\>\\{9\\.\\.\\}\\.\\.\\.');
+
+    const optionalMany = renderMarkdown(command('optional-many', {
+      args: [positional('values', parsers.string, { numArgs: 9 })],
+    }));
+    expect(optionalMany).toContain('syntax \\[STRING\\]\\{9\\}');
+
+    const optionalTrailing = renderMarkdown(command('optional-trailing', {
+      args: [positional('values', parsers.string, { trailingVarArg: true })],
+    }));
+    expect(optionalTrailing).toContain('syntax \\[STRING\\]\\.\\.\\.');
+
+    const optionalUnbounded = renderMarkdown(command('optional-unbounded', {
+      args: [positional('values', parsers.string, { numArgs: { min: 2 } })],
+    }));
+    expect(optionalUnbounded).toContain('syntax \\[\\<STRING\\> \\<STRING\\>\\.\\.\\.\\]');
+
+    const requiredUnbounded = renderMarkdown(command('required-unbounded', {
+      args: [positional('values', parsers.string, { numArgs: { min: 2 }, required: true })],
+    }));
+    expect(requiredUnbounded).toContain('syntax \\<STRING\\> \\<STRING\\>\\.\\.\\.');
+  });
 });

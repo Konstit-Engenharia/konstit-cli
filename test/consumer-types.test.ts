@@ -19,8 +19,7 @@ test('keeps configured defaults sound without exact optional properties', () => 
   const sourcePath = ts.sys.resolvePath(
     resolve(import.meta.dir, 'nonexact-consumer.ts'),
   );
-  const isSourcePath = (fileName: string): boolean =>
-    ts.sys.resolvePath(fileName) === sourcePath;
+  const isSourcePath = (fileName: string): boolean => ts.sys.resolvePath(fileName) === sourcePath;
   const source = `
     import { command, option, parsers } from '../src';
 

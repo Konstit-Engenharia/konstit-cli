@@ -98,6 +98,7 @@ function automaticColorEnabled(
   }[channel];
   const interactive = output.writer === undefined
     && output.stream.isTTY === true
+    && Bun.env.NO_COLOR === undefined
     && Bun.env.TERM !== 'dumb';
   return options.color ?? interactive;
 }
@@ -126,9 +127,10 @@ function colorDecision(
 function writeParseFailure(error: CliError, options: RunOptions): number {
   const write = options.stderr ?? ((output: string) => console.error(output.trimEnd()));
   const decision = colorDecision(error, 'stderr', options);
+  const enabled = decision?.enabled ?? automaticColorEnabled('stderr', options);
   write(
-    decision?.enabled === true
-      ? styleParseFailure(error.output, decision.force)
+    enabled
+      ? styleParseFailure(error.output, decision?.force ?? options.color === true)
       : error.output,
   );
   return options.parseErrorExitCode ?? error.exitCode;

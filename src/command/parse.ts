@@ -368,6 +368,7 @@ function parseDefinition(
       definition,
       path,
       state,
+      inheritedGlobals.map(({ argument }) => argument),
     );
     const count = state.valueCounts[positionalArgument.name] ?? 0;
     if (
@@ -387,7 +388,12 @@ function parseDefinition(
   const subcommandConflict = definition.argsConflictWithSubcommands && state.subcommand !== undefined
     ? definition.arguments.find((argument) => !argument.global && state.cliProvided.has(argument.name))
     : undefined;
-  applyEnvironmentFallbacks(definition, state, path);
+  applyEnvironmentFallbacks(
+    definition,
+    state,
+    path,
+    inheritedGlobals.map(({ argument }) => argument),
+  );
   applyConfigValues(definition, config, path, state, inheritedGlobals);
   const cliProvidedBeforeOverrides = new Set(state.cliProvided);
   applyOverrides(definition, state);
@@ -615,6 +621,9 @@ function configArgumentValue(
     state,
     true,
     'config',
+    undefined,
+    undefined,
+    inheritedArguments,
   );
 }
 
@@ -683,7 +692,9 @@ function resetOverriddenSources(
       continue;
     }
     const collectsValues = argument.repeatable || argument.trailingVarArg;
-    if (argument.presence === 'default') {
+    if (argument.color && Bun.env.NO_COLOR !== undefined) {
+      state.sources.set(target, 'env');
+    } else if (argument.presence === 'default') {
       state.sources.set(target, 'default');
     } else {
       state.sources.delete(target);
@@ -699,6 +710,7 @@ function applyEnvironmentFallbacks(
   definition: CommandDefinition,
   state: ParseState,
   path: readonly string[],
+  inheritedArguments: readonly ArgumentDefinition[],
 ): void {
   const overriddenTargets = new Set(
     definition.overrides
@@ -738,6 +750,8 @@ function applyEnvironmentFallbacks(
         path,
         parsers.integer,
         true,
+        undefined,
+        inheritedArguments,
       );
       if (typeof count !== 'number' || count < 0) {
         throw commandError(
@@ -745,7 +759,7 @@ function applyEnvironmentFallbacks(
           `invalid value for '${display}'`,
           definition,
           path,
-          [],
+          inheritedArguments,
           { argumentName: argument.name },
         );
       }
@@ -767,11 +781,23 @@ function applyEnvironmentFallbacks(
         `argument '${display}' accepts at most ${argument.maxValues} value(s)`,
         definition,
         path,
-        [],
+        inheritedArguments,
         { argumentName: argument.name },
       );
     }
-    storeRawValues(argument, values, display, definition, path, state, true, 'env');
+    storeRawValues(
+      argument,
+      values,
+      display,
+      definition,
+      path,
+      state,
+      true,
+      'env',
+      undefined,
+      undefined,
+      inheritedArguments,
+    );
     state.cliProvided.delete(argument.name);
   }
 }
@@ -837,7 +863,8 @@ function validateGlobalArguments(
       const localLongs = argumentLongNames(local);
       const globalLongs = argumentLongNames(global);
       if (
-        (local.color && global.color)
+        local.name === global.name
+        || (local.color && global.color)
         || (local.short !== undefined && local.short === global.short)
         || localLongs.some((name) => globalLongs.includes(name))
       ) {
@@ -1004,7 +1031,7 @@ function parseLongOption(
         `argument '--${name}' does not accept a value`,
         definition,
         path,
-        [],
+        inheritedGlobals.map(({ argument }) => argument),
         { argumentName: argument.name, tokenIndex: argvOffset + index },
       );
     }
@@ -1031,6 +1058,7 @@ function parseLongOption(
         binding.state,
         'cli',
         argvOffset + index,
+        inheritedGlobals.map(({ argument: inherited }) => inherited),
       );
       return index + 1;
     }
@@ -1067,6 +1095,7 @@ function parseLongOption(
       binding.state,
       'cli',
       argvOffset + index,
+      inheritedGlobals.map(({ argument: inherited }) => inherited),
     );
   } else {
     storeRawValues(
@@ -1080,6 +1109,7 @@ function parseLongOption(
       'cli',
       consumed.valueIndices,
       argvOffset + index,
+      inheritedGlobals.map(({ argument: inherited }) => inherited),
     );
   }
   return consumed.nextIndex;
@@ -1166,6 +1196,7 @@ function parseShortOptions(
           binding.state,
           'cli',
           argvOffset + index,
+          inheritedGlobals.map(({ argument: inherited }) => inherited),
         );
         return index + 1;
       }
@@ -1202,6 +1233,7 @@ function parseShortOptions(
         binding.state,
         'cli',
         argvOffset + index,
+        inheritedGlobals.map(({ argument: inherited }) => inherited),
       );
     } else {
       storeRawValues(
@@ -1215,6 +1247,7 @@ function parseShortOptions(
         'cli',
         consumed.valueIndices,
         argvOffset + index,
+        inheritedGlobals.map(({ argument: inherited }) => inherited),
       );
     }
     return consumed.nextIndex;
@@ -1330,6 +1363,7 @@ function storePositionalValue(
   definition: CommandDefinition,
   path: readonly string[],
   state: ParseState,
+  inheritedArguments: readonly ArgumentDefinition[],
 ): void {
   const values = splitRawValue(argument, raw);
   const currentCount = state.sources.get(argument.name) === 'cli'
@@ -1345,7 +1379,7 @@ function storePositionalValue(
       `argument '${displayArgument(argument)}' accepts at most ${argument.maxValues} value(s)`,
       definition,
       path,
-      [],
+      inheritedArguments,
       {
         argumentName: argument.name,
         tokenIndex,
@@ -1363,6 +1397,7 @@ function storePositionalValue(
     'cli',
     values.map(() => tokenIndex),
     tokenIndex,
+    inheritedArguments,
   );
 }
 
@@ -1377,6 +1412,7 @@ function storeRawValues(
   source: ValueSource = 'cli',
   tokenIndices?: readonly number[],
   tokenIndex?: number,
+  inheritedArguments: readonly ArgumentDefinition[] = [],
 ): void {
   storeParsedValues(
     argument,
@@ -1390,6 +1426,7 @@ function storeRawValues(
         argument.parser,
         redactRaw,
         tokenIndices?.[index],
+        inheritedArguments,
       )
     ),
     display,
@@ -1398,6 +1435,7 @@ function storeRawValues(
     state,
     source,
     tokenIndex ?? tokenIndices?.[0],
+    inheritedArguments,
   );
 }
 
@@ -1410,6 +1448,7 @@ function storeParsedValues(
   state: ParseState,
   source: ValueSource = 'cli',
   tokenIndex?: number,
+  inheritedArguments: readonly ArgumentDefinition[] = [],
 ): void {
   const collectsValues = argument.repeatable
     || argument.trailingVarArg
@@ -1432,7 +1471,7 @@ function storeParsedValues(
       `argument '${display}' cannot be used more than once`,
       definition,
       path,
-      [],
+      inheritedArguments,
       {
         argumentName: argument.name,
         ...(tokenIndex === undefined ? {} : { tokenIndex }),
@@ -1560,6 +1599,7 @@ function parseWith(
   overrideParser = argument.parser,
   redactRaw = false,
   tokenIndex?: number,
+  inheritedArguments: readonly ArgumentDefinition[] = [],
 ): unknown {
   if (overrideParser === undefined) {
     throw new Error(`Argument '${argument.name}' has no value parser`);
@@ -1579,7 +1619,7 @@ function parseWith(
         : `invalid value '${raw}' for '${display}': ${detail}`,
       definition,
       path,
-      [],
+      inheritedArguments,
       {
         argumentName: argument.name,
         ...(tokenIndex === undefined ? {} : { tokenIndex }),
@@ -1629,6 +1669,35 @@ function validateParsedValues(
       inheritedArguments,
       {
         argumentName: tooShort.name,
+        ...(tokenIndex === undefined ? {} : { tokenIndex }),
+      },
+    );
+  }
+  const incompleteRepeatable = definition.arguments.find((argument) => {
+    if (
+      !argument.repeatable
+      || !state.provided.has(argument.name)
+      || argument.minValues === 0
+      || argument.maxValues === null
+    ) {
+      return false;
+    }
+    const count = state.valueCounts[argument.name] ?? 0;
+    return Math.ceil(count / argument.maxValues)
+      > Math.floor(count / argument.minValues);
+  });
+  if (incompleteRepeatable !== undefined) {
+    const tokenIndex = state.tokenIndices.get(incompleteRepeatable.name);
+    throw commandError(
+      ErrorKind.TooFewValues,
+      `argument '${
+        displayArgument(incompleteRepeatable)
+      }' requires complete occurrences of ${incompleteRepeatable.minValues} to ${incompleteRepeatable.maxValues} value(s)`,
+      definition,
+      path,
+      inheritedArguments,
+      {
+        argumentName: incompleteRepeatable.name,
         ...(tokenIndex === undefined ? {} : { tokenIndex }),
       },
     );

@@ -59,6 +59,25 @@ describe('command coverage', () => {
     });
   });
 
+  test('rejects subcommands that collide with generated help', () => {
+    expect(() =>
+      command('tool', {
+        subcommands: [command('help')],
+      })
+    ).toThrow('Subcommand name or alias \'help\' conflicts');
+    expect(() =>
+      command('tool', {
+        subcommands: [command('status', { aliases: ['help'] })],
+      })
+    ).toThrow('Subcommand name or alias \'help\' conflicts');
+
+    const disabled = command('tool', {
+      disableHelpSubcommand: true,
+      subcommands: [command('help')],
+    });
+    expect(disabled.tryParse(['help'])).toMatchObject({ ok: true, type: 'value' });
+  });
+
   test('rejects every built-in version spelling', () => {
     expect(() =>
       command('tool', {
@@ -639,14 +658,18 @@ describe('command coverage', () => {
       disableHelpFlag: true,
       args: [
         option('pair', parsers.string, { numArgs: 2, required: true }),
+        option('requiredEquals', parsers.string, { required: true, requireEquals: true }),
         option('range', parsers.integer, { numArgs: { min: 1, max: 3 } }),
         option('equals', parsers.string, { numArgs: 2, requireEquals: true }),
         option('optionalEquals', parsers.string, { defaultMissing: 'auto' }),
       ],
     });
 
-    expect(cli.renderUsage()).toBe('tool [OPTIONS] --pair <STRING> <STRING>');
+    expect(cli.renderUsage()).toBe(
+      'tool [OPTIONS] --pair <STRING> <STRING> --requiredEquals=<STRING>',
+    );
     expect(cli.renderHelp()).toContain('  --pair <STRING> <STRING>');
+    expect(cli.renderHelp()).toContain('  --requiredEquals=<STRING>');
     expect(cli.renderHelp()).toContain(
       '  --range <INTEGER> [<INTEGER>] [<INTEGER>]',
     );
