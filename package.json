@@ -1,6 +1,6 @@
 {
   "name": "@konstit/cli",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "description": "A clap-inspired, type-safe command-line parser for Bun and TypeScript",
   "repository": {
     "type": "git",
