@@ -83,8 +83,5 @@
     "mitata": "1.0.34",
     "oxlint": "1.80.0",
     "oxlint-tsgolint": "7.0.2001"
-  },
-  "peerDependencies": {
-    "typescript": ">=5.5"
   }
 }
