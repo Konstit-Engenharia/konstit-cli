@@ -32,6 +32,29 @@ function unwrapValue<T>(result: ParseOutcome<T>): T {
 }
 
 describe('caller supplied config and value sources', () => {
+  test('rejects config counts with the wrong argument type and excess scalar values', () => {
+    const cli = command('tool', {
+      args: [count('verbose'), option('name', parsers.string)],
+    });
+    expect(() => cli.tryParse([], { config: { values: { verbose: 'two' } } }))
+      .toThrow('Config value for \'config:verbose\' must be a nonnegative integer');
+    expect(cli.tryParse([], { config: { values: { name: ['one', 'two'] } } }))
+      .toMatchObject({
+        type: 'error',
+        error: { kind: 'too-many-values', argumentName: 'name', commandPath: ['tool'] },
+      });
+  });
+
+  test('clears overridden repeatable values and their source metadata', () => {
+    const cli = command('tool', {
+      args: [flag('clear'), option('tag', parsers.string, { repeatable: true })],
+      overrides: [['clear', 'tag']],
+    });
+    const result = unwrapValue(cli.parse(['--tag', 'one', '--clear']));
+    expect(result.tag).toEqual([]);
+    expect(getValueSource(result, 'tag')).toBeUndefined();
+  });
+
   test('applies CLI, environment, config, and default precedence', () => {
     const previous = Bun.env.KONSTIT_CONFIG_SOURCE;
     Bun.env.KONSTIT_CONFIG_SOURCE = 'environment';

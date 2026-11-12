@@ -28,6 +28,21 @@ function parse<Value>(
 }
 
 describe('command coverage', () => {
+  test('advances to the next positional after an explicit value terminator', () => {
+    const cli = command('tool', {
+      args: [
+        positional('inputs', parsers.string, { numArgs: { min: 0, max: 3 }, valueTerminator: ';' }),
+        positional('output', parsers.string),
+      ],
+    });
+    expect(parse(cli, ['one', 'two', ';', 'result'])).toEqual({ inputs: ['one', 'two'], output: 'result' });
+  });
+
+  test('does not require unused exclusive arguments', () => {
+    const cli = command('tool', { args: [flag('one'), flag('two')], exclusive: ['one', 'two'] });
+    expect(parse(cli, [])).toEqual({ one: false, two: false });
+  });
+
   test('rejects invalid command names and empty required subcommands', () => {
     const createCommand = command as unknown as (
       name: unknown,

@@ -83,3 +83,18 @@ test('metadata omits unsupported defaults without exposing callbacks', () => {
   expect(metadata.arguments[2]?.hasDefaultValue).toBe(true);
   expect(renderMarkdown(app)).toContain('default: unavailable');
 });
+
+test('metadata hides exclusive sets with hidden arguments and opaque missing defaults', () => {
+  const callback = () => 1;
+  const app = command('tool', {
+    args: [
+      flag('visible'),
+      flag('hidden', { hide: true }),
+      option('callback', parsers.custom('CALLBACK', () => callback), { defaultMissing: callback }),
+    ],
+    exclusive: ['visible', 'hidden'],
+  });
+  expect(describeCommand(app).exclusiveArguments).toEqual([]);
+  expect(describeCommand(app, { includeHidden: true }).exclusiveArguments).toEqual(['visible', 'hidden']);
+  expect(renderMarkdown(app)).toContain('missing-value default: unavailable');
+});

@@ -32,7 +32,6 @@ try {
       '--splitting',
       '--chunk-naming',
       'chunks/[name]-[hash].[ext]',
-      '--minify',
       '--keep-names',
       `--metafile-md=${report}`,
     ],

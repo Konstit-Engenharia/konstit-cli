@@ -19,6 +19,12 @@ import {
 const bash = Bun.which('bash');
 
 describe('completion edge behavior', () => {
+  test('registers dynamic fish completion for an executable path', () => {
+    const script = generateCompletion(command('tool'), 'fish', { dynamic: true, executable: './bin/tool' });
+    expect(script).toContain('complete -p \'./bin/tool\'');
+    expect(script).toContain(dynamicCompletionEnvironment);
+  });
+
   test('uses the default output writer through Command.run', async () => {
     const cli = command('packages', {
       args: [

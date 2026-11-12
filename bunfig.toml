@@ -1,2 +1,9 @@
+telemetry = false
+
 [test]
-coverageThreshold = { lines = 1.0, functions = 1.0 }
+root = "test"
+coverageThreshold = 1.0
+
+[fmt]
+ignorePatterns = ["**/**", "!package.json"]
+sortPackageJson = true

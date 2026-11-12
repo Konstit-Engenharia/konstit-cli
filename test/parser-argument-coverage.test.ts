@@ -15,6 +15,11 @@ import {
   type ArgumentType,
 } from '../src/argument';
 
+test('repeatable required arguments retain their required presence', () => {
+  const argument = option('tag', parsers.string, { required: true, repeatable: true });
+  expect(getArgumentDefinition(argument)).toMatchObject({ presence: 'required', repeatable: true });
+});
+
 describe('built-in value parsers', () => {
   test('parses every supported scalar form', () => {
     expect(parsers.string.parse('text')).toBe('text');

@@ -1144,11 +1144,7 @@ function parseShortOptions(
   inheritedGlobals: readonly GlobalBinding[],
 ): number {
   const cluster = parseShortOptionCluster(token);
-  for (let clusterIndex = 0; clusterIndex < cluster.length; clusterIndex += 1) {
-    const short = cluster[clusterIndex];
-    if (short === undefined) {
-      continue;
-    }
+  for (const [clusterIndex, short,] of cluster.entries()) {
     const binding = availableArgumentBindings(definition, state, inheritedGlobals).find(
       ({ argument }) => argument.short === short,
     );

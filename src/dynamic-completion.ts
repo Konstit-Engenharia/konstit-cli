@@ -468,11 +468,7 @@ function scanLongOption(state: ScanState, word: string): void {
 
 function scanShortOptions(state: ScanState, word: string): void {
   const cluster = parseShortOptionCluster(word);
-  for (let index = 0; index < cluster.length; index += 1) {
-    const short = cluster[index];
-    if (short === undefined) {
-      break;
-    }
+  for (const [index, short,] of cluster.entries()) {
     const argument = activeShortArgument(state, short);
     if (argument === undefined) {
       return;
@@ -798,10 +794,7 @@ function findValueTarget(
   if (currentWord.startsWith('-') && currentWord !== '-') {
     const cluster = currentWord.slice(1);
     for (let index = 0; index < cluster.length; index += 1) {
-      const short = cluster[index];
-      if (short === undefined) {
-        break;
-      }
+      const short = cluster.charAt(index);
       const argument = activeShortArgument(state, short);
       if (argument === undefined) {
         break;

@@ -18,6 +18,17 @@ import {
 } from '../src/dynamic-completion';
 
 describe('dynamic completion coverage', () => {
+  test('returns a positional file hint alongside command candidates', async () => {
+    const cli = command('tool', {
+      args: [positional('input', parsers.string, { valueHint: 'file' })],
+      subcommands: [command('run')],
+    });
+    const result = await resolveDynamicCompletion(cli, ['']);
+    expect(result.valueHint).toBe('file');
+    expect(result.argument?.name).toBe('input');
+    expect(result.candidates).toContainEqual({ value: 'run' });
+  });
+
   test('validates cursor bounds', async () => {
     const cli = command('tool');
     for (const cursor of [-1, 0.5, 2]) {

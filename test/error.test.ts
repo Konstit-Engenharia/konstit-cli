@@ -16,6 +16,26 @@ import {
 } from '../src/index.js';
 
 describe('structured CLI errors', () => {
+  test('rejects exit codes outside the supported integer range', () => {
+    for (const exitCode of [0, -1, 256, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+      expect(() => new CliError(ErrorKind.InvalidValue, 'invalid', 'error: invalid\n', exitCode))
+        .toThrow(RangeError);
+    }
+    for (const exitCode of [1, 255]) {
+      expect(new CliError(ErrorKind.InvalidValue, 'invalid', 'error: invalid\n', exitCode).exitCode)
+        .toBe(exitCode);
+    }
+  });
+
+  test('reports unknown help subcommands with suggestions and original indices', () => {
+    const result = command('tool', { subcommands: [command('run')] })
+      .tryParse(['help', 'rn']);
+    expect(result).toMatchObject({
+      type: 'error',
+      error: { kind: ErrorKind.InvalidSubcommand, commandPath: ['tool'], tokenIndex: 1, suggestions: ['run'] },
+    });
+  });
+
   test('keeps the legacy constructor and supplies immutable defaults', () => {
     const error = new CliError(ErrorKind.InvalidValue, 'invalid', 'error: invalid\n');
 

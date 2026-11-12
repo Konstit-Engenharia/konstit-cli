@@ -87,6 +87,55 @@ function restoreProperty(
 }
 
 describe('color flag', () => {
+  test('applies configured color values and honors NO_COLOR', async () => {
+    const cli = command('tool', { args: [colorFlag('color')] });
+    await withColorEnvironment({ noColor: null, term: 'dumb' }, () => {
+      expect(cli.parse([], { config: { values: { color: true } } }))
+        .toMatchObject({ value: { color: true } });
+      expect(cli.parse([], { config: { values: { color: false } } }))
+        .toMatchObject({ value: { color: false } });
+    });
+    await withColorEnvironment({ noColor: '', term: 'xterm' }, () => {
+      expect(cli.parse([], { config: { values: { color: true } } }))
+        .toMatchObject({ value: { color: false } });
+    });
+  });
+
+  test('detects terminal color when help uses the default writer', async () => {
+    const log = spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      for (
+        const environment of [
+          { noColor: null, term: 'xterm', stdoutTTY: true },
+          { noColor: '', term: 'xterm', stdoutTTY: true },
+          { noColor: null, term: 'dumb', stdoutTTY: true },
+        ]
+      ) {
+        await withColorEnvironment(environment, async () => {
+          expect(await command('tool').run({ argv: ['--help'] })).toBe(0);
+        });
+      }
+      expect(log).toHaveBeenCalledTimes(3);
+      expect(log.mock.calls[0]?.[0]).toContain('\x1b[');
+      expect(log.mock.calls[1]?.[0]).not.toContain('\x1b[');
+      expect(log.mock.calls[2]?.[0]).not.toContain('\x1b[');
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  test('initializes dynamic completion color from terminal capabilities', async () => {
+    const cli = command('tool', {
+      args: [colorFlag('color'), option('query', parsers.string, { complete: ({ values }) => [String(values.color)] })],
+    });
+    await withColorEnvironment({ noColor: null, term: 'xterm', stdoutTTY: true }, async () => {
+      expect((await resolveDynamicCompletion(cli, ['--query', ''])).candidates).toEqual([{ value: 'true' }]);
+    });
+    await withColorEnvironment({ noColor: null, term: 'dumb', stdoutTTY: true }, async () => {
+      expect((await resolveDynamicCompletion(cli, ['--query', ''])).candidates).toEqual([{ value: 'false' }]);
+    });
+  });
+
   test('resolves automatic, positive, negative, and environment values', async () => {
     const color = colorFlag('color');
     const cli = command('tool', { args: [color] });

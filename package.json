@@ -2,10 +2,14 @@
   "name": "@konstit/cli",
   "version": "0.0.5",
   "description": "A clap-inspired, type-safe command-line parser for Bun and TypeScript",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/Konstit-Engenharia/konstit-cli.git"
-  },
+  "keywords": [
+    "bun",
+    "clap",
+    "cli",
+    "type-safe",
+    "typescript"
+  ],
+  "license": "MIT",
   "author": {
     "name": "KONSTIT ENGENHARIA E TECNOLOGIA LTDA",
     "email": "opensource@konstit.com.br"
@@ -22,6 +26,15 @@
       "email": "marcelo.marchioro@konstit.com.br"
     }
   ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Konstit-Engenharia/konstit-cli.git"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "type": "module",
   "module": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -35,53 +48,39 @@
       "import": "./dist/completion.js"
     }
   },
-  "files": [
-    "dist",
-    "README.md",
-    "LICENSE"
-  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "bun run build:artifacts && bun run build:validate",
     "build:artifacts": "bun run build:clean && bun run --parallel build:js build:types",
     "build:clean": "bun ./scripts/clean-dist.ts",
-    "build:js": "bun build ./src/index.ts ./src/completion.ts --outdir ./dist --target=bun --format=esm --sourcemap=external --minify --keep-names --splitting --chunk-naming 'chunks/[name]-[hash].[ext]'",
+    "build:js": "bun build ./src/index.ts ./src/completion.ts --outdir ./dist --target=bun --format=esm --sourcemap=external --keep-names --splitting --chunk-naming 'chunks/[name]-[hash].[ext]'",
     "build:types": "tsc -p tsconfig.build.json",
     "build:validate": "bun ./scripts/validate-package.ts && bun ./scripts/check-package-consumer.ts",
     "benchmark:types": "bun run build:artifacts && bun ./scripts/benchmark-types.ts",
     "analyze:bundle": "bun ./scripts/analyze-bundle.ts",
     "release": "bun ./scripts/release.ts",
     "test": "bun test --parallel",
-    "coverage": "bun test --coverage",
+    "coverage": "bun test --dots --coverage",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "check": "bun run --parallel typecheck coverage build",
     "format": "dprint fmt",
     "format:check": "dprint check",
-    "tsc": "bunx --bun tsc --noEmit --skipLibCheck",
-    "lint": "bun run --parallel tsc lint:biome lint:oxlint",
+    "lint": "bun run --parallel typecheck lint:biome lint:oxlint",
     "lint:biome": "bunx @biomejs/biome check",
     "lint:oxlint": "bunx oxlint --type-aware"
   },
-  "keywords": [
-    "bun",
-    "cli",
-    "clap",
-    "typescript",
-    "type-safe"
-  ],
-  "license": "MIT",
-  "publishConfig": {
-    "access": "public"
-  },
-  "engines": {
-    "bun": ">=1.4.0"
-  },
   "devDependencies": {
-    "@types/bun": "latest",
-    "typescript": "^5.9.0",
     "@biomejs/biome": "2.5.10",
+    "@types/bun": "latest",
     "dprint": "0.56.1",
     "mitata": "1.0.34",
     "oxlint": "1.80.0",
-    "oxlint-tsgolint": "7.0.2001"
+    "oxlint-tsgolint": "7.0.2001",
+    "typescript": "^5.9.0"
+  },
+  "engines": {
+    "bun": ">=1.4.0"
   }
 }
