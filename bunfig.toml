@@ -3,6 +3,15 @@ telemetry = false
 [test]
 root = "test"
 coverageThreshold = 1.0
+coveragePathIgnorePatterns = [
+  "**/*.bench.ts",
+  "**/*.test.ts",
+  "test/**",
+  "scripts/**",
+  "examples/**",
+  "bench/**",
+  "fixtures/**",
+]
 
 [fmt]
 ignorePatterns = ["**/**", "!package.json"]
