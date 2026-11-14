@@ -8,6 +8,10 @@ import {
   type CommandType,
 } from './command.js';
 import {
+  writeOutput,
+  type OutputWriter,
+} from './command/output.js';
+import {
   argumentLongNames,
   isNegativeNumberToken,
   matchSubcommand,
@@ -93,7 +97,7 @@ export interface DynamicCompletionRequestOptions {
   readonly argv?: readonly string[];
   /** Index of the incomplete word. Defaults to the final argv item. */
   readonly cursor?: number;
-  readonly stdout?: (output: string) => void;
+  readonly stdout?: OutputWriter;
 }
 
 interface CompletionEnabledArgument extends ArgumentDefinition {
@@ -210,7 +214,7 @@ export async function runDynamicCompletionRequest(
         '\n',
       )
     }\n`;
-    (options.stdout ?? ((text: string) => process.stdout.write(text)))(output);
+    await writeOutput('stdout', output, options.stdout);
   }
   return 0;
 }

@@ -75,6 +75,7 @@ export interface CommandDefinition {
   readonly subcommands: readonly CommandDefinition[];
   readonly requirements: readonly RequirementDefinition[];
   readonly conditionalRequirements: readonly ConditionalRequirementDefinition[];
+  readonly requiresValue: readonly ConditionalRequirementDefinition[];
   readonly conditionalSetRequirements: readonly ConditionalSetRequirementDefinition[];
   readonly requiredUnless: readonly RequiredUnlessDefinition[];
   readonly requiredUnlessAll: readonly RequiredUnlessDefinition[];

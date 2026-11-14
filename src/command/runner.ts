@@ -17,6 +17,10 @@ import {
   type ParseResult,
 } from '../error.js';
 import { sanitizeDiagnostic } from './help.js';
+import {
+  writeOutput,
+  type OutputChannel,
+} from './output.js';
 import { outputColorModes } from './parse.js';
 import type { CommandDefinition } from './schema.js';
 
@@ -73,8 +77,6 @@ function selectDeepestCommand(
   );
 }
 
-type OutputChannel = 'stdout' | 'stderr';
-
 interface ColorDecision {
   readonly enabled: boolean;
   readonly force: boolean;
@@ -124,14 +126,21 @@ function colorDecision(
   };
 }
 
-function writeParseFailure(error: CliError, options: RunOptions): number {
-  const write = options.stderr ?? ((output: string) => console.error(output.trimEnd()));
+function writeMessage(channel: OutputChannel, text: string, options: RunOptions): Promise<void> {
+  const writer = options[channel];
+  // Terminal messages end with one newline. Injected writers receive the rendered text verbatim.
+  return writeOutput(channel, writer === undefined ? `${text.trimEnd()}\n` : text, writer);
+}
+
+async function writeParseFailure(error: CliError, options: RunOptions): Promise<number> {
   const decision = colorDecision(error, 'stderr', options);
   const enabled = decision?.enabled ?? automaticColorEnabled('stderr', options);
-  write(
+  await writeMessage(
+    'stderr',
     enabled
       ? styleParseFailure(error.output, decision?.force ?? options.color === true)
       : error.output,
+    options,
   );
   return options.parseErrorExitCode ?? error.exitCode;
 }
@@ -213,19 +222,18 @@ function styleParseFailure(output: string, forceColor: boolean): string {
   return `${helpAnsi.strong}${accent}error:${helpAnsi.reset}${styled.slice(6)}`;
 }
 
-function writeDisplay(
+async function writeDisplay(
   definition: CommandDefinition,
   display: ParseDisplay,
   options: RunOptions,
-): number {
-  const write = options.stdout ?? ((output: string) => console.log(output.trimEnd()));
+): Promise<number> {
   const decision = colorDecision(display, 'stdout', options);
   const output = display.kind === DisplayKind.Help
       && (decision?.enabled ?? shouldStyleHelp(options))
       && !hasHelpOverride(definition, display.output)
     ? styleHelp(display.output, decision?.force ?? options.color === true)
     : display.output;
-  write(output);
+  await writeMessage('stdout', output, options);
   return 0;
 }
 
@@ -253,7 +261,7 @@ export async function runConfiguredHandler<Args extends object>(
     throw new RangeError('parseErrorExitCode must be an integer from 1 to 255');
   }
   if (result.type === 'error') {
-    writeWarnings(result, options);
+    await writeWarnings(result, options);
     return writeParseFailure(result.error, options);
   }
   if (result.type === 'display') {
@@ -270,9 +278,11 @@ export async function runConfiguredHandler<Args extends object>(
       `No handler is configured for command '${selected.path.join(' ')}'`,
     );
   }
-  writeWarnings(result, options);
+  await writeWarnings(result, options);
   const context: HandlerContext = Object.freeze({
     commandPath: Object.freeze([...selected.path]),
+    stdout: (chunk: string) => writeOutput('stdout', chunk, options.stdout),
+    stderr: (chunk: string) => writeOutput('stderr', chunk, options.stderr),
     global<ArgumentType extends AnyGlobalArgument>(argument: ArgumentType) {
       const argumentDefinition = getArgumentDefinition(argument);
       if (!argumentDefinition.global) {
@@ -293,14 +303,13 @@ export async function runConfiguredHandler<Args extends object>(
   return normalizeHandlerExitCode(exitCode);
 }
 
-function writeWarnings(result: object, options: RunOptions): void {
+async function writeWarnings(result: object, options: RunOptions): Promise<void> {
   for (const warning of getWarnings(result)) {
     if (options.onWarning !== undefined) {
       options.onWarning(warning);
     } else {
       const message = sanitizeDiagnostic(`${warning.target} '${warning.name}' is deprecated: ${warning.message}`);
-      const write = options.stderr ?? ((output: string) => console.error(output.trimEnd()));
-      write(`warning: ${message}\n`);
+      await writeMessage('stderr', `warning: ${message}\n`, options);
     }
   }
 }

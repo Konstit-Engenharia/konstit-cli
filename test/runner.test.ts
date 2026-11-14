@@ -109,6 +109,80 @@ describe('runner exit codes', () => {
   });
 });
 
+describe('runner writers', () => {
+  test('lets the handler handle a failed stream write and choose its exit code', async () => {
+    const brokenPipe = Object.assign(new Error('closed pipe'), { code: 'EPIPE' });
+    const cli = command('stream', {
+      handler: async (_args, { stdout }) => {
+        try {
+          await stdout('row\n');
+        } catch (error) {
+          if (error === brokenPipe) {
+            return 0;
+          }
+          throw error;
+        }
+        return 1;
+      },
+    });
+    expect(await cli.run({ argv: [], stdout: () => Promise.reject(brokenPipe) })).toBe(0);
+  });
+
+  test.each(['run', 'runParsed'] as const)('%s awaits writes in order for nested handlers and parse failures', async (method) => {
+    const events: string[] = [];
+    const cli = command('tool', {
+      subcommands: [command('read', {
+        deprecated: 'Use show.',
+        args: [flag('old', { deprecated: 'Use --new.' })],
+        handler: async (_args, { stdout, stderr }) => {
+          events.push('handler');
+          await stdout('first ');
+          await stdout('\n\n');
+          await stderr('last');
+          return 7;
+        },
+      })],
+    });
+    const write = async (channel: string, chunk: string) => {
+      await Bun.sleep(1);
+      events.push(`${channel} ${chunk}`);
+      return chunk.length;
+    };
+    const options = {
+      color: false,
+      stdout: (chunk: string) => write('out', chunk),
+      stderr: (chunk: string) => write('err', chunk),
+    };
+    const run = (argv: readonly string[]) => method === 'run' ? cli.run({ ...options, argv }) : cli.runParsed(cli.tryParse(argv), options);
+    const warnings = [
+      'err warning: command \'read\' is deprecated: Use show.\n',
+      'err warning: argument \'old\' is deprecated: Use --new.\n',
+    ];
+    expect(await run(['read', '--old'])).toBe(7);
+    expect(events).toEqual([...warnings, 'handler', 'out first ', 'out \n\n', 'err last']);
+    events.length = 0;
+    expect(await run(['read', '--old', '--unknown'])).toBe(2);
+    expect(events).toEqual([...warnings, expect.stringContaining('err error: unexpected argument \'--unknown\'')]);
+    events.length = 0;
+    expect(await run(['--help'])).toBe(0);
+    expect(events).toEqual([`out ${cli.renderHelp()}`]);
+  });
+
+  test.each(['run', 'runParsed'] as const)('%s propagates writer failures before returning or dispatching', async (method) => {
+    const failure = new Error('write failed');
+    const handler = mock(() => 0);
+    const cli = command('tool', { version: '1', args: [flag('old', { deprecated: 'Use --new.' })], handler });
+    const write = () => Promise.reject(failure);
+    const options = { stdout: write, stderr: write };
+    for (const argv of [['--version'], ['--unknown'], ['--old']]) {
+      const result = method === 'run' ? cli.run({ ...options, argv }) : cli.runParsed(cli.tryParse(argv), options);
+      // oxlint-disable-next-line typescript/await-thenable -- Bun async matchers must be awaited.
+      await expect(result).rejects.toBe(failure);
+    }
+    expect(handler).not.toHaveBeenCalled();
+  });
+});
+
 describe('reusable parse results', () => {
   test.each(['run', 'parse', 'tryParse'] as const)('%s parses each supplied value once for root and nested handlers', async (method) => {
     const parseValue = mock((input: string) => input);

@@ -25,6 +25,7 @@ interface RuntimeGroupRelations {
 export interface RuntimeCommandRelations {
   readonly requires?: readonly (readonly [string, string])[];
   readonly requiresIf?: readonly (readonly [string, unknown, string])[];
+  readonly requiresValue?: readonly (readonly [string, string, unknown])[];
   readonly requiredIfAny?: readonly RuntimeConditionalSetRelation[];
   readonly requiredIfAll?: readonly RuntimeConditionalSetRelation[];
   readonly requiredUnlessPresent?: readonly RuntimeRequiredUnless[];
@@ -62,6 +63,7 @@ const commandOptionKeys = new Set([
   'hide',
   'requires',
   'requiresIf',
+  'requiresValue',
   'requiredIfAny',
   'requiredIfAll',
   'requiredUnlessPresent',
@@ -187,10 +189,10 @@ function validateBinaryRelations(value: unknown, context: string): void {
   }
 }
 
-function validateConditionalRelations(value: unknown, context: string): void {
+function validateConditionalRelations(value: unknown, context: string, targetIndex: 1 | 2): void {
   for (const relation of validateArray(value, context)) {
     const tuple = validateTuple(relation, 3, `${context} entry`);
-    if (typeof tuple[0] !== 'string' || typeof tuple[2] !== 'string') {
+    if (typeof tuple[0] !== 'string' || typeof tuple[targetIndex] !== 'string') {
       throw new TypeError(`${context} entries must contain argument names`);
     }
   }
@@ -412,7 +414,10 @@ export function validateCommandOptions(options: unknown): void {
     validateBinaryRelations(options.requires, 'Command option \'requires\'');
   }
   if (options.requiresIf !== undefined) {
-    validateConditionalRelations(options.requiresIf, 'Command option \'requiresIf\'');
+    validateConditionalRelations(options.requiresIf, 'Command option \'requiresIf\'', 2);
+  }
+  if (options.requiresValue !== undefined) {
+    validateConditionalRelations(options.requiresValue, 'Command option \'requiresValue\'', 1);
   }
   if (options.requiredIfAny !== undefined) {
     validateConditionalSets(options.requiredIfAny, 'Command option \'requiredIfAny\'');
@@ -499,6 +504,9 @@ export function validateCommandRelations(
   }
   for (const [source, , target,] of options.requiresIf ?? []) {
     validateDistinctRelation(names, source, target, 'Command option \'requiresIf\'');
+  }
+  for (const [source, target,] of options.requiresValue ?? []) {
+    validateDistinctRelation(names, source, target, 'Command option \'requiresValue\'');
   }
   for (
     const { conditions, target } of (options.requiredIfAny ?? []) as readonly RuntimeConditionalSetRelation[]

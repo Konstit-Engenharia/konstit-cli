@@ -144,6 +144,21 @@ export function validateRelations(
       );
     }
   }
+  for (const { source, target, expected } of definition.requiresValue) {
+    if (
+      state.provided.has(source)
+      && (!state.provided.has(target) || !matchesRelationValue(state.values[target], expected))
+    ) {
+      throw commandError(
+        ErrorKind.MissingDependency,
+        `argument '${displayName(definition, source)}' requires '${displayName(definition, target)}' with value '${String(expected)}'`,
+        definition,
+        path,
+        inheritedArguments,
+        { argumentName: target, relatedArguments: [source] },
+      );
+    }
+  }
   for (const { source, expected, target } of definition.conditionalRequirements) {
     if (
       matchesRelationValue(state.values[source], expected)

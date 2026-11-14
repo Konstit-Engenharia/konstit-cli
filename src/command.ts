@@ -17,6 +17,7 @@ import {
   renderHelp,
   renderUsageText,
 } from './command/help.js';
+import type { OutputWriter } from './command/output.js';
 import {
   parseConfigured,
   tryParseConfigured,
@@ -60,6 +61,10 @@ export type HandlerResult = void | number;
 export interface HandlerContext {
   /** The selected command path, from the root command to the handler. */
   readonly commandPath: readonly string[];
+  /** Writes a raw chunk to the configured standard output. */
+  readonly stdout: (chunk: string) => Promise<void>;
+  /** Writes a raw chunk to the configured standard error. */
+  readonly stderr: (chunk: string) => Promise<void>;
   /** Gets a global argument declared by the selected command or an ancestor. */
   global<ArgumentType extends AnyGlobalArgument>(
     argument: ArgumentType,
@@ -823,6 +828,14 @@ type ConditionalArgumentRelation<Fields extends object> = {
   ];
 }[StringKeyOf<Fields>];
 
+type RequiredValueRelation<Fields extends object> = {
+  [Target in StringKeyOf<Fields>]: readonly [
+    source: Exclude<StringKeyOf<Fields>, Target>,
+    target: Target,
+    expected: RelationValue<Fields[Target]>,
+  ];
+}[StringKeyOf<Fields>];
+
 type ConditionalSetRelation<Fields extends object> = {
   [Target in StringKeyOf<Fields>]: {
     readonly conditions: NonEmptyTuple<FieldCondition<Fields, Target>>;
@@ -1021,6 +1034,8 @@ export interface CommandOptions<
   readonly requiresIf?: readonly ConditionalArgumentRelation<
     FieldsFromArguments<Arguments>
   >[];
+  /** Requires a supplied target matching the expected value whenever its source is present. */
+  readonly requiresValue?: readonly RequiredValueRelation<FieldsFromArguments<Arguments>>[];
   /** Requires a target whenever any configured condition matches. */
   readonly requiredIfAny?: readonly ConditionalSetRelation<
     FieldsFromArguments<Arguments>
@@ -1099,6 +1114,7 @@ function emptyCommand<const Name extends string>(
     subcommands: Object.freeze([]),
     requirements: Object.freeze([]),
     conditionalRequirements: Object.freeze([]),
+    requiresValue: Object.freeze([]),
     conditionalSetRequirements: Object.freeze([]),
     requiredUnless: Object.freeze([]),
     requiredUnlessAll: Object.freeze([]),
@@ -1232,6 +1248,11 @@ export function command(
   }
 
   validateCommandRelations(options, getCommandDefinition(configured));
+  if (options.requiresValue !== undefined) {
+    configured = new Command(copyCommand(getCommandDefinition(configured), {
+      requiresValue: options.requiresValue.map(([source, target, expected,]) => ({ source, target, expected })),
+    }));
+  }
   if (options.defaultIf !== undefined) {
     const defaultIf = options.defaultIf as readonly {
       readonly source: string;
@@ -1367,10 +1388,10 @@ function terminalCommand(configured: InternalTerminalCommand): HandledCommand {
 export interface RunParsedOptions {
   /** Receives deprecation warnings instead of writing them to stderr. */
   readonly onWarning?: (warning: DeprecationWarning) => void;
-  /** Receives help and version output. run() also writes completion output here. */
-  readonly stdout?: (output: string) => void;
-  /** Receives user-facing parse errors. */
-  readonly stderr?: (output: string) => void;
+  /** Receives handler output, help, and version text. run() also writes completion output here. */
+  readonly stdout?: OutputWriter;
+  /** Receives handler error output, parse errors, and deprecation warnings. */
+  readonly stderr?: OutputWriter;
   /** Controls ANSI styling. Parsed argument values are unchanged. */
   readonly color?: boolean;
   /** Overrides parse-failure exit codes with an integer from 1 to 255. Defaults to CliError.exitCode (2). */

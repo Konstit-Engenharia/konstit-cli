@@ -21,6 +21,7 @@ import {
   type EnumValue,
   type Infer,
   type KeyValuePair,
+  type OutputWriter,
   type ParseOutcome,
   type RunOptions,
   type RunParsedOptions,
@@ -43,6 +44,11 @@ const child = command('deploy', {
     option('region', parsers.enum(['us', 'eu']), { required: true }),
     flag('dryRun'),
   ],
+  requiresValue: [['dryRun', 'region', 'us']],
+  handler: async ({ region }, { stdout }) => {
+    const written: Promise<void> = stdout(region);
+    await written;
+  },
 });
 const cli = command('tool', {
   args: [
@@ -93,7 +99,9 @@ const script: string = generateCompletion(
 const errorType: typeof CliError = CliError;
 
 void (() => {
-  const options: RunParsedOptions = { parseErrorExitCode: 1, color: false };
+  const chunks: string[] = [];
+  const stderr: OutputWriter = (text) => Promise.resolve(chunks.push(text));
+  const options: RunParsedOptions = { parseErrorExitCode: 1, color: false, stderr };
   const runOptions: RunOptions = { ...options, argv: [] };
   const executed: Promise<number> = cli.runParsed(outcome, options);
   const attempted: Promise<number> = cli.runParsed(cli.tryParse([]), options);

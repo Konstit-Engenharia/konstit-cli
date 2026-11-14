@@ -153,6 +153,8 @@ export interface CommandMetadata {
   readonly subcommands: readonly CommandMetadata[];
   readonly requirements: readonly RequirementMetadata[];
   readonly conditionalRequirements: readonly ConditionalRequirementMetadata[];
+  /** Each provided source requires its target to match the expected value. */
+  readonly requiresValue: readonly ConditionalRequirementMetadata[];
   readonly defaultIf: readonly ConditionalDefaultMetadata[];
   readonly conditionalSetRequirements: readonly ConditionalSetRequirementMetadata[];
   readonly requiredUnless: readonly RequiredUnlessMetadata[];
@@ -370,6 +372,7 @@ function describeRelations(
   CommandMetadata,
   | 'requirements'
   | 'conditionalRequirements'
+  | 'requiresValue'
   | 'defaultIf'
   | 'conditionalSetRequirements'
   | 'requiredUnless'
@@ -396,16 +399,20 @@ function describeRelations(
         ...(safeValue === undefined ? {} : { value: safeValue }),
       });
     });
-  const conditionalRequirements = definition.conditionalRequirements
-    .filter(({ source, target }) => isVisible(source) && isVisible(target))
-    .map(({ source, target, expected }) => {
-      const safeExpected = toMetadataValue(expected);
-      return Object.freeze({
-        source,
-        target,
-        ...(safeExpected === undefined ? {} : { expected: safeExpected }),
-      });
-    });
+  function describeExpectedValues(rules: CommandDefinition['conditionalRequirements']): readonly ConditionalRequirementMetadata[] {
+    return Object.freeze(
+      rules
+        .filter(({ source, target }) => isVisible(source) && isVisible(target))
+        .map(({ source, target, expected }) => {
+          const safeExpected = toMetadataValue(expected);
+          return Object.freeze({
+            source,
+            target,
+            ...(safeExpected === undefined ? {} : { expected: safeExpected }),
+          });
+        }),
+    );
+  }
   const conditionalSetRequirements = definition.conditionalSetRequirements
     .map(({ target, conditions, match }) => {
       if (!isVisible(target) || conditions.some(({ source }) => !isVisible(source))) {
@@ -465,7 +472,8 @@ function describeRelations(
   return {
     requirements: Object.freeze(requirements),
     defaultIf: Object.freeze(defaultIf),
-    conditionalRequirements: Object.freeze(conditionalRequirements),
+    conditionalRequirements: describeExpectedValues(definition.conditionalRequirements),
+    requiresValue: describeExpectedValues(definition.requiresValue),
     conditionalSetRequirements: Object.freeze(conditionalSetRequirements),
     requiredUnless: Object.freeze(requiredUnless),
     requiredUnlessAll: Object.freeze(requiredUnlessAll),
@@ -702,6 +710,9 @@ function relationDescriptions(command: CommandMetadata): readonly string[] {
   }
   for (const { source, target, expected } of command.conditionalRequirements) {
     lines.push(`${markdownInline(source)} = ${formatMarkdownValue(expected)} requires ${markdownInline(target)}`);
+  }
+  for (const { source, target, expected } of command.requiresValue) {
+    lines.push(`${markdownInline(source)} requires ${markdownInline(target)} = ${formatMarkdownValue(expected)}`);
   }
   for (const { target, conditions, match } of command.conditionalSetRequirements) {
     const conditionText = conditions

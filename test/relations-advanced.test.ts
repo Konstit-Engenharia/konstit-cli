@@ -24,6 +24,61 @@ function parse<Value>(
 }
 
 describe('advanced argument relations', () => {
+  test('requires the final parsed target value consistently across entry points', async () => {
+    const archive = command('read', {
+      args: [
+        option('entry'),
+        option('compression', parsers.enum([{ value: 'zip', aliases: ['ZIP'] }, 'gzip'])),
+      ],
+      argsOverrideSelf: true,
+      requiresValue: [['entry', 'compression', 'zip']],
+      handler: () => 0,
+    });
+    const cli = command('archive', { subcommands: [archive] });
+    const entry = ['read', '--entry', 'rows.csv'];
+    expect(cli.tryParse(['read', '--compression', 'gzip']).ok).toBe(true);
+    expect(cli.tryParse([...entry, '--compression', 'gzip', '--compression', 'ZIP']).ok).toBe(true);
+    for (const argv of [entry, [...entry, '--compression', 'zip', '--compression', 'gzip']]) {
+      const result = cli.tryParse(argv);
+      expect(result).toMatchObject({
+        type: 'error',
+        error: {
+          kind: ErrorKind.MissingDependency,
+          commandPath: ['archive', 'read'],
+          argumentName: 'compression',
+          relatedArguments: ['entry'],
+          message: 'argument \'--entry\' requires \'--compression\' with value \'zip\'',
+        },
+      });
+      if (result.type === 'error') {
+        expect(() => cli.parse(argv)).toThrow(result.error.message);
+        const errors: string[] = [];
+        const options = { color: false, stderr: (chunk: string) => errors.push(chunk) };
+        expect(await cli.run({ ...options, argv })).toBe(2);
+        expect(await cli.runParsed(result, options)).toBe(2);
+        expect(errors).toEqual([result.error.output, result.error.output]);
+      }
+    }
+  });
+
+  test('uses supplied arguments after overrides and matches any collected target value', () => {
+    const cli = command('archive', {
+      args: [
+        flag('select'),
+        option('formats', parsers.enum(['zip', 'gzip']), { repeatable: true, defaultValues: ['zip'] }),
+        flag('reset'),
+      ],
+      requiresValue: [['select', 'formats', 'zip']],
+      overrides: [['reset', 'formats']],
+    });
+    expect(cli.tryParse([]).ok).toBe(true);
+    expect(cli.tryParse(['--select']).ok).toBe(false);
+    expect(cli.tryParse(['--select', '--formats', 'gzip', '--formats', 'zip']).ok).toBe(true);
+    expect(cli.tryParse(['--select', '--formats', 'zip', '--reset']).ok).toBe(false);
+    expect(cli.tryParse([], { config: { values: { select: true, formats: ['gzip'] } } }).ok).toBe(false);
+    expect(cli.tryParse(['--select'], { config: { values: { formats: ['zip'] } } }).ok).toBe(true);
+  });
+
   const conditional = command('conditional', {
     args: [
       option('format', parsers.enum(['json', 'yaml'])),

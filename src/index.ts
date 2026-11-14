@@ -27,6 +27,7 @@ export {
   type RunOptions,
   type RunParsedOptions,
 } from './command.js';
+export type { OutputWriter } from './command/output.js';
 export { type CompletionShell, completionShells, isCompletionShell } from './completion-shell.js';
 export { type DeprecationWarning, getWarnings } from './deprecation.js';
 export {

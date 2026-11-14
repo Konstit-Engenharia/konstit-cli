@@ -33,13 +33,7 @@ describe('completion edge behavior', () => {
         }),
       ],
     });
-    let output = '';
-    const write = spyOn(process.stdout, 'write').mockImplementation(
-      ((chunk: string | Uint8Array) => {
-        output += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString();
-        return true;
-      }) as typeof process.stdout.write,
-    );
+    const write = spyOn(Bun, 'write').mockResolvedValue(0);
     try {
       expect(
         await withDynamicCompletion(() =>
@@ -48,10 +42,10 @@ describe('completion edge behavior', () => {
           })
         ),
       ).toBe(0);
+      expect(write).toHaveBeenCalledWith(Bun.stdout, '7265616374\t\n7265646973\t\n');
     } finally {
       write.mockRestore();
     }
-    expect(output).toBe('7265616374\t\n7265646973\t\n');
   });
 
   test('writes nothing when a request has no candidates', async () => {
@@ -67,6 +61,15 @@ describe('completion edge behavior', () => {
       ),
     ).toBe(0);
     expect(output).toBe('untouched');
+  });
+
+  test('awaits the completion writer and propagates its rejection through run', async () => {
+    const cli = command('tool', { args: [flag('force')] });
+    const failure = new Error('completion write failed');
+    const write = () => Promise.reject(failure);
+    const result = withDynamicCompletion(() => cli.run({ argv: ['--f'], stdout: write }));
+    // oxlint-disable-next-line typescript/await-thenable -- Bun async matchers must be awaited.
+    await expect(result).rejects.toBe(failure);
   });
 
   test('covers shell quoting, path registration, aliases, and positional values', () => {

@@ -761,21 +761,31 @@ describe('command coverage', () => {
     });
   });
 
-  test('uses the default console writers for control output', async () => {
-    const log = spyOn(console, 'log').mockImplementation(() => {});
-    const error = spyOn(console, 'error').mockImplementation(() => {});
+  test('writes terminal messages with one trailing newline and preserves raw handler chunks', async () => {
+    const write = spyOn(Bun, 'write').mockResolvedValue(0);
     try {
-      const cli = command('tool', { handler: () => {} });
+      const cli = command('tool', {
+        overrideHelp: 'Custom help  \n\n',
+        handler: async (_args, { stdout, stderr }) => {
+          await stdout('a  ');
+          await stderr('\n\n');
+        },
+      });
       expect(await cli.run({ argv: ['--help'], color: false })).toBe(0);
-      expect(log).toHaveBeenCalledWith(expect.stringContaining('Usage: tool'));
+      expect(write).toHaveBeenCalledWith(Bun.stdout, 'Custom help\n');
 
       expect(await cli.run(['--unknown'])).toBe(2);
-      expect(error).toHaveBeenCalledWith(expect.stringContaining(
-        'unexpected argument \'--unknown\'',
-      ));
+      expect(write).toHaveBeenCalledWith(
+        Bun.stderr,
+        expect.stringContaining(
+          'unexpected argument \'--unknown\'',
+        ),
+      );
+      expect(await cli.run([])).toBe(0);
+      expect(write).toHaveBeenCalledWith(Bun.stdout, 'a  ');
+      expect(write).toHaveBeenCalledWith(Bun.stderr, '\n\n');
     } finally {
-      log.mockRestore();
-      error.mockRestore();
+      write.mockRestore();
     }
   });
 

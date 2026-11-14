@@ -62,10 +62,10 @@ const serve = command('serve', {
     color,
     positional('root', parsers.string, { required: true }),
   ],
-  handler: async ({ port, host, open, verbose, color, root }) => {
+  handler: async ({ port, host, open, verbose, color, root }, { stdout }) => {
     // port: number; host: string; open: boolean
     // verbose: number; color: boolean; root: string
-    console.log(`Serving ${root} on ${host}:${port}`);
+    await stdout(`Serving ${root} on ${host}:${port}\n`);
   },
 });
 
@@ -109,6 +109,7 @@ options object.
 | `hide`                        | Hide this command from parent help and completion.                      |
 | `requires`                    | Unconditional argument dependencies.                                    |
 | `requiresIf`                  | Single-value conditional dependencies.                                  |
+| `requiresValue`               | Require another argument with a specific parsed value.                  |
 | `requiredIfAny`               | Dependencies activated by any matching condition.                       |
 | `requiredIfAll`               | Dependencies activated by all matching conditions.                      |
 | `requiredUnlessPresent`       | Require a target unless one alternative is present.                     |
@@ -185,6 +186,19 @@ executes the supplied result.
 
 Each command path that can be selected by `run()` needs a handler. Set
 `subcommandRequired: true` when only subcommands are runnable.
+
+Handlers can `await context.stdout(chunk)` and `await context.stderr(chunk)`.
+Both methods return `Promise<void>` and write the exact string, including
+trailing whitespace. Supply a newline when writing a line. Pass `stdout` and
+`stderr` callbacks to either runner to capture or redirect those same chunks.
+An `OutputWriter` can return synchronously or return a promise, including a
+promise for a byte count. Await each write before producing the next chunk
+when streaming output.
+
+`run()` and `runParsed()` finish their own writes before returning an exit
+code. Deprecation warnings finish in order before a handler runs or a parse
+error is printed. `run()` also waits for dynamic completion output. A writer
+that throws or rejects propagates its error to the awaiting caller.
 
 Use `renderHelp()` and `renderUsage()` when output must be generated without
 parsing arguments.
@@ -608,8 +622,9 @@ A custom parser can throw an `Error`. The library converts it to a structured
 
 ## Relations and groups
 
-Relation names are checked against the `args` tuple. Conditional expected
-values are checked against the source parser type.
+Relation names are checked against the `args` tuple. In `requiresIf` the
+expected value takes the source parser's type. In `requiresValue` it takes
+the target parser's type.
 
 ```ts
 const release = command('release', {
@@ -627,6 +642,7 @@ const release = command('release', {
   conflicts: [['major', 'minor']],
   requires: [['token', 'dry-run']],
   requiresIf: [['format', 'json', 'schema']],
+  requiresValue: [['schema', 'format', 'json']],
   requiredIfAny: [{
     conditions: [['format', 'json'], ['dry-run', true]],
     target: 'schema',
@@ -656,6 +672,14 @@ Each conflict entry makes its members mutually exclusive. Each `exclusive`
 argument conflicts with every other supplied argument. A group allows one
 member by default. Set `multiple: true` to allow more than one. Group
 `requires` and `conflicts` activate when any member is present.
+
+In the example, `--format json` requires `--schema`, and supplying
+`--schema` requires `--format json`. Supplying `--schema` with a missing
+format or with `--format text` produces a `MissingDependency` error.
+As with `requires`, CLI, environment,
+and config values count as supplied. Defaults alone neither activate the
+source nor satisfy the target. The comparison uses the parsed target after
+overrides. For an array, any matching element satisfies the rule.
 
 `overrides` evaluates source presence from a snapshot of the arguments supplied
 on the CLI before any target is cleared. Every override relation uses that same

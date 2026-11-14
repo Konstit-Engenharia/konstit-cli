@@ -102,7 +102,7 @@ describe('color flag', () => {
   });
 
   test('detects terminal color when help uses the default writer', async () => {
-    const log = spyOn(console, 'log').mockImplementation(() => {});
+    const write = spyOn(Bun, 'write').mockResolvedValue(0);
     try {
       for (
         const environment of [
@@ -115,12 +115,12 @@ describe('color flag', () => {
           expect(await command('tool').run({ argv: ['--help'] })).toBe(0);
         });
       }
-      expect(log).toHaveBeenCalledTimes(3);
-      expect(log.mock.calls[0]?.[0]).toContain('\x1b[');
-      expect(log.mock.calls[1]?.[0]).not.toContain('\x1b[');
-      expect(log.mock.calls[2]?.[0]).not.toContain('\x1b[');
+      expect(write).toHaveBeenCalledTimes(3);
+      expect(write).toHaveBeenNthCalledWith(1, Bun.stdout, expect.stringContaining('\x1b['));
+      expect(write).toHaveBeenNthCalledWith(2, Bun.stdout, expect.not.stringContaining('\x1b['));
+      expect(write).toHaveBeenNthCalledWith(3, Bun.stdout, expect.not.stringContaining('\x1b['));
     } finally {
-      log.mockRestore();
+      write.mockRestore();
     }
   });
 
@@ -235,8 +235,7 @@ describe('color flag', () => {
       args: [colorFlag('color')],
       handler: () => {},
     });
-    const log = spyOn(console, 'log').mockImplementation(() => {});
-    const error = spyOn(console, 'error').mockImplementation(() => {});
+    const write = spyOn(Bun, 'write').mockResolvedValue(0);
     try {
       await withColorEnvironment({
         noColor: null,
@@ -246,12 +245,11 @@ describe('color flag', () => {
       }, async () => {
         expect(await cli.run(['--help'])).toBe(0);
         expect(await cli.run(['--unknown'])).toBe(2);
-        expect(log).toHaveBeenCalledWith(expect.stringContaining('\x1b['));
-        expect(error).toHaveBeenCalledWith(expect.not.stringContaining('\x1b['));
+        expect(write).toHaveBeenCalledWith(Bun.stdout, expect.stringContaining('\x1b['));
+        expect(write).toHaveBeenCalledWith(Bun.stderr, expect.not.stringContaining('\x1b['));
       });
 
-      log.mockClear();
-      error.mockClear();
+      write.mockClear();
       await withColorEnvironment({
         noColor: null,
         term: 'xterm-256color',
@@ -260,8 +258,8 @@ describe('color flag', () => {
       }, async () => {
         expect(await cli.run(['--help'])).toBe(0);
         expect(await cli.run(['--unknown'])).toBe(2);
-        expect(log).toHaveBeenCalledWith(expect.not.stringContaining('\x1b['));
-        expect(error).toHaveBeenCalledWith(expect.stringContaining('\x1b['));
+        expect(write).toHaveBeenCalledWith(Bun.stdout, expect.not.stringContaining('\x1b['));
+        expect(write).toHaveBeenCalledWith(Bun.stderr, expect.stringContaining('\x1b['));
       });
 
       const help: string[] = [];
@@ -302,8 +300,7 @@ describe('color flag', () => {
       expect(help[0]).not.toContain('\x1b[');
       expect(errors[0]).not.toContain('\x1b[');
     } finally {
-      log.mockRestore();
-      error.mockRestore();
+      write.mockRestore();
     }
   });
 

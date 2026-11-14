@@ -38,6 +38,9 @@ export function copyCommand(
     conditionalRequirements: Object.freeze(
       merged.conditionalRequirements.map((requirement) => Object.freeze({ ...requirement })),
     ),
+    requiresValue: Object.freeze(
+      merged.requiresValue.map((requirement) => Object.freeze({ ...requirement })),
+    ),
     conditionalSetRequirements: Object.freeze(
       merged.conditionalSetRequirements.map((requirement) =>
         Object.freeze({

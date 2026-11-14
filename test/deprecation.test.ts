@@ -225,10 +225,11 @@ test('preserves warnings for parse failures and emits them before execution or e
   expect(stderr[1]).toContain('Use --listen.');
   expect(stderr[2]).toContain('error:');
   expect(await cli.run({ argv: [], onWarning: () => {} })).toBe(0);
-  const output = spyOn(console, 'error').mockImplementation(() => {});
+  const output = spyOn(Bun, 'write').mockResolvedValue(0);
   try {
     expect(await cli.run([])).toBe(0);
     expect(output).toHaveBeenCalledTimes(1);
+    expect(output).toHaveBeenCalledWith(Bun.stderr, expect.stringContaining('warning:'));
   } finally {
     output.mockRestore();
   }

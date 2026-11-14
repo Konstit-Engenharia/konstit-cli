@@ -528,4 +528,12 @@ void (() => {
     // @ts-expect-error conditional relation names must exist
     requiredUnlessPresent: [{ alternatives: ['offline'], target: 'missing' }],
   });
+  const valueArgs = [option('entry'), option('format', parsers.enum(['zip', 'gzip']))] as const;
+  command('archive', { args: valueArgs, requiresValue: [['entry', 'format', 'zip']] });
+  // @ts-expect-error expected values match the target parser
+  command('archive', { args: valueArgs, requiresValue: [['entry', 'format', 'text']] });
+  // @ts-expect-error source and target must be different arguments
+  command('archive', { args: valueArgs, requiresValue: [['format', 'format', 'zip']] });
+  // @ts-expect-error both argument names must exist
+  command('archive', { args: valueArgs, requiresValue: [['missing', 'format', 'zip']] });
 });

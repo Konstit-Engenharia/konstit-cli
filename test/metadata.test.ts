@@ -165,6 +165,7 @@ describe('command metadata', () => {
       ],
       requires: [['source', 'target']],
       requiresIf: [['source', 'ready', 'target']],
+      requiresValue: [['source', 'target', 'enabled'], ['hidden', 'target', 'all']],
       requiredIfAny: [{ conditions: [['source', 'yes'], ['hidden', 'yes']], target: 'target' }],
       requiredIfAll: [{ conditions: [['source', 'yes']], target: 'target' }],
       requiredUnlessPresent: [{ alternatives: ['source'], target: 'target' }],
@@ -187,6 +188,9 @@ describe('command metadata', () => {
       { source: 'source', target: 'target', expected: 'ready' },
     ]);
     expect(metadata.conditionalSetRequirements).toHaveLength(1);
+    expect(metadata.requiresValue).toEqual([{ source: 'source', target: 'target', expected: 'enabled' }]);
+    expect(Object.isFrozen(metadata.requiresValue)).toBe(true);
+    expect(describeCommand(cli, { includeHidden: true }).requiresValue).toHaveLength(2);
     expect(metadata.requiredUnless).toEqual([{ target: 'target', alternatives: ['source'] }]);
     expect(metadata.requiredUnlessAll).toEqual([{ target: 'target', alternatives: ['source'] }]);
     expect(metadata.overrides).toEqual([{ source: 'source', target: 'target' }]);
@@ -218,7 +222,7 @@ describe('command metadata', () => {
 
     const relationMarkdown = renderMarkdown(cli, { includeHidden: true, title: 'Relations `manual`' });
     const relationMan = renderManPage(cli, { includeHidden: true });
-    expect(relationMarkdown).toContain('requires');
+    expect(relationMarkdown).toContain('`source` requires `target` = `enabled`');
     expect(relationMan).toContain('.SH RELATIONS');
   });
 
