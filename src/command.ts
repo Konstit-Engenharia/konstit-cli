@@ -57,6 +57,7 @@ export { getCommandDefinition };
 export type { CommandDefinition };
 export type { CommandConfig, ConfigValue, ParseOptions } from './command/config.js';
 
+/** A handler exit code from 0 to 255, or no return value for exit code 0. */
 // biome-ignore lint/suspicious/noConfusingVoidType: Handlers intentionally support callbacks with no return value.
 export type HandlerResult = void | number;
 
@@ -89,12 +90,15 @@ type StringKeyOf<Value> = Extract<keyof Value, string>;
 type RelationValue<Value> = Exclude<Value, undefined> extends readonly (infer Item)[] ? Item
   : Exclude<Value, undefined>;
 
+/** Compares an argument to a value or collection item of the appropriate type. */
 type FieldCondition<
   Fields extends object,
   Excluded extends StringKeyOf<Fields>,
 > = {
   [Source in Exclude<StringKeyOf<Fields>, Excluded>]: readonly [
+    /** The argument whose value is checked. */
     source: Source,
+    /** The expected value or collection item. */
     expected: RelationValue<Fields[Source]>,
   ];
 }[Exclude<StringKeyOf<Fields>, Excluded>];
@@ -113,23 +117,29 @@ type DuplicateGroup<Name extends string> = {
 
 type EmptyObject = Record<never, never>;
 
+/** The parsed data for a selected subcommand. */
 type ParsedSubcommand<Subcommands extends Record<string, unknown>> = {
   [Name in StringKeyOf<Subcommands>]: Subcommands[Name] extends AnyCommand ? {
+      /** The canonical name of the selected subcommand. */
       readonly name: Name;
+      /** The subcommand's parsed arguments and any nested selection. */
       readonly args: Infer<Subcommands[Name]>;
     }
     : never;
 }[StringKeyOf<Subcommands>];
 
+/** The selection field added to parsed values for commands with subcommands. */
 type SubcommandField<
   Subcommands extends Record<string, unknown>,
   Required extends boolean,
 > = StringKeyOf<Subcommands> extends never ? EmptyObject
   : {
+    /** The selected subcommand, or undefined when selection is optional and absent. */
     readonly subcommand: Required extends true ? ParsedSubcommand<Subcommands>
       : ParsedSubcommand<Subcommands> | undefined;
   };
 
+/** Parsed argument fields combined with any subcommand selection. */
 type CommandArguments<
   Fields extends object,
   Subcommands extends Record<string, unknown>,
@@ -146,6 +156,7 @@ export interface CommandType<
   out SubcommandRequired extends boolean = boolean,
   out Groups extends string = string,
 > {
+  /** Carries the command's inferred schema types. */
   readonly [commandTypeKey]: readonly [
     Name,
     Fields,
@@ -155,6 +166,7 @@ export interface CommandType<
   ];
 }
 
+/** A configured command with any argument and subcommand schema. */
 export type AnyCommand = CommandType;
 
 /** A terminal command schema that can parse, render, and run. */
@@ -169,9 +181,9 @@ export interface HandledCommand<
   parse(argv: readonly string[], options?: ParseOptions): ParseOutcome<Infer<this>>;
   /** Parses argv without exceptions for expected CLI outcomes. */
   tryParse(argv: readonly string[], options?: ParseOptions): ParseResult<Infer<this>>;
-  /** Parses argv and runs the deepest configured handler. */
+  /** Parses argv and returns the exit code after handling the result. */
   run(argv?: readonly string[]): Promise<number>;
-  /** Parses configured argv and runs the deepest configured handler. */
+  /** Parses configured argv, handles the result using the supplied options, and returns the exit code. */
   run(options?: RunOptions): Promise<number>;
   /** Executes a result from this command's parse or tryParse without parsing again. */
   runParsed(result: ParseResult<Infer<this>>, options?: RunParsedOptions): Promise<number>;
@@ -181,7 +193,7 @@ export interface HandledCommand<
   renderUsage(): string;
 }
 
-/** Gets the exact result returned by a configured Command. */
+/** Gets the parsed argument and subcommand value type for a configured command. */
 export type Infer<ConfiguredCommand extends AnyCommand> = ConfiguredCommand extends CommandType<
   infer _Name,
   infer Fields,
@@ -820,51 +832,73 @@ type SubcommandsFromTuple<Subcommands extends readonly AnyCommand[]> = Simplify<
 type NonEmptyTuple<Value> = readonly [Value, ...Value[]];
 type AtLeastTwoTuple<Value> = readonly [Value, Value, ...Value[]];
 
+/** A relation between two distinct arguments. */
 type BinaryArgumentRelation<Fields extends object> = {
   [Source in StringKeyOf<Fields>]: readonly [
+    /** The argument that triggers the relation. */
     source: Source,
+    /** The argument affected by the relation. */
     target: Exclude<StringKeyOf<Fields>, Source>,
   ];
 }[StringKeyOf<Fields>];
 
+/** Requires an argument when another argument matches an expected value. */
 type ConditionalArgumentRelation<Fields extends object> = {
   [Source in StringKeyOf<Fields>]: readonly [
+    /** The argument whose value is checked. */
     source: Source,
+    /** The expected source value or collection item. */
     expected: RelationValue<Fields[Source]>,
+    /** The argument required when the source matches. */
     target: Exclude<StringKeyOf<Fields>, Source>,
   ];
 }[StringKeyOf<Fields>];
 
+/** Requires an argument with a matching value when another argument is supplied. */
 type RequiredValueRelation<Fields extends object> = {
   [Target in StringKeyOf<Fields>]: readonly [
+    /** The argument that triggers the requirement. */
     source: Exclude<StringKeyOf<Fields>, Target>,
+    /** The argument that must be supplied with a matching value. */
     target: Target,
+    /** The expected target value or collection item. */
     expected: RelationValue<Fields[Target]>,
   ];
 }[StringKeyOf<Fields>];
 
+/** Requires an argument when its configured set of conditions matches. */
 type ConditionalSetRelation<Fields extends object> = {
   [Target in StringKeyOf<Fields>]: {
+    /** One or more argument and expected-value pairs. */
     readonly conditions: NonEmptyTuple<FieldCondition<Fields, Target>>;
+    /** The argument required when the conditions match. */
     readonly target: Target;
   };
 }[StringKeyOf<Fields>];
 
+/** Requires an argument unless the supplied alternatives satisfy the rule. */
 type RequiredUnlessRelation<Fields extends object> = {
   [Target in StringKeyOf<Fields>]: {
+    /** Arguments whose presence can waive the requirement. */
     readonly alternatives: NonEmptyTuple<
       Exclude<StringKeyOf<Fields>, Target>
     >;
+    /** The argument required when the alternatives do not satisfy the rule. */
     readonly target: Target;
   };
 }[StringKeyOf<Fields>];
 
+/** Supplies a fallback value based on another argument. */
 type ConditionalDefaultRelation<Fields extends object> = {
   [Source in StringKeyOf<Fields>]: {
     [Target in Exclude<StringKeyOf<Fields>, Source>]: {
+      /** The argument that triggers the fallback. */
       readonly source: Source;
+      /** The expected source value or collection item. Omit to check whether the source was supplied. */
       readonly equals?: RelationValue<Fields[Source]>;
+      /** The argument that receives the fallback. */
       readonly target: Target;
+      /** The fallback in the target's parsed value type. */
       readonly value: Exclude<Fields[Target], undefined>;
     };
   }[Exclude<StringKeyOf<Fields>, Source>];
@@ -1087,6 +1121,7 @@ export interface CommandOptions<
   >;
 }
 
+/** Command options with compile-time checks for uniqueness and group membership. */
 type CheckedCommandOptions<
   Arguments extends readonly AnyArgument[],
   Subcommands extends readonly AnyCommand[],
@@ -1104,9 +1139,13 @@ type CheckedCommandOptions<
     : unknown
     : unknown)
   & {
+    /** Arguments in declaration order, with unique names. */
     readonly args?: Arguments & UniqueArguments<Arguments>;
+    /** Subcommands in declaration order, with unique names. */
     readonly subcommands?: Subcommands & UniqueSubcommands<Subcommands>;
+    /** Requires selecting one of the configured subcommands. */
     readonly subcommandRequired?: SubcommandRequired;
+    /** Named argument groups and their dependency and conflict rules. */
     readonly groups?: Groups & CheckedGroups<Groups>;
   };
 
@@ -1405,8 +1444,9 @@ export interface RunParsedOptions extends ConsoleOptions {
   readonly parseErrorExitCode?: number;
 }
 
+/** Options for parsing argv and handling the result in one call. */
 export interface RunOptions extends RunParsedOptions {
-  /** Arguments to parse. Defaults to Bun.argv without the executable. */
+  /** Arguments to parse. Defaults to `Bun.argv.slice(2)`. */
   readonly argv?: readonly string[];
   /** Controls ANSI styling and the automatic color-flag value. */
   readonly color?: boolean;

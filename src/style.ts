@@ -18,28 +18,41 @@ import {
 
 /** CSS colors and text attributes rendered for one output stream. */
 export interface StyleOptions {
+  /** The output stream whose color settings apply. Defaults to stdout. */
   readonly stream?: 'stdout' | 'stderr';
+  /** The foreground CSS color. */
   readonly color?: string;
+  /** The background CSS color. */
   readonly background?: string;
+  /** Renders the text in bold. */
   readonly bold?: boolean;
+  /** Renders the text at reduced intensity. */
   readonly dim?: boolean;
+  /** Renders the text in italics. */
   readonly italic?: boolean;
+  /** Underlines the text. */
   readonly underline?: boolean;
+  /** Swaps the foreground and background colors. */
   readonly inverse?: boolean;
 }
 
 /** The numeric filesystem metadata used by LS_COLORS classification. */
 export interface FileStat {
+  /** The file type and permission bits from stat or lstat. */
   readonly mode: number;
+  /** The hard link count, used to distinguish files with multiple links. */
   readonly nlink?: number;
 }
 
+/** Options for choosing how a path is displayed and styled. */
 export interface PathStyleOptions {
+  /** The output stream whose color settings apply. Defaults to stdout. */
   readonly stream?: 'stdout' | 'stderr';
   /** Displayed text. Matching always uses the original path's basename. */
   readonly label?: string;
 }
 
+/** Path styling options for callers that supply filesystem metadata. */
 export interface FileStyleOptions extends PathStyleOptions {
   /** lstat metadata, null for a missing path, or omitted for suffix-only matching. */
   readonly stats?: FileStat | null;
@@ -49,6 +62,7 @@ export interface FileStyleOptions extends PathStyleOptions {
 
 /** Formatting bound to the current runner's color policies and LS_COLORS snapshot. */
 export interface Style {
+  /** Applies CSS colors and text attributes when styling is enabled for the selected stream. */
   (text: string, options: StyleOptions): string;
   /** Formats a filename using supplied metadata without filesystem access. */
   file(path: string, options?: FileStyleOptions): string;

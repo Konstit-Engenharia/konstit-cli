@@ -8,14 +8,15 @@ export type ValueSource = 'cli' | 'env' | 'config' | 'default';
 
 const sourcesByValue = new WeakMap<object, ReadonlyMap<string, ValueSource>>();
 
+/** The string keys available on a parsed value object. */
 type ParsedArgumentName<Values extends object> = Extract<keyof Values, string>;
 
-/** Returns the source of an argument in a parsed value, when one supplied it. */
+/** Looks up the source of a named argument on the `value` of a successful parse. */
 export function getValueSource<Values extends object>(
   parsedValue: Values,
   argumentName: ParsedArgumentName<Values>,
 ): ValueSource | undefined;
-/** Looks up an inherited argument by its declaration identity. */
+/** Looks up the source of a parsed value using the configured argument's name. */
 export function getValueSource(
   parsedValue: object,
   argument: AnyArgument,

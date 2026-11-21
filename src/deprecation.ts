@@ -1,10 +1,16 @@
 /** A warning collected while parsing a deprecated command, argument, or alias. */
 export interface DeprecationWarning {
+  /** The warning discriminator. */
   readonly kind: 'deprecated';
+  /** The kind of CLI declaration that triggered the warning. */
   readonly target: 'command' | 'argument' | 'alias';
+  /** The declaration name or deprecated alias spelling. */
   readonly name: string;
+  /** The deprecation guidance configured for the declaration or alias. */
   readonly message: string;
+  /** Canonical command names from the root to the command where the warning arose. */
   readonly commandPath: readonly string[];
+  /** The canonical argument name for an argument or argument-alias warning. */
   readonly argumentName?: string;
 }
 

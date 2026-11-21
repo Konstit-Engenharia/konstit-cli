@@ -1,3 +1,4 @@
+/** The shell identifiers accepted by the completion generator. */
 export const completionShells = Object.freeze(
   [
     'bash',
@@ -7,6 +8,7 @@ export const completionShells = Object.freeze(
   ] as const,
 );
 
+/** A shell supported by the completion generator. */
 export type CompletionShell = (typeof completionShells)[number];
 
 /** Narrows an untrusted string to a supported completion shell. */

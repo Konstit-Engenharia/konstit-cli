@@ -25,14 +25,15 @@ export {
   resolveDynamicCompletion,
 } from './dynamic-completion.js';
 
+/** Settings for generating a shell completion script. */
 export interface CompletionOptions {
-  /** Command name or path users enter in the shell. Defaults to Command.name. */
+  /** Command name or path users enter in the shell. Defaults to the configured command name. */
   readonly executable?: string;
-  /** Generates a script that asks the running CLI for async candidates. */
+  /** Invokes the CLI to resolve candidates at completion time. Defaults to false. */
   readonly dynamic?: boolean;
 }
 
-/** Environment marker set by generated dynamic completion scripts. */
+/** The environment variable set to `1` by generated dynamic completion scripts. */
 export const dynamicCompletionEnvironment = 'KONSTIT_CLI_COMPLETE';
 
 interface CompletionNode {

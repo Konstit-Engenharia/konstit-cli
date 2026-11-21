@@ -1,8 +1,12 @@
 /** A canonical enum value with optional accepted aliases and documentation metadata. */
 export interface EnumValue<Value extends string = string> {
+  /** The canonical value returned by the parser. */
   readonly value: Value;
+  /** Alternative input spellings that resolve to the canonical value. */
   readonly aliases?: readonly string[];
+  /** The description shown in help and completions that support descriptions. */
   readonly describe?: string;
+  /** Omits this choice from help and completion while keeping it parseable. */
   readonly hide?: boolean;
 }
 
@@ -14,6 +18,7 @@ export interface EnumParserOptions {
 
 /** Converts one command-line token to a typed value. */
 export interface ValueParser<out Value> {
+  /** The default value placeholder used in generated usage and help. */
   readonly label: string;
   /** Static values offered by generated shell completions. */
   readonly completions?: readonly string[];
@@ -27,10 +32,14 @@ export interface ValueParser<out Value> {
   parse(input: string): Value;
 }
 
+/** The kind of filesystem path a shell can suggest for a value. */
 export type CompletionValueHint = 'file' | 'directory';
 
+/** Static completion settings for custom parsers and parser combinators. */
 export interface ValueParserOptions {
+  /** Raw input strings to offer as shell completions. */
   readonly completions?: readonly string[];
+  /** A file or directory fallback for shell completion. */
   readonly completionHint?: CompletionValueHint;
 }
 
@@ -39,12 +48,14 @@ interface ParserMetadata {
   readonly ignoreCase?: boolean;
 }
 
+/** An enum choice declared as a canonical string or a descriptor. */
 type EnumDefinition = string | EnumValue<string>;
 
 type EnumCanonicalValue<Definition> = Definition extends string ? Definition
   : Definition extends EnumValue<infer Value> ? Value
   : never;
 
+/** The possible canonical outputs of an enum parser. */
 type EnumCanonicalValues<Definitions extends readonly EnumDefinition[]> = EnumCanonicalValue<Definitions[number]>;
 
 /** Settings accepted by parsers.range(). */
@@ -55,7 +66,9 @@ export interface RangeParserOptions {
 
 /** A key and value separated by the first equals sign in an argument. */
 export interface KeyValuePair {
+  /** The nonempty text before the first equals sign. */
   readonly key: string;
+  /** The text after the first equals sign, which may be empty. */
   readonly value: string;
 }
 
@@ -282,19 +295,20 @@ function mapParser<Value, MappedValue>(
   );
 }
 
+/** Uses a type guard to reject values and narrow the parser's output type. */
 function refineParser<Value, NarrowedValue extends Value>(
   parser: ValueParser<Value>,
   predicate: (value: Value) => value is NarrowedValue,
   message?: string,
   options?: ValueParserOptions,
 ): ValueParser<NarrowedValue>;
+/** Rejects parsed values for which the predicate returns false. */
 function refineParser<Value>(
   parser: ValueParser<Value>,
   predicate: (value: Value) => boolean,
   message?: string,
   options?: ValueParserOptions,
 ): ValueParser<Value>;
-/** Creates a parser that accepts only values satisfying a predicate. */
 function refineParser<Value>(
   parser: ValueParser<Value>,
   predicate: (value: Value) => boolean,
@@ -489,7 +503,9 @@ function createEnumParser<const Values extends readonly [EnumDefinition, ...Enum
   );
 }
 
+/** Parses JSON using the unknown output type. */
 function jsonParser(): ValueParser<unknown>;
+/** Parses JSON and rejects decoded values that fail the supplied type guard. */
 function jsonParser<Value>(
   guard: (value: unknown) => value is Value,
 ): ValueParser<Value>;

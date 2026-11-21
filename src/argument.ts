@@ -7,66 +7,116 @@ import {
   type ValueParser,
 } from './parser.js';
 
+/** The syntax and value-taking behavior of a configured argument. */
 export type ArgumentKind = 'option' | 'positional' | 'flag' | 'count';
 type ValueArgumentKind = Extract<ArgumentKind, 'option' | 'positional'>;
+/** Argument kinds invoked by a named option or switch. */
 type NamedArgumentKind = Exclude<ArgumentKind, 'positional'>;
+/** Whether an argument is optional, required, or backed by a configured default. */
 export type ArgumentPresence = 'optional' | 'required' | 'default';
+/** Whether an argument yields a scalar, an optional scalar, or a collection. */
 export type ArgumentCardinality = 'one' | 'optional' | 'many';
 
 /** Runtime actions follow clap's ArgAction names while using JS-style values. */
 export const ArgumentAction = Object.freeze(
   {
+    /** Stores a parsed value. */
     Set: 'set',
+    /** Appends parsed values across occurrences. */
     Append: 'append',
+    /** Sets a flag to true when supplied. */
     SetTrue: 'setTrue',
+    /** Sets a flag to false when supplied. */
     SetFalse: 'setFalse',
+    /** Counts occurrences. */
     Count: 'count',
+    /** Displays help for the command. */
     Help: 'help',
+    /** Displays abbreviated help. */
     HelpShort: 'helpShort',
+    /** Displays full help. */
     HelpLong: 'helpLong',
+    /** Displays the command version. */
     Version: 'version',
   } as const,
 );
 
+/** The parser action associated with an argument. */
 export type ArgumentAction = (typeof ArgumentAction)[keyof typeof ArgumentAction];
 
+/** Inclusive bounds on the number of values accepted per occurrence. */
 export interface ValueCountRange {
+  /** The minimum number of values, a nonnegative safe integer. */
   readonly min: number;
+  /** A safe integer at least as large as `min`. Omit it for an unbounded range. */
   readonly max?: number;
 }
 
+/** The normalized argument configuration available to completion providers. */
 export interface ArgumentDefinition {
+  /** The key used for this argument in parsed values. */
   readonly name: string;
+  /** Whether the argument is an option, positional, flag, or counter. */
   readonly kind: ArgumentKind;
+  /** What the parser does when the argument is supplied. */
   readonly action: ArgumentAction;
+  /** Whether the flag controls automatic color selection. */
   readonly color: boolean;
+  /** Converts raw values for a positional or option. */
   readonly parser?: ValueParser<unknown> | undefined;
+  /** The short spelling without its leading hyphen. */
   readonly short?: string;
+  /** The long spelling without its leading hyphens. */
   readonly long?: string;
+  /** The long spelling that disables a color flag, without leading hyphens. */
   readonly negativeLong?: string;
+  /** Additional long spellings without leading hyphens. */
   readonly aliases: readonly string[];
+  /** The warning message emitted when the argument is supplied explicitly. */
   readonly deprecated?: string;
+  /** Warning messages keyed by deprecated long alias. */
   readonly deprecatedAliases?: Readonly<Record<string, string>>;
+  /** The description shown in help. */
   readonly help?: string;
+  /** The value placeholder shown in usage and help. */
   readonly valueName?: string;
+  /** The argument's requiredness or default status. */
   readonly presence: ArgumentPresence;
+  /** The scalar fallback when the argument is absent. Flags and counters also have intrinsic values. */
   readonly defaultValue?: unknown;
+  /** The collection fallback when the argument is absent. */
   readonly defaultValues?: readonly unknown[];
+  /** The value supplied for an option used without an explicit value. */
   readonly defaultMissingValue?: unknown;
+  /** Whether a missing-value fallback was explicitly configured. */
   readonly hasDefaultMissingValue: boolean;
+  /** Whether values are collected across repeated occurrences. */
   readonly repeatable: boolean;
+  /** The minimum number of values accepted per occurrence. */
   readonly minValues: number;
+  /** The maximum number of values accepted per occurrence, or null if unbounded. */
   readonly maxValues: number | null;
+  /** The delimiter used to split raw values before parsing. */
   readonly valueDelimiter?: string;
+  /** The token that ends value collection for the argument. */
   readonly valueTerminator?: string;
+  /** Whether the option requires `--option=value` syntax. */
   readonly requireEquals: boolean;
+  /** Whether values may begin with a hyphen. */
   readonly allowHyphenValues: boolean;
+  /** Whether negative numeric tokens are accepted as values. */
   readonly allowNegativeNumbers: boolean;
+  /** Whether this positional can capture trailing tokens that look like options. */
   readonly trailingVarArg: boolean;
+  /** Whether the argument is inherited by descendant commands. */
   readonly global: boolean;
+  /** Whether to omit the argument from help and completion. */
   readonly hidden: boolean;
+  /** The environment variable used as a fallback. */
   readonly env?: string;
+  /** The argument's explicit file or directory completion hint. */
   readonly completionHint?: CompletionValueHint;
+  /** The callback that supplies dynamic value completions. */
   readonly completion?: DynamicCompletionProvider;
 }
 
@@ -102,6 +152,7 @@ export interface NamedArgumentOptions extends ArgumentOptions {
   readonly aliases?: readonly string[];
 }
 
+/** Settings shared by value-taking options and positionals. */
 interface ValueMetadataOptions<Value> extends ArgumentOptions {
   /** Sets the value label shown in usage and help. */
   readonly valueName?: string;
@@ -890,14 +941,16 @@ function applyValueArgumentOptions(
   return configured;
 }
 
-/** Creates a named --option which consumes one value. */
+/** Creates a named option that accepts one string value. */
 export function option<const Name extends string>(
   name: Name,
 ): ArgumentType<Name, string, string | undefined, 'option', 'one', false>;
+/** Creates a named option that accepts one value converted by the supplied parser. */
 export function option<const Name extends string, Value>(
   name: Name,
   parser: ValueParser<Value>,
 ): ArgumentType<Name, Value, Value | undefined, 'option', 'one', false>;
+/** Creates a named option with a value parser and settings for spelling, arity, and defaults. */
 export function option<
   const Name extends string,
   Value,
@@ -932,14 +985,16 @@ export function option(
   return configuredArgument(applyValueArgumentOptions(definition, options));
 }
 
-/** Creates a positional value. Positionals are consumed in declaration order. */
+/** Creates a positional that accepts one string. Positionals are consumed in declaration order. */
 export function positional<const Name extends string>(
   name: Name,
 ): ArgumentType<Name, string, string | undefined, 'positional', 'one', false>;
+/** Creates a positional that accepts one value converted by the supplied parser. */
 export function positional<const Name extends string, Value>(
   name: Name,
   parser: ValueParser<Value>,
 ): ArgumentType<Name, Value, Value | undefined, 'positional', 'one', false>;
+/** Creates a positional with a value parser and settings for arity, defaults, and trailing tokens. */
 export function positional<
   const Name extends string,
   Value,
@@ -977,6 +1032,7 @@ export function positional(
 export function flag<const Name extends string>(
   name: Name,
 ): ArgumentType<Name, boolean, boolean, 'flag', 'one', false>;
+/** Creates a boolean switch with configurable spellings, polarity, and scope. */
 export function flag<
   const Name extends string,
   const Options extends FlagOptions,
@@ -1024,6 +1080,7 @@ export function colorFlag(name: string): ArgumentType {
 export function count<const Name extends string>(
   name: Name,
 ): ArgumentType<Name, number, number, 'count', 'one', false>;
+/** Creates an occurrence counter with configurable spellings and scope. */
 export function count<
   const Name extends string,
   const Options extends CountOptions,
@@ -1053,6 +1110,7 @@ export interface ArgumentType<
   out Cardinality extends ArgumentCardinality = ArgumentCardinality,
   out Global extends boolean = boolean,
 > {
+  /** Carries the argument's inferred schema and output types. */
   readonly [argumentTypeKey]: readonly [
     Name,
     Value,
@@ -1072,7 +1130,11 @@ export interface GlobalArgument<
   out Cardinality extends ArgumentCardinality = ArgumentCardinality,
 > extends ArgumentType<Name, Value, Output, Kind, Cardinality, true> {}
 
+/** A configured argument of any kind. */
 export type AnyArgument = ArgumentType;
+/** A configured named argument that descendants can access. */
 export type AnyGlobalArgument = GlobalArgument;
+/** Extracts the declared name of a configured argument. */
 export type ArgumentName<Value> = Value extends ArgumentType<infer Name> ? Name : never;
+/** Extracts the parsed output type of a configured argument. */
 export type ArgumentOutput<Value> = Value extends ArgumentType<string, unknown, infer Output> ? Output : never;

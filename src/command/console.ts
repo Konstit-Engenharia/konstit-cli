@@ -9,7 +9,9 @@ export type SyncOutputWriter = (chunk: string) => void | number;
 
 /** Synchronous destinations for handler console output. */
 export interface ConsoleWriters {
+  /** Receives complete lines written by log, info, and success. Defaults to standard output. */
   readonly stdout?: SyncOutputWriter;
+  /** Receives complete lines written by warn and error. Defaults to standard error. */
   readonly stderr?: SyncOutputWriter;
 }
 
@@ -23,10 +25,15 @@ export interface ConsoleOptions {
 
 /** Synchronous line-oriented output. Each call appends a newline and can throw a write error. */
 export interface HandlerConsole {
+  /** Writes an unstyled line to standard output. */
   log(message: string): void;
+  /** Writes an informational line to standard output, using cyan when styling is enabled. */
   info(message: string): void;
+  /** Writes a success line to standard output, using green when styling is enabled. */
   success(message: string): void;
+  /** Writes a warning line to standard error, using amber when styling is enabled. */
   warn(message: string): void;
+  /** Writes an error line to standard error, using red when styling is enabled. */
   error(message: string): void;
 }
 

@@ -29,15 +29,20 @@ import type { ValueSource } from './value-source.js';
 
 /** A completion returned by a dynamic provider. */
 export interface DynamicCompletionCandidate {
+  /** The text offered as a completion. */
   readonly value: string;
+  /** An optional label displayed by shells that support candidate descriptions. */
   readonly description?: string;
 }
 
+/** A completion supplied as plain text or as a value with a description. */
 export type DynamicCompletionCandidateInput =
   | string
   | DynamicCompletionCandidate;
 
+/** Parsed values and defaults keyed by argument name. */
 export type DynamicCompletionValues = Readonly<Record<string, unknown>>;
+/** Unparsed values keyed by argument name, in the order they were collected. */
 export type DynamicCompletionRawValues = Readonly<
   Record<string, readonly string[]>
 >;
@@ -54,7 +59,9 @@ export interface DynamicCompletionContext<
   readonly current: string;
   /** Canonical command names from the root to the active command. */
   readonly commandPath: readonly string[];
+  /** The normalized definition of the active command. */
   readonly command: CommandDefinition;
+  /** The normalized definition of the argument whose value is being completed. */
   readonly argument: ArgumentDefinition;
   /** Defaults and successfully parsed words visible at the active command. */
   readonly values: Values;
@@ -62,6 +69,7 @@ export interface DynamicCompletionContext<
   readonly rawValues: DynamicCompletionRawValues;
 }
 
+/** Candidates yielded synchronously or asynchronously by a value completer. */
 export type DynamicCompletionIterable =
   | Iterable<DynamicCompletionCandidateInput>
   | AsyncIterable<DynamicCompletionCandidateInput>;
@@ -73,6 +81,7 @@ export type DynamicCompletionProvider<
   context: DynamicCompletionContext<Values>,
 ) => DynamicCompletionIterable | PromiseLike<DynamicCompletionIterable>;
 
+/** Settings for resolving completions at a given word. */
 export interface DynamicCompletionOptions {
   /**
    * Index of the word being completed. It can equal argv.length to represent
@@ -83,11 +92,17 @@ export interface DynamicCompletionOptions {
   readonly filter?: boolean;
 }
 
+/** The candidates and context resolved for one completion request. */
 export interface DynamicCompletionResult {
+  /** The suggestions to offer for the current word. */
   readonly candidates: readonly DynamicCompletionCandidate[];
+  /** Canonical command names from the root to the active command. */
   readonly commandPath: readonly string[];
+  /** The word or value fragment used to resolve candidates. */
   readonly current: string;
+  /** The argument being completed, when the word can contain an argument value. */
   readonly argument?: ArgumentDefinition;
+  /** The file or directory hint available for value completion. */
   readonly valueHint?: CompletionValueHint;
 }
 
