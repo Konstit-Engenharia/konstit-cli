@@ -365,7 +365,7 @@ function scaledInteger(
   units: Readonly<Record<string, number>>,
   errorMessage: string,
 ): number {
-  const match = /^(\d+)(?:\.(\d+))?([A-Za-z]+)$/.exec(input);
+  const match = /^(\d+)(?:\.(\d+))?([A-Za-z]*)$/.exec(input);
   if (match === null) {
     throw new Error(errorMessage);
   }
@@ -394,23 +394,25 @@ function scaledInteger(
 }
 
 const durationUnits = Object.freeze({
-  ms: 1,
-  s: 1_000,
-  m: 60_000,
-  h: 3_600_000,
-  d: 86_400_000,
+  '': 1,
+  'ms': 1,
+  's': 1_000,
+  'm': 60_000,
+  'h': 3_600_000,
+  'd': 86_400_000,
 });
 
 const byteSizeUnits = Object.freeze({
-  B: 1,
-  KB: 1_000,
-  MB: 1_000_000,
-  GB: 1_000_000_000,
-  TB: 1_000_000_000_000,
-  KiB: 1_024,
-  MiB: 1_048_576,
-  GiB: 1_073_741_824,
-  TiB: 1_099_511_627_776,
+  '': 1,
+  'B': 1,
+  'KB': 1_000,
+  'MB': 1_000_000,
+  'GB': 1_000_000_000,
+  'TB': 1_000_000_000_000,
+  'KiB': 1_024,
+  'MiB': 1_048_576,
+  'GiB': 1_073_741_824,
+  'TiB': 1_099_511_627_776,
 });
 
 function validateEnumParserOptions(options: unknown): asserts options is EnumParserOptions {
@@ -579,20 +581,20 @@ export const parsers = Object.freeze({
     return value;
   }),
 
-  /** Parses a duration and returns its integer millisecond count. */
+  /** Parses a duration as an integer millisecond count. Unitless values are milliseconds. */
   duration: createValueParser('DURATION', (input) =>
     scaledInteger(
       input,
       durationUnits,
-      'expected a duration such as 500ms, 30s, 5m, 2h, or 1d',
+      'expected a duration such as 500, 500ms, 30s, 5m, 2h, or 1d',
     )),
 
-  /** Parses an SI or IEC byte size and returns its integer byte count. */
+  /** Parses an SI or IEC byte size as an integer byte count. Unitless values are bytes. */
   byteSize: createValueParser('BYTES', (input) =>
     scaledInteger(
       input,
       byteSizeUnits,
-      'expected a byte size such as 512B, 10KB, or 4MiB',
+      'expected a byte size such as 512, 512B, 10KB, or 4MiB',
     )),
 
   /** Parses KEY=VALUE, splitting only at the first equals sign. */

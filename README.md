@@ -680,11 +680,17 @@ signed integer text is accepted, while decimals, exponent notation, hex, and
 values outside JavaScript's safe integer range are rejected. The parser still
 returns a `number`. Setting `integer: false` preserves the default behavior.
 
-The unit parsers return integer base units. Byte sizes use decimal `KB` through
-`TB`, or binary `KiB` through `TiB`. A key/value parser splits at the first `=`:
+Durations default to milliseconds (`500` is equivalent to `500ms`) and also
+accept `s`, `m`, `h`, and `d`. Byte sizes default to bytes (`512` is equivalent
+to `512B`) and also accept decimal `KB` through `TB` and binary `KiB` through
+`TiB`. Both parsers require non-negative values that resolve to whole base
+units and fit within `Number.MAX_SAFE_INTEGER`. Units are case-sensitive and
+spaces are invalid. The key/value parser splits at the first `=`.
 
 ```ts
+parsers.duration.parse('500'); // 500 milliseconds
 parsers.duration.parse('1.5s'); // 1500 milliseconds
+parsers.byteSize.parse('512'); // 512 bytes
 parsers.byteSize.parse('4MiB'); // 4194304 bytes
 parsers.keyValue.parse('MODE=safe'); // { key: 'MODE', value: 'safe' }
 parsers.cron.parse('30 9 * * MON-FRI'); // original string

@@ -67,6 +67,10 @@ describe('built-in value parsers', () => {
   });
 
   test('parses durations as integer milliseconds', () => {
+    expect(parsers.duration.parse('500')).toBe(500);
+    expect(parsers.duration.parse('0')).toBe(0);
+    expect(parsers.duration.parse('500.0')).toBe(500);
+    expect(parsers.duration.parse('9007199254740991')).toBe(Number.MAX_SAFE_INTEGER);
     expect(parsers.duration.parse('500ms')).toBe(500);
     expect(parsers.duration.parse('1.001s')).toBe(1_001);
     expect(parsers.duration.parse('1.5m')).toBe(90_000);
@@ -75,7 +79,12 @@ describe('built-in value parsers', () => {
 
     for (
       const input of [
-        '1',
+        '',
+        '500 ',
+        '-1',
+        '1e3',
+        '0.5',
+        '9007199254740992',
         '-1s',
         '1 s',
         '1w',
@@ -92,7 +101,11 @@ describe('built-in value parsers', () => {
     }
   });
 
-  test('parses SI and IEC byte sizes as integer bytes', () => {
+  test('parses unitless, SI, and IEC byte sizes as integer bytes', () => {
+    for (const input of ['0', '1', '512', '000512', '512.0', '9007199254740991']) {
+      expect(parsers.byteSize.parse(input)).toBe(Number(input));
+      expect(parsers.byteSize.parse(input)).toBe(parsers.byteSize.parse(`${input}B`));
+    }
     expect(parsers.byteSize.parse('512B')).toBe(512);
     expect(parsers.byteSize.parse('1.5KB')).toBe(1_500);
     expect(parsers.byteSize.parse('2MB')).toBe(2_000_000);
@@ -101,7 +114,17 @@ describe('built-in value parsers', () => {
 
     for (
       const input of [
-        '1',
+        '',
+        ' ',
+        ' 512',
+        '512 ',
+        '-1',
+        '+1',
+        '1e3',
+        '0x200',
+        '0.5',
+        '9007199254740991.1',
+        '9007199254740992',
         '-1KB',
         '1 KB',
         '1kb',
