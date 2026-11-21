@@ -95,6 +95,45 @@ assert.match(cli.renderMarkdown(documented), /documented/);
 assert.match(cli.renderManPage(documented), /\.TH/);
 assert.equal(cli.getWarnings(documented.parse(['--listen', '9000'])).length, 1);
 
+const previousNoColor = Bun.env.NO_COLOR;
+delete Bun.env.NO_COLOR;
+try {
+  const output: string[] = [];
+  const styled = cli.command('styled', {
+    args: [cli.colorFlag('color')],
+    handler: async (_args, { console, style, stdout, stderr }) => {
+      assert.equal(Object.isFrozen(style), true);
+      assert.equal(Object.isFrozen(console), true);
+      assert.equal(console.info('ready'), undefined);
+      assert.deepEqual(output, ['\x1b[38;2;8;145;178mready\x1b[0m\n']);
+      await stdout(style('done', { bold: true }));
+      assert.equal(style.file('report.csv', { label: 'report' }), '\x1b[32mreport\x1b[0m');
+      await stderr(await style.path(resolve(root, 'README.md'), { stream: 'stderr', label: 'README' }));
+    },
+  });
+  assert.equal(
+    await styled.runParsed(styled.parse(['--color']), {
+      color: false,
+      lsColors: '*.csv=32:*.md=34',
+      console: { stdout: (chunk) => output.push(chunk) },
+      stdout: async (chunk) => output.push(chunk),
+      stderr: async (chunk) => output.push(chunk),
+    }),
+    0,
+  );
+  assert.deepEqual(output, [
+    '\x1b[38;2;8;145;178mready\x1b[0m\n',
+    '\x1b[1mdone\x1b[0m',
+    '\x1b[34mREADME\x1b[0m',
+  ]);
+} finally {
+  if (previousNoColor === undefined) {
+    delete Bun.env.NO_COLOR;
+  } else {
+    Bun.env.NO_COLOR = previousNoColor;
+  }
+}
+
 const defaults = cli.command('defaults', {
   args: [
     cli.option(

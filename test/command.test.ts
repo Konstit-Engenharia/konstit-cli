@@ -686,50 +686,60 @@ describe('help, version, and runner', () => {
   });
 
   test('styles interactive help without changing plain or custom help', async () => {
-    const styledCli = command('styled', {
-      about: 'A styled command',
-      author: 'Konstit',
-      args: [
-        positional('file', parsers.string, { describe: 'Input file' }),
-        flag('verbose', { describe: 'Show details' }),
-      ],
-      subcommands: [command('child')],
-      handler: () => {},
-    });
-    const plain = styledCli.renderHelp();
-    const plainOutput: string[] = [];
-    const styledOutput: string[] = [];
+    const previousNoColor = Bun.env.NO_COLOR;
+    delete Bun.env.NO_COLOR;
+    try {
+      const styledCli = command('styled', {
+        about: 'A styled command',
+        author: 'Konstit',
+        args: [
+          positional('file', parsers.string, { describe: 'Input file' }),
+          flag('verbose', { describe: 'Show details' }),
+        ],
+        subcommands: [command('child')],
+        handler: () => {},
+      });
+      const plain = styledCli.renderHelp();
+      const plainOutput: string[] = [];
+      const styledOutput: string[] = [];
 
-    await styledCli.run({ argv: ['--help'], stdout: (text) => plainOutput.push(text) });
-    await styledCli.run({
-      argv: ['--help'],
-      color: true,
-      stdout: (text) => styledOutput.push(text),
-    });
+      await styledCli.run({ argv: ['--help'], stdout: (text) => plainOutput.push(text) });
+      await styledCli.run({
+        argv: ['--help'],
+        color: true,
+        stdout: (text) => styledOutput.push(text),
+      });
 
-    const accent = Bun.color('#0891b2', 'ansi-16m') ?? '';
-    expect(accent).not.toBe('');
-    expect(plainOutput[0]).toBe(plain);
-    expect(styledOutput[0]).toContain(`\x1b[1m${accent}Usage:\x1b[0m`);
-    expect(styledOutput[0]).toContain(`\x1b[1m${accent}Commands:\x1b[0m`);
-    expect(styledOutput[0]).toContain(`  ${accent}child\x1b[0m`);
-    const unstyled = styledOutput[0]
-      ?.replaceAll(accent, '')
-      .replaceAll('\x1b[1m', '')
-      .replaceAll('\x1b[0m', '');
-    expect(unstyled).toBe(plain);
+      const accent = Bun.color('#0891b2', 'ansi-16m') ?? '';
+      expect(accent).not.toBe('');
+      expect(plainOutput[0]).toBe(plain);
+      expect(styledOutput[0]).toContain(`\x1b[1m${accent}Usage:\x1b[0m`);
+      expect(styledOutput[0]).toContain(`\x1b[1m${accent}Commands:\x1b[0m`);
+      expect(styledOutput[0]).toContain(`  ${accent}child\x1b[0m`);
+      const unstyled = styledOutput[0]
+        ?.replaceAll(accent, '')
+        .replaceAll('\x1b[1m', '')
+        .replaceAll('\x1b[0m', '');
+      expect(unstyled).toBe(plain);
 
-    const custom = command('custom', {
-      overrideHelp: 'Custom help\n',
-      handler: () => {},
-    });
-    const customOutput: string[] = [];
-    await custom.run({
-      argv: ['--help'],
-      color: true,
-      stdout: (text) => customOutput.push(text),
-    });
-    expect(customOutput[0]).toBe('Custom help\n');
+      const custom = command('custom', {
+        overrideHelp: 'Custom help\n',
+        handler: () => {},
+      });
+      const customOutput: string[] = [];
+      await custom.run({
+        argv: ['--help'],
+        color: true,
+        stdout: (text) => customOutput.push(text),
+      });
+      expect(customOutput[0]).toBe('Custom help\n');
+    } finally {
+      if (previousNoColor === undefined) {
+        delete Bun.env.NO_COLOR;
+      } else {
+        Bun.env.NO_COLOR = previousNoColor;
+      }
+    }
   });
 
   test('customizes help and built-in flags', () => {

@@ -16,15 +16,24 @@ import {
   type CommandConfig,
   type CommandMetadata,
   type ConditionalDefaultMetadata,
+  type ConsoleOptions,
+  type ConsoleWriters,
   type DeprecationWarning,
   type EnumParserOptions,
   type EnumValue,
+  type FileStat,
+  type FileStyleOptions,
+  type HandlerConsole,
   type Infer,
   type KeyValuePair,
   type OutputWriter,
   type ParseOutcome,
+  type PathStyleOptions,
   type RunOptions,
   type RunParsedOptions,
+  type Style,
+  type StyleOptions,
+  type SyncOutputWriter,
   type ValueParser,
   type ValueSource,
 } from '@konstit/cli';
@@ -101,7 +110,10 @@ const errorType: typeof CliError = CliError;
 void (() => {
   const chunks: string[] = [];
   const stderr: OutputWriter = (text) => Promise.resolve(chunks.push(text));
-  const options: RunParsedOptions = { parseErrorExitCode: 1, color: false, stderr };
+  const syncWriter: SyncOutputWriter = (text) => chunks.push(text);
+  const console: ConsoleWriters = { stdout: syncWriter, stderr: () => {} };
+  const consoleOptions: ConsoleOptions = { console, lsColors: '*.csv=38;5;114' };
+  const options: RunParsedOptions = { ...consoleOptions, parseErrorExitCode: 1, color: false, stderr };
   const runOptions: RunOptions = { ...options, argv: [] };
   const executed: Promise<number> = cli.runParsed(outcome, options);
   const attempted: Promise<number> = cli.runParsed(cli.tryParse([]), options);
@@ -111,6 +123,36 @@ void (() => {
   void cli.runParsed(child.parse(['--region', 'us']));
   // @ts-expect-error runParsed cannot take argv
   void cli.runParsed(outcome, { argv: [] });
+  // @ts-expect-error synchronous console sinks reject promises
+  void cli.run({ console: { stdout: async (_text: string) => {} } });
+  // @ts-expect-error synchronous console sinks reject promised byte counts
+  void cli.runParsed(outcome, { console: { stderr: (text) => Promise.resolve(text.length) } });
+});
+
+void (() => {
+  const app = command('styled', {
+    handler: async (_args, context) => {
+      const style: Style = context.style;
+      const console: HandlerConsole = context.console;
+      type _ConsoleReturnsVoid = Expect<Equal<ReturnType<HandlerConsole['info']>, void>>;
+      type _StyleReturnsString = Expect<Equal<ReturnType<Style>, string>>;
+      const options: StyleOptions = { stream: 'stderr', color: '#dc2626', background: 'black', bold: true };
+      const stats: FileStat = { mode: 0o100644, nlink: 1 };
+      const fileOptions: FileStyleOptions = { stats, targetStats: null, label: 'report.csv' };
+      const pathOptions: PathStyleOptions = { stream: 'stdout', label: 'report.csv' };
+      const filename: string = style.file('/data/report.csv', fileOptions);
+      const inspected: Promise<string> = style.path('/data/report.csv', pathOptions);
+      console.info(filename);
+      await context.stderr(style(await inspected, options));
+      // @ts-expect-error the handler's style binding is immutable
+      context.style = style;
+      // @ts-expect-error the handler's console binding is immutable
+      context.console = console;
+      // @ts-expect-error console methods accept one string
+      console.log(42);
+    },
+  });
+  void app.run({ lsColors: false });
 });
 
 void (() => {

@@ -85,6 +85,9 @@ export function parseConfigured<Value>(
       options.config,
     ) as Value;
     const outcome = { ok: true, type: 'value', value } as const;
+    if (session.colorMode !== undefined) {
+      outputColorModes.set(outcome, session.colorMode);
+    }
     setWarnings(outcome, session.warnings);
     return outcome;
   } catch (error) {

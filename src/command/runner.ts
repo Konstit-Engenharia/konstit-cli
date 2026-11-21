@@ -16,6 +16,12 @@ import {
   type ParseDisplay,
   type ParseResult,
 } from '../error.js';
+import { createStyle } from '../style.js';
+import {
+  resolveOutputColor,
+  type AnsiColorFormat,
+} from './color.js';
+import { createConsole } from './console.js';
 import { sanitizeDiagnostic } from './help.js';
 import {
   writeOutput,
@@ -77,55 +83,6 @@ function selectDeepestCommand(
   );
 }
 
-interface ColorDecision {
-  readonly enabled: boolean;
-  readonly force: boolean;
-}
-
-export function handlerColorEnabled(options: RunOptions = {}): boolean {
-  if (Bun.env.NO_COLOR !== undefined) {
-    return false;
-  }
-  return options.color
-    ?? (process.stdout.isTTY === true && Bun.env.TERM !== 'dumb');
-}
-
-function automaticColorEnabled(
-  channel: OutputChannel,
-  options: RunOptions = {},
-): boolean {
-  const output = {
-    stderr: { stream: process.stderr, writer: options.stderr },
-    stdout: { stream: process.stdout, writer: options.stdout },
-  }[channel];
-  const interactive = output.writer === undefined
-    && output.stream.isTTY === true
-    && Bun.env.NO_COLOR === undefined
-    && Bun.env.TERM !== 'dumb';
-  return options.color ?? interactive;
-}
-
-function colorDecision(
-  target: object,
-  channel: OutputChannel,
-  options: RunOptions,
-): ColorDecision | undefined {
-  const mode = outputColorModes.get(target);
-  if (mode === undefined) {
-    return undefined;
-  }
-  if (Bun.env.NO_COLOR !== undefined || mode === 'never') {
-    return { enabled: false, force: false };
-  }
-  if (mode === 'always') {
-    return { enabled: true, force: true };
-  }
-  return {
-    enabled: automaticColorEnabled(channel, options),
-    force: options.color === true,
-  };
-}
-
 function writeMessage(channel: OutputChannel, text: string, options: RunOptions): Promise<void> {
   const writer = options[channel];
   // Terminal messages end with one newline. Injected writers receive the rendered text verbatim.
@@ -133,12 +90,11 @@ function writeMessage(channel: OutputChannel, text: string, options: RunOptions)
 }
 
 async function writeParseFailure(error: CliError, options: RunOptions): Promise<number> {
-  const decision = colorDecision(error, 'stderr', options);
-  const enabled = decision?.enabled ?? automaticColorEnabled('stderr', options);
+  const decision = resolveOutputColor('stderr', outputColorModes.get(error), options.color, options.stderr);
   await writeMessage(
     'stderr',
-    enabled
-      ? styleParseFailure(error.output, decision?.force ?? options.color === true)
+    decision.enabled
+      ? styleParseFailure(error.output, decision.format)
       : error.output,
     options,
   );
@@ -149,29 +105,18 @@ const helpAnsi = Object.freeze({ strong: '\x1b[1m', reset: '\x1b[0m' });
 const helpAccent = '#0891b2';
 const errorAccent = '#dc2626';
 
-function helpPalette(forceColor: boolean): {
+function helpPalette(format: AnsiColorFormat): {
   readonly heading: string;
   readonly label: string;
   readonly strong: string;
   readonly reset: string;
 } {
-  const format = forceColor ? 'ansi-16m' : 'ansi';
   const accent = Bun.color(helpAccent, format) ?? '';
   return {
     heading: `${helpAnsi.strong}${accent}`,
     label: accent,
     ...helpAnsi,
   };
-}
-
-function shouldStyleHelp(options: RunOptions): boolean {
-  return options.color
-    ?? (
-      options.stdout === undefined
-      && process.stdout.isTTY === true
-      && Bun.env.NO_COLOR === undefined
-      && Bun.env.TERM !== 'dumb'
-    );
 }
 
 function hasHelpOverride(
@@ -182,8 +127,8 @@ function hasHelpOverride(
     || definition.subcommands.some((child) => hasHelpOverride(child, output));
 }
 
-function styleHelp(output: string, forceColor: boolean): string {
-  const palette = helpPalette(forceColor);
+function styleHelp(output: string, format: AnsiColorFormat): string {
+  const palette = helpPalette(format);
   let entrySection = false;
   return output.split('\n').map((line) => {
     if (/^(Arguments|Commands|Options):$/.test(line)) {
@@ -215,10 +160,9 @@ function styleHelp(output: string, forceColor: boolean): string {
   }).join('\n');
 }
 
-function styleParseFailure(output: string, forceColor: boolean): string {
-  const format = forceColor ? 'ansi-16m' : 'ansi';
+function styleParseFailure(output: string, format: AnsiColorFormat): string {
   const accent = Bun.color(errorAccent, format) ?? '';
-  const styled = styleHelp(output, forceColor);
+  const styled = styleHelp(output, format);
   return `${helpAnsi.strong}${accent}error:${helpAnsi.reset}${styled.slice(6)}`;
 }
 
@@ -227,11 +171,11 @@ async function writeDisplay(
   display: ParseDisplay,
   options: RunOptions,
 ): Promise<number> {
-  const decision = colorDecision(display, 'stdout', options);
+  const decision = resolveOutputColor('stdout', outputColorModes.get(display), options.color, options.stdout);
   const output = display.kind === DisplayKind.Help
-      && (decision?.enabled ?? shouldStyleHelp(options))
+      && decision.enabled
       && !hasHelpOverride(definition, display.output)
-    ? styleHelp(display.output, decision?.force ?? options.color === true)
+    ? styleHelp(display.output, decision.format)
     : display.output;
   await writeMessage('stdout', output, options);
   return 0;
@@ -252,6 +196,7 @@ export async function runConfiguredHandler<Args extends object>(
   result: ParseResult<Args>,
   options: RunOptions,
 ): Promise<number> {
+  const lsColors = options.lsColors ?? Bun.env.LS_COLORS;
   if (
     options.parseErrorExitCode !== undefined
     && (!Number.isSafeInteger(options.parseErrorExitCode)
@@ -279,10 +224,20 @@ export async function runConfiguredHandler<Args extends object>(
     );
   }
   await writeWarnings(result, options);
+  const mode = outputColorModes.get(result);
+  const colors = {
+    stdout: resolveOutputColor('stdout', mode, options.color, options.stdout),
+    stderr: resolveOutputColor('stderr', mode, options.color, options.stderr),
+  };
   const context: HandlerContext = Object.freeze({
     commandPath: Object.freeze([...selected.path]),
     stdout: (chunk: string) => writeOutput('stdout', chunk, options.stdout),
     stderr: (chunk: string) => writeOutput('stderr', chunk, options.stderr),
+    style: createStyle(colors, lsColors),
+    console: createConsole(options.console, {
+      stdout: resolveOutputColor('stdout', mode, options.color, options.console?.stdout),
+      stderr: resolveOutputColor('stderr', mode, options.color, options.console?.stderr),
+    }),
     global<ArgumentType extends AnyGlobalArgument>(argument: ArgumentType) {
       const argumentDefinition = getArgumentDefinition(argument);
       if (!argumentDefinition.global) {

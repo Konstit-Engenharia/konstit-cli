@@ -69,7 +69,7 @@ describe('runner exit codes', () => {
     const stderr = mock((_output: string) => {});
 
     expect(await cli.runParsed(result, { stderr, color: true })).toBe(2);
-    expect(stderr.mock.calls[0]?.[0]).toContain('\x1b[');
+    expect(stderr.mock.calls[0]?.[0].includes('\x1b[')).toBe(Bun.env.NO_COLOR === undefined);
   });
 
   test.each([-1, 0, 256, 1.5, Number.NaN, Number.POSITIVE_INFINITY])(

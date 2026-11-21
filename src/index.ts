@@ -27,6 +27,7 @@ export {
   type RunOptions,
   type RunParsedOptions,
 } from './command.js';
+export type { ConsoleOptions, ConsoleWriters, HandlerConsole, SyncOutputWriter } from './command/console.js';
 export type { OutputWriter } from './command/output.js';
 export { type CompletionShell, completionShells, isCompletionShell } from './completion-shell.js';
 export { type DeprecationWarning, getWarnings } from './deprecation.js';
@@ -72,4 +73,5 @@ export {
   type ValueParser,
   type ValueParserOptions,
 } from './parser.js';
+export type { FileStat, FileStyleOptions, PathStyleOptions, Style, StyleOptions } from './style.js';
 export { getValueSource, type ValueSource } from './value-source.js';

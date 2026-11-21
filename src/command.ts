@@ -9,10 +9,15 @@ import {
   type ArgumentOutput,
   type ArgumentType,
 } from './argument.js';
+import { handlerColorEnabled } from './command/color.js';
 import type {
   CommandConfig,
   ParseOptions,
 } from './command/config.js';
+import type {
+  ConsoleOptions,
+  HandlerConsole,
+} from './command/console.js';
 import {
   renderHelp,
   renderUsageText,
@@ -22,10 +27,7 @@ import {
   parseConfigured,
   tryParseConfigured,
 } from './command/parse.js';
-import {
-  handlerColorEnabled,
-  runConfiguredHandler,
-} from './command/runner.js';
+import { runConfiguredHandler } from './command/runner.js';
 import type {
   CommandDefinition,
   GroupDefinition,
@@ -49,6 +51,7 @@ import type {
   ParseOutcome,
   ParseResult,
 } from './error.js';
+import type { Style } from './style.js';
 
 export { getCommandDefinition };
 export type { CommandDefinition };
@@ -65,6 +68,10 @@ export interface HandlerContext {
   readonly stdout: (chunk: string) => Promise<void>;
   /** Writes a raw chunk to the configured standard error. */
   readonly stderr: (chunk: string) => Promise<void>;
+  /** Stream-aware CSS and LS_COLORS formatting for handler output. */
+  readonly style: Style;
+  /** Synchronous line-oriented output through independently configurable sinks. */
+  readonly console: HandlerConsole;
   /** Gets a global argument declared by the selected command or an ancestor. */
   global<ArgumentType extends AnyGlobalArgument>(
     argument: ArgumentType,
@@ -1385,7 +1392,7 @@ function terminalCommand(configured: InternalTerminalCommand): HandledCommand {
 }
 
 /** Output and exit-code options for executing an existing parse result. */
-export interface RunParsedOptions {
+export interface RunParsedOptions extends ConsoleOptions {
   /** Receives deprecation warnings instead of writing them to stderr. */
   readonly onWarning?: (warning: DeprecationWarning) => void;
   /** Receives handler output, help, and version text. run() also writes completion output here. */
