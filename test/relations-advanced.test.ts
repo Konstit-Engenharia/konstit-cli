@@ -164,8 +164,9 @@ describe('advanced argument relations', () => {
 
   test('makes an argument exclusive with every other provided argument', () => {
     const cli = command('input', {
-      args: [flag('stdin'), option('file'), flag('force')],
+      args: [flag('stdin'), option('file', parsers.string, { default: 'stdin.txt' }), flag('force')],
       exclusive: ['stdin'],
+      argsOverrideSelf: true,
     });
 
     expect(parse(cli, ['--stdin'])).toMatchObject({ stdin: true });
@@ -176,6 +177,14 @@ describe('advanced argument relations', () => {
     expect(cli.tryParse(['--stdin', '--force'])).toMatchObject({
       ok: false,
       error: { kind: ErrorKind.ArgumentConflict },
+    });
+    expect(cli.tryParse(['--stdin', '--force', '--file=input.txt'])).toMatchObject({
+      ok: false,
+      error: { kind: ErrorKind.ArgumentConflict, relatedArguments: ['force', 'file'] },
+    });
+    expect(cli.tryParse(['--stdin', '--file=input.txt', '--force', '--file=other.txt'])).toMatchObject({
+      ok: false,
+      error: { kind: ErrorKind.ArgumentConflict, relatedArguments: ['force', 'file'] },
     });
   });
 

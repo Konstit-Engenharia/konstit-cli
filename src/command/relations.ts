@@ -1,18 +1,21 @@
 import type { ArgumentDefinition } from '../argument.js';
 import { ErrorKind } from '../error.js';
-import type { ValueSource } from '../value-source.js';
+import {
+  defaultArgument,
+  environmentPolicy,
+  hasCommandLineInput,
+  restoreArgumentDefault,
+  suppliedArgument,
+  suppliedArgumentNames,
+  type ArgumentValues,
+} from './argument-state.js';
 import {
   commandError,
   displayName,
 } from './help.js';
 import type { CommandDefinition } from './schema.js';
 
-export interface RelationState {
-  readonly values: Record<string, unknown>;
-  readonly provided: Set<string>;
-  readonly cliProvided: Set<string>;
-  readonly valueCounts: Record<string, number>;
-  readonly sources?: Map<string, ValueSource>;
+export interface RelationState extends ArgumentValues {
   readonly session?: {
     colorMode?: 'auto' | 'always' | 'never';
   };
@@ -23,13 +26,9 @@ function collectsValues(argument: ArgumentDefinition): boolean {
     && (argument.repeatable || argument.trailingVarArg || argument.maxValues !== 1);
 }
 
-function copyDefaultValues(argument: ArgumentDefinition): unknown[] {
-  return argument.defaultValues === undefined ? [] : [...argument.defaultValues];
-}
-
-function explicitlyProvided(state: RelationState, name: string): boolean {
-  const source = state.sources?.get(name);
-  return state.cliProvided.has(name) || source === 'env' || source === 'config';
+function hasInputForConditionalDefault(state: RelationState, name: string): boolean {
+  const argument = state.argumentStates.get(name);
+  return argument !== undefined && (argument.kind !== 'implicit' || argument.source === 'env');
 }
 
 export function applyConditionalDefaults(
@@ -46,7 +45,7 @@ export function applyConditionalDefaults(
   const resolved = new Set<string>();
 
   const resolve = (targetName: string): void => {
-    if (resolved.has(targetName) || explicitlyProvided(state, targetName)) {
+    if (resolved.has(targetName) || hasInputForConditionalDefault(state, targetName)) {
       resolved.add(targetName);
       return;
     }
@@ -63,13 +62,13 @@ export function applyConditionalDefaults(
           if (!matchesRelationValue(state.values[rule.source], rule.equals)) {
             continue;
           }
-        } else if (!explicitlyProvided(state, rule.source)) {
+        } else if (!hasInputForConditionalDefault(state, rule.source)) {
           continue;
         }
         state.values[target.name] = collectsValues(target)
           ? [...(rule.value as readonly unknown[])]
           : rule.value;
-        state.sources?.set(target.name, 'default');
+        state.argumentStates.set(target.name, defaultArgument);
         if (target.color) {
           if (Bun.env.NO_COLOR !== undefined) {
             state.values[target.name] = false;
@@ -98,31 +97,16 @@ export function applyOverrides(
   definition: CommandDefinition,
   state: RelationState,
 ): void {
-  const cliProvided = new Set(state.cliProvided);
-  for (const { source, target } of definition.overrides) {
-    if (!cliProvided.has(source)) {
-      continue;
-    }
+  // Resolve every source before clearing any targets so chained rules see the same input.
+  const overrides = definition.overrides.filter(({ source }) => hasCommandLineInput(state, source));
+  for (const { target } of overrides) {
     const argument = definition.arguments.find(({ name }) => name === target);
     if (argument === undefined) {
       continue;
     }
-    state.values[target] = argument.defaultValues !== undefined
-      ? copyDefaultValues(argument)
-      : argument.repeatable || argument.trailingVarArg
-      ? []
-      : argument.presence === 'default'
-      ? argument.defaultValue
-      : undefined;
-    state.provided.delete(target);
-    state.cliProvided.delete(target);
-    delete state.valueCounts[target];
+    restoreArgumentDefault(state, argument);
     if (argument.color && Bun.env.NO_COLOR !== undefined) {
-      state.sources?.set(target, 'env');
-    } else if (argument.presence === 'default') {
-      state.sources?.set(target, 'default');
-    } else {
-      state.sources?.delete(target);
+      state.argumentStates.set(target, environmentPolicy);
     }
   }
 }
@@ -145,8 +129,9 @@ export function validateRelations(
   state: RelationState,
   inheritedArguments: readonly ArgumentDefinition[],
 ): void {
+  const isSupplied = (name: string): boolean => suppliedArgument(state, name) !== undefined;
   for (const { source, target } of definition.requirements) {
-    if (state.provided.has(source) && !state.provided.has(target)) {
+    if (isSupplied(source) && !isSupplied(target)) {
       throw commandError(
         ErrorKind.MissingDependency,
         `argument '${displayName(definition, source)}' requires '${displayName(definition, target)}'`,
@@ -159,8 +144,8 @@ export function validateRelations(
   }
   for (const { source, target, expected } of definition.requiresValue) {
     if (
-      state.provided.has(source)
-      && (!state.provided.has(target) || !matchesRelationValue(state.values[target], expected))
+      isSupplied(source)
+      && (!isSupplied(target) || !matchesRelationValue(state.values[target], expected))
     ) {
       throw commandError(
         ErrorKind.MissingDependency,
@@ -177,7 +162,7 @@ export function validateRelations(
   for (const { source, expected, target } of definition.conditionalRequirements) {
     if (
       matchesRelationValue(state.values[source], expected)
-      && !state.provided.has(target)
+      && !isSupplied(target)
     ) {
       throw commandError(
         ErrorKind.MissingDependency,
@@ -193,13 +178,13 @@ export function validateRelations(
   }
   for (const requirement of definition.conditionalSetRequirements) {
     const matches = requirement.conditions.map(({ source, expected }) =>
-      state.provided.has(source)
+      isSupplied(source)
       && matchesRelationValue(state.values[source], expected)
     );
     const matched = requirement.match === 'any'
       ? matches.some(Boolean)
       : matches.every(Boolean);
-    if (matched && !state.provided.has(requirement.target)) {
+    if (matched && !isSupplied(requirement.target)) {
       const joiner = requirement.match === 'any' ? ' or ' : ' and ';
       const conditions = requirement.conditions
         .map(({ source, expected }) => `'${displayName(definition, source)}=${displayRelationValue(definition, source, expected)}'`)
@@ -219,8 +204,8 @@ export function validateRelations(
   }
   for (const { target, alternatives } of definition.requiredUnless) {
     if (
-      !state.provided.has(target)
-      && !alternatives.some((name) => state.provided.has(name))
+      !isSupplied(target)
+      && !alternatives.some(isSupplied)
     ) {
       throw commandError(
         ErrorKind.MissingRequiredArgument,
@@ -236,8 +221,8 @@ export function validateRelations(
   }
   for (const { target, alternatives } of definition.requiredUnlessAll) {
     if (
-      !state.provided.has(target)
-      && !alternatives.every((name) => state.provided.has(name))
+      !isSupplied(target)
+      && !alternatives.every(isSupplied)
     ) {
       throw commandError(
         ErrorKind.MissingRequiredArgument,
@@ -252,10 +237,10 @@ export function validateRelations(
     }
   }
   for (const exclusive of definition.exclusiveArguments) {
-    if (!state.provided.has(exclusive)) {
+    if (!isSupplied(exclusive)) {
       continue;
     }
-    const others = [...state.provided].filter((name) => name !== exclusive);
+    const others = [...suppliedArgumentNames(state)].filter((name) => name !== exclusive);
     if (others.length > 0) {
       throw commandError(
         ErrorKind.ArgumentConflict,
@@ -270,7 +255,7 @@ export function validateRelations(
     }
   }
   for (const conflict of definition.conflicts) {
-    const present = conflict.filter((name) => state.provided.has(name));
+    const present = conflict.filter(isSupplied);
     const first = present[0];
     if (present.length > 1 && first !== undefined) {
       throw commandError(
@@ -287,7 +272,7 @@ export function validateRelations(
     }
   }
   for (const group of definition.groups) {
-    const present = group.members.filter((name) => state.provided.has(name));
+    const present = group.members.filter(isSupplied);
     const first = present[0];
     if (group.required && present.length === 0) {
       throw commandError(
@@ -317,7 +302,7 @@ export function validateRelations(
     }
     if (present.length > 0) {
       const missingRequirement = group.requires.find(
-        (name) => !state.provided.has(name),
+        (name) => !isSupplied(name),
       );
       if (missingRequirement !== undefined) {
         throw commandError(
@@ -329,7 +314,7 @@ export function validateRelations(
           { argumentName: missingRequirement, relatedArguments: present },
         );
       }
-      const conflict = group.conflicts.find((name) => state.provided.has(name));
+      const conflict = group.conflicts.find(isSupplied);
       if (conflict !== undefined) {
         throw commandError(
           ErrorKind.ArgumentConflict,

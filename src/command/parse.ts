@@ -24,6 +24,16 @@ import {
   type ValueSource,
 } from '../value-source.js';
 import {
+  defaultArgument,
+  environmentPolicy,
+  hasCommandLineInput,
+  recordSuppliedArgument,
+  restoreArgumentDefault,
+  suppliedArgument,
+  suppliedArgumentNames,
+  type InputSource,
+} from './argument-state.js';
+import {
   validateConfigShape,
   type CommandConfig,
   type ConfigValue,
@@ -138,10 +148,13 @@ export function tryParseConfigured<Value>(
 
 interface ParseState extends RelationState {
   readonly session: ParseSession;
-  readonly sources: Map<string, ValueSource>;
-  readonly tokenIndices: Map<string, number>;
   positionalIndex: number;
   subcommand?: { readonly name: string; readonly args: Record<string, unknown>; };
+}
+
+interface SubcommandConflict {
+  readonly argument: ArgumentDefinition;
+  readonly tokenIndex: number | undefined;
 }
 
 interface GlobalBinding {
@@ -177,18 +190,14 @@ function parseDefinition(
   );
   const state: ParseState = {
     values: {},
-    provided: new Set(),
-    cliProvided: new Set(),
-    valueCounts: {},
-    sources: new Map(),
-    tokenIndices: new Map(),
+    argumentStates: new Map(),
     session,
     positionalIndex: 0,
   };
   const positionals = definition.arguments.filter(({ kind }) => kind === 'positional');
   initializeValues(definition, state);
   validateGlobalArguments(definition, inheritedGlobals);
-  validateConfigForCommand(definition, config, path, inheritedGlobals);
+  validateConfigForCommand(definition, config, path, state, inheritedGlobals);
   const localGlobals = definition.arguments
     .filter(({ global }) => global)
     .map((argument) => ({ argument, definition, state }));
@@ -383,7 +392,7 @@ function parseDefinition(
       state,
       inheritedGlobals.map(({ argument }) => argument),
     );
-    const count = state.valueCounts[positionalArgument.name] ?? 0;
+    const count = suppliedArgument(state, positionalArgument.name)?.valueCount ?? 0;
     if (
       !positionalArgument.repeatable
       && positionalArgument.maxValues !== null
@@ -398,9 +407,13 @@ function parseDefinition(
   }
 
   // Capture CLI presence before environment fallbacks and overrides can change it.
-  const subcommandConflict = definition.argsConflictWithSubcommands && state.subcommand !== undefined
-    ? definition.arguments.find((argument) => !argument.global && state.cliProvided.has(argument.name))
+  const conflictingArgument = definition.argsConflictWithSubcommands && state.subcommand !== undefined
+    ? definition.arguments.find((argument) => !argument.global && hasCommandLineInput(state, argument.name))
     : undefined;
+  const subcommandConflict = conflictingArgument === undefined ? undefined : {
+    argument: conflictingArgument,
+    tokenIndex: suppliedArgument(state, conflictingArgument.name)?.tokenIndex,
+  };
   const inheritedArguments = inheritedGlobals.map(({ argument }) => argument);
   applyEnvironmentFallbacks(
     definition,
@@ -428,9 +441,14 @@ function parseDefinition(
     }
   }
   const result = Object.freeze(state.values);
-  const sources = new Map(state.sources);
+  const sources = new Map<string, ValueSource>();
+  for (const [name, { source },] of state.argumentStates) {
+    if (source !== undefined) {
+      sources.set(name, source);
+    }
+  }
   for (const { argument, state: inheritedState } of inheritedGlobals) {
-    const source = inheritedState.sources.get(argument.name);
+    const source = inheritedState.argumentStates.get(argument.name)?.source;
     if (source !== undefined) {
       sources.set(argument.name, source);
     }
@@ -458,7 +476,7 @@ function refreshInheritedSources(
     return;
   }
   for (const { argument, state } of globals) {
-    updateValueSource(subcommand.args, argument.name, state.sources.get(argument.name));
+    updateValueSource(subcommand.args, argument.name, state.argumentStates.get(argument.name)?.source);
   }
   const nested = subcommand.args.subcommand;
   if (
@@ -484,24 +502,10 @@ function initializeValues(
     if (argument.color) {
       const disabled = Bun.env.NO_COLOR !== undefined;
       state.values[argument.name] = disabled ? false : state.session.defaultColor;
-      state.sources.set(argument.name, disabled ? 'env' : 'default');
+      state.argumentStates.set(argument.name, disabled ? environmentPolicy : defaultArgument);
       state.session.colorMode = disabled ? 'never' : 'auto';
-    } else if (
-      argument.repeatable
-      || argument.trailingVarArg
-      || argument.defaultValues !== undefined
-    ) {
-      state.values[argument.name] = argument.defaultValues === undefined
-        ? []
-        : [...argument.defaultValues];
-      if (argument.defaultValues !== undefined) {
-        state.sources.set(argument.name, 'default');
-      }
-    } else if (argument.presence === 'default') {
-      state.values[argument.name] = argument.defaultValue;
-      state.sources.set(argument.name, 'default');
     } else {
-      state.values[argument.name] = undefined;
+      restoreArgumentDefault(state, argument);
     }
   }
 }
@@ -519,6 +523,7 @@ function validateConfigForCommand(
   definition: CommandDefinition,
   config: CommandConfig | undefined,
   path: readonly string[],
+  state: ParseState,
   inheritedGlobals: readonly GlobalBinding[],
 ): void {
   if (config === undefined) {
@@ -526,20 +531,7 @@ function validateConfigForCommand(
   }
   const values = config.values;
   if (values !== undefined) {
-    const bindings = availableArgumentBindings(
-      definition,
-      {
-        values: {},
-        provided: new Set(),
-        cliProvided: new Set(),
-        valueCounts: {},
-        sources: new Map(),
-        tokenIndices: new Map(),
-        session: { defaultColor: false, warnings: [] },
-        positionalIndex: 0,
-      },
-      inheritedGlobals,
-    );
+    const bindings = availableArgumentBindings(definition, state, inheritedGlobals);
     for (const name of Object.keys(values)) {
       if (!bindings.some(({ argument }) => argument.name === name)) {
         throw commandError(
@@ -586,8 +578,7 @@ function configArgumentValue(
     state.values[argument.name] = argument.color && Bun.env.NO_COLOR !== undefined
       ? false
       : value;
-    state.provided.add(argument.name);
-    state.sources.set(argument.name, 'config');
+    recordSuppliedArgument(state, argument.name, 'config');
     if (argument.color) {
       state.session.colorMode = state.values[argument.name] === true
         ? 'always'
@@ -604,8 +595,7 @@ function configArgumentValue(
       throw new TypeError(`Config value for '${display}' must be a nonnegative integer`);
     }
     state.values[argument.name] = value;
-    state.provided.add(argument.name);
-    state.sources.set(argument.name, 'config');
+    recordSuppliedArgument(state, argument.name, 'config');
     return;
   }
   if (
@@ -675,11 +665,12 @@ function applyConfigValues(
     const binding = availableArgumentBindings(definition, state, inheritedGlobals).find(
       ({ argument }) => argument.name === name,
     );
+    const source = binding?.state.argumentStates.get(name)?.source;
     if (
       binding === undefined
-      || binding.state.cliProvided.has(name)
-      || binding.state.sources.get(name) === 'env'
-      || binding.state.sources.get(name) === 'config'
+      || hasCommandLineInput(binding.state, name)
+      || source === 'env'
+      || source === 'config'
       || hasEnvironmentValue(binding.argument)
       || isOverriddenTarget(binding.definition, binding.state, name)
     ) {
@@ -707,7 +698,7 @@ function isOverriddenTarget(
   name: string,
 ): boolean {
   return definition.overrides.some(
-    ({ source, target }) => target === name && state.cliProvided.has(source),
+    ({ source, target }) => target === name && hasCommandLineInput(state, source),
   );
 }
 
@@ -719,13 +710,13 @@ function applyEnvironmentFallbacks(
 ): void {
   const overriddenTargets = new Set(
     definition.overrides
-      .filter(({ source }) => state.cliProvided.has(source))
+      .filter(({ source }) => hasCommandLineInput(state, source))
       .map(({ target }) => target),
   );
   for (const argument of definition.arguments) {
     if (
       argument.env === undefined
-      || state.cliProvided.has(argument.name)
+      || hasCommandLineInput(state, argument.name)
       || overriddenTargets.has(argument.name)
     ) {
       continue;
@@ -741,8 +732,7 @@ function applyEnvironmentFallbacks(
       if (argument.color) {
         state.session.colorMode = 'never';
       }
-      state.provided.add(argument.name);
-      state.sources.set(argument.name, 'env');
+      recordSuppliedArgument(state, argument.name, 'env');
       continue;
     }
     const display = `env:${argument.env}`;
@@ -769,8 +759,7 @@ function applyEnvironmentFallbacks(
         );
       }
       state.values[argument.name] = count;
-      state.provided.add(argument.name);
-      state.sources.set(argument.name, 'env');
+      recordSuppliedArgument(state, argument.name, 'env');
       continue;
     }
 
@@ -803,7 +792,6 @@ function applyEnvironmentFallbacks(
       undefined,
       inheritedArguments,
     );
-    state.cliProvided.delete(argument.name);
   }
 }
 
@@ -1373,9 +1361,8 @@ function storePositionalValue(
   inheritedArguments: readonly ArgumentDefinition[],
 ): void {
   const values = splitRawValue(argument, raw);
-  const currentCount = state.sources.get(argument.name) === 'cli'
-    ? state.valueCounts[argument.name] ?? 0
-    : 0;
+  const previous = suppliedArgument(state, argument.name);
+  const currentCount = previous?.source === 'cli' ? previous.valueCount : 0;
   if (
     !argument.repeatable
     && argument.maxValues !== null
@@ -1416,7 +1403,7 @@ function storeRawValues(
   path: readonly string[],
   state: ParseState,
   redactRaw = false,
-  source: ValueSource = 'cli',
+  source: InputSource = 'cli',
   tokenIndices?: readonly number[],
   tokenIndex?: number,
   inheritedArguments: readonly ArgumentDefinition[] = [],
@@ -1455,7 +1442,7 @@ function storeParsedValues(
   definition: CommandDefinition,
   path: readonly string[],
   state: ParseState,
-  source: ValueSource = 'cli',
+  source: InputSource = 'cli',
   tokenIndex?: number,
   inheritedArguments: readonly ArgumentDefinition[] = [],
   argsOverrideSelf = definition.argsOverrideSelf,
@@ -1463,25 +1450,14 @@ function storeParsedValues(
   const collectsValues = argument.repeatable
     || argument.trailingVarArg
     || argument.maxValues !== 1;
-  const previousSource = state.sources.get(argument.name);
-  if (previousSource !== source && previousSource !== undefined) {
-    state.values[argument.name] = collectsValues ? [] : undefined;
-    state.provided.delete(argument.name);
-    state.cliProvided.delete(argument.name);
-    delete state.valueCounts[argument.name];
-  }
-  const overrideSelf = argument.kind === 'option'
+  const previous = state.argumentStates.get(argument.name);
+  const replaceSource = previous?.source !== undefined && previous.source !== source;
+  const repeatedOption = argument.kind === 'option'
     && !argument.repeatable
     && source === 'cli'
-    && argsOverrideSelf
-    && state.cliProvided.has(argument.name);
-  if (
-    argument.kind === 'option'
-    && !argument.repeatable
-    && source === 'cli'
-    && state.cliProvided.has(argument.name)
-    && !overrideSelf
-  ) {
+    && previous?.kind === 'supplied'
+    && previous.input === 'cli';
+  if (repeatedOption && !argsOverrideSelf) {
     throw commandError(
       ErrorKind.ArgumentConflict,
       `argument '${display}' cannot be used more than once`,
@@ -1495,10 +1471,9 @@ function storeParsedValues(
     );
   }
 
-  if (overrideSelf) {
+  if (replaceSource || repeatedOption) {
     state.values[argument.name] = collectsValues ? [] : undefined;
-    state.provided.delete(argument.name);
-    delete state.valueCounts[argument.name];
+    state.argumentStates.delete(argument.name);
   }
 
   if (collectsValues) {
@@ -1513,15 +1488,11 @@ function storeParsedValues(
   } else if (values.length > 0) {
     state.values[argument.name] = values[0];
   }
-  state.valueCounts[argument.name] = (state.valueCounts[argument.name] ?? 0) + values.length;
-  state.provided.add(argument.name);
-  state.sources.set(argument.name, source);
-  if (source === 'cli' && tokenIndex !== undefined) {
-    state.tokenIndices.set(argument.name, tokenIndex);
-  }
-  if (source === 'cli') {
-    state.cliProvided.add(argument.name);
-  }
+  const previousCount = suppliedArgument(state, argument.name)?.valueCount ?? 0;
+  recordSuppliedArgument(state, argument.name, source, {
+    valueCount: previousCount + values.length,
+    tokenIndex: source === 'cli' ? tokenIndex : undefined,
+  });
 }
 
 function storeSwitch(
@@ -1565,27 +1536,17 @@ function storeSwitch(
       output: `${definition.name} ${definition.version}\n`,
     });
   }
-  const previousSource = state.sources.get(argument.name);
-  if (!state.cliProvided.has(argument.name)) {
-    state.provided.delete(argument.name);
-    state.cliProvided.delete(argument.name);
-    delete state.valueCounts[argument.name];
-  }
+  const previous = suppliedArgument(state, argument.name);
+  const repeated = previous?.input === 'cli';
+  const colorDisabled = argument.color && Bun.env.NO_COLOR !== undefined;
   if (
     argument.action === ArgumentAction.SetTrue
     || argument.action === ArgumentAction.SetFalse
   ) {
     const nextValue = explicitValue ?? argument.action === ArgumentAction.SetTrue;
     const pairedColorConflict = argument.color
-      && state.cliProvided.has(argument.name)
-      && (
-        Bun.env.NO_COLOR !== undefined
-        || state.values[argument.name] !== nextValue
-      );
-    const overrideSelf = argsOverrideSelf
-      && !pairedColorConflict
-      && state.cliProvided.has(argument.name);
-    if (state.cliProvided.has(argument.name) && !overrideSelf) {
+      && (colorDisabled || state.values[argument.name] !== nextValue);
+    if (repeated && (!argsOverrideSelf || pairedColorConflict)) {
       throw commandError(
         ErrorKind.ArgumentConflict,
         `argument '${display}' cannot be used more than once`,
@@ -1598,10 +1559,7 @@ function storeSwitch(
         },
       );
     }
-    const value = explicitValue ?? argument.action === ArgumentAction.SetTrue;
-    state.values[argument.name] = argument.color && Bun.env.NO_COLOR !== undefined
-      ? false
-      : value;
+    state.values[argument.name] = colorDisabled ? false : nextValue;
     if (argument.color) {
       state.session.colorMode = state.values[argument.name] === true
         ? 'always'
@@ -1609,18 +1567,13 @@ function storeSwitch(
     }
   } else if (argument.action === ArgumentAction.Count) {
     const current = state.values[argument.name];
-    state.values[argument.name] = previousSource === 'cli' && typeof current === 'number'
+    state.values[argument.name] = previous?.source === 'cli' && typeof current === 'number'
       ? current + 1
       : 1;
   } else {
     throw new Error(`Action '${argument.action}' is not a switch action`);
   }
-  state.provided.add(argument.name);
-  state.sources.set(argument.name, argument.color && Bun.env.NO_COLOR !== undefined ? 'env' : 'cli');
-  if (tokenIndex !== undefined) {
-    state.tokenIndices.set(argument.name, tokenIndex);
-  }
-  state.cliProvided.add(argument.name);
+  recordSuppliedArgument(state, argument.name, 'cli', { source: colorDisabled ? 'env' : 'cli', tokenIndex });
 }
 
 function parseWith(
@@ -1687,7 +1640,8 @@ function reportValidationIssue(
   const argument = resolveArgument(argumentName);
   const related = Array.from(relatedArguments, resolveArgument);
   const hideDetail = argument.sensitive || related.some((candidate) => candidate.sensitive);
-  const tokenIndex = state.sources.get(argumentName) === 'cli' ? state.tokenIndices.get(argumentName) : undefined;
+  const supplied = suppliedArgument(state, argumentName);
+  const tokenIndex = supplied?.source === 'cli' ? supplied.tokenIndex : undefined;
   const label = `invalid value for '${displayArgument(argument)}'`;
   throw commandError(
     ErrorKind.InvalidValue,
@@ -1704,10 +1658,10 @@ function validateParsedValues(
   path: readonly string[],
   state: ParseState,
   inheritedArguments: readonly ArgumentDefinition[],
-  subcommandConflict: ArgumentDefinition | undefined,
+  subcommandConflict: SubcommandConflict | undefined,
 ): void {
   const missingArguments = definition.arguments.filter(
-    (argument) => argument.presence === 'required' && !state.provided.has(argument.name),
+    (argument) => argument.presence === 'required' && suppliedArgument(state, argument.name) === undefined,
   );
   const firstMissing = missingArguments[0];
   if (firstMissing !== undefined) {
@@ -1724,14 +1678,14 @@ function validateParsedValues(
       },
     );
   }
-  const tooShort = definition.arguments.find(
-    (argument) =>
-      (argument.kind === 'option' || argument.kind === 'positional')
-      && state.provided.has(argument.name)
-      && (state.valueCounts[argument.name] ?? 0) < argument.minValues,
-  );
+  const tooShort = definition.arguments.find((argument) => {
+    const supplied = suppliedArgument(state, argument.name);
+    return (argument.kind === 'option' || argument.kind === 'positional')
+      && supplied !== undefined
+      && supplied.valueCount < argument.minValues;
+  });
   if (tooShort !== undefined) {
-    const tokenIndex = state.tokenIndices.get(tooShort.name);
+    const tokenIndex = suppliedArgument(state, tooShort.name)?.tokenIndex;
     throw commandError(
       ErrorKind.TooFewValues,
       `argument '${displayArgument(tooShort)}' requires at least ${tooShort.minValues} value(s)`,
@@ -1745,20 +1699,21 @@ function validateParsedValues(
     );
   }
   const incompleteRepeatable = definition.arguments.find((argument) => {
+    const supplied = suppliedArgument(state, argument.name);
     if (
       !argument.repeatable
-      || !state.provided.has(argument.name)
+      || supplied === undefined
       || argument.minValues === 0
       || argument.maxValues === null
     ) {
       return false;
     }
-    const count = state.valueCounts[argument.name] ?? 0;
+    const count = supplied.valueCount;
     return Math.ceil(count / argument.maxValues)
       > Math.floor(count / argument.minValues);
   });
   if (incompleteRepeatable !== undefined) {
-    const tokenIndex = state.tokenIndices.get(incompleteRepeatable.name);
+    const tokenIndex = suppliedArgument(state, incompleteRepeatable.name)?.tokenIndex;
     throw commandError(
       ErrorKind.TooFewValues,
       `argument '${
@@ -1775,7 +1730,7 @@ function validateParsedValues(
   }
   if (
     definition.argRequiredElseHelp
-    && state.provided.size === 0
+    && suppliedArgumentNames(state).next().done === true
     && state.subcommand === undefined
   ) {
     throw new DisplayRequest({
@@ -1796,15 +1751,15 @@ function validateParsedValues(
   }
   validateRelations(definition, path, state, inheritedArguments);
   if (subcommandConflict !== undefined && state.subcommand !== undefined) {
-    const tokenIndex = state.tokenIndices.get(subcommandConflict.name);
+    const { argument, tokenIndex } = subcommandConflict;
     throw commandError(
       ErrorKind.ArgumentConflict,
-      `argument '${displayArgument(subcommandConflict)}' cannot be used with subcommand '${state.subcommand.name}'`,
+      `argument '${displayArgument(argument)}' cannot be used with subcommand '${state.subcommand.name}'`,
       definition,
       path,
       inheritedArguments,
       {
-        argumentName: subcommandConflict.name,
+        argumentName: argument.name,
         ...(tokenIndex === undefined ? {} : { tokenIndex }),
       },
     );

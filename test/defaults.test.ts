@@ -18,6 +18,7 @@ import type {
   ParseOptions,
 } from '../src';
 import { getArgumentDefinition } from '../src/argument';
+import { recordSuppliedArgument } from '../src/command/argument-state';
 import {
   applyConditionalDefaults,
   type RelationState,
@@ -665,10 +666,7 @@ describe('conditional defaults', () => {
     expect(() =>
       applyConditionalDefaults(definition, {
         values: { first: 'one', second: undefined },
-        provided: new Set(),
-        cliProvided: new Set(),
-        valueCounts: {},
-        sources: new Map(),
+        argumentStates: new Map(),
       })
     ).toThrow('dependency cycle');
 
@@ -686,15 +684,12 @@ describe('conditional defaults', () => {
     const previousNoColor = Bun.env.NO_COLOR;
     Bun.env.NO_COLOR = '1';
     try {
-      const sources = new Map([['source', 'cli' as const]]);
-      const state = {
+      const state: RelationState = {
         values: { source: 'value', color: true },
-        provided: new Set<string>(),
-        cliProvided: new Set(['source']),
-        valueCounts: {},
-        sources,
-        session: {} as NonNullable<RelationState['session']>,
+        argumentStates: new Map(),
+        session: {},
       };
+      recordSuppliedArgument(state, 'source', 'cli');
       applyConditionalDefaults(colorDefinition, state);
       expect(state.values.color).toBe(false);
       expect(state.session?.colorMode).toBe('never');

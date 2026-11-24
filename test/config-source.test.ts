@@ -595,6 +595,17 @@ describe('caller supplied config and value sources', () => {
       const fromOverride = unwrapValue(overridden.parse(['--offline', '--color']));
       expect(fromOverride.color).toBe(false);
       expect(getValueSource(fromOverride, color)).toBe('env');
+
+      const overridesFormat = command('tool', {
+        args: [color, option('format', parsers.string, { default: 'text' })],
+        overrides: [['color', 'format']],
+      });
+      const fromEnvironment = unwrapValue(overridesFormat.parse(['--format=json']));
+      const fromSwitch = unwrapValue(overridesFormat.parse(['--format=json', '--color']));
+      expect(getValueSource(fromEnvironment, color)).toBe('env');
+      expect(getValueSource(fromSwitch, color)).toBe('env');
+      expect(fromEnvironment.format).toBe('json');
+      expect(fromSwitch.format).toBe('text');
     } finally {
       if (previous === undefined) {
         delete Bun.env.NO_COLOR;

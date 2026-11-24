@@ -189,6 +189,43 @@ describe('dynamic completion', () => {
     expect(received?.rawValues.format).toEqual(['json']);
   });
 
+  test('distinguishes invalid CLI and environment input when resolving relations', async () => {
+    const envName = 'KONSTIT_COMPLETION_INVALID_NUMBER';
+    const previous = Bun.env[envName];
+    Bun.env[envName] = 'bad-env';
+    const received: DynamicCompletionContext[] = [];
+    try {
+      const cli = command('tool', {
+        args: [
+          option('number', parsers.integer, { env: envName, default: 1 }),
+          option('format', parsers.string, { default: 'text' }),
+          option('status', parsers.string),
+          option('query', parsers.string, {
+            complete: (context) => {
+              received.push(context);
+              return [];
+            },
+          }),
+        ],
+        defaultIf: [{ source: 'number', target: 'status', value: 'input' }],
+        overrides: [['number', 'format']],
+      });
+
+      await resolveDynamicCompletion(cli, ['--format=json', '--query', '']);
+      await resolveDynamicCompletion(cli, ['--format=json', '--number=bad-cli', '--query', '']);
+    } finally {
+      if (previous === undefined) {
+        delete Bun.env[envName];
+      } else {
+        Bun.env[envName] = previous;
+      }
+    }
+    expect(received[0]?.values).toMatchObject({ number: undefined, format: 'json', status: 'input' });
+    expect(received[0]?.rawValues.number).toEqual(['bad-env']);
+    expect(received[1]?.values).toMatchObject({ number: undefined, format: 'text', status: 'input' });
+    expect(received[1]?.rawValues.number).toEqual(['bad-cli']);
+  });
+
   test('supports async iterables and delimiter-aware output', async () => {
     const cli = command('tool', {
       args: [option('label', parsers.string, {

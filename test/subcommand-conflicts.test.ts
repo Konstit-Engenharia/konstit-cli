@@ -186,9 +186,9 @@ describe('argsConflictWithSubcommands', () => {
   });
 
   test.each([
-    { argv: ['-n', '--reset', 'clean'] },
-    { argv: ['-n', 'clean', '--reset'] },
-  ])('retains explicit local occurrences cleared by overrides: %j', ({ argv }) => {
+    { argv: ['--reset', '-n', 'clean'], tokenIndex: 1 },
+    { argv: ['-n', 'clean', '--reset'], tokenIndex: 0 },
+  ])('retains explicit local occurrences cleared by overrides: %j', ({ argv, tokenIndex }) => {
     const cli = command('demo', {
       argsConflictWithSubcommands: true,
       args: [flag('dry-run', { short: 'n' }), flag('reset', { global: true })],
@@ -197,7 +197,11 @@ describe('argsConflictWithSubcommands', () => {
     });
     expect(cli.tryParse(argv)).toMatchObject({
       type: 'error',
-      error: { kind: ErrorKind.ArgumentConflict, message: 'argument \'--dry-run\' cannot be used with subcommand \'clean\'' },
+      error: {
+        kind: ErrorKind.ArgumentConflict,
+        message: 'argument \'--dry-run\' cannot be used with subcommand \'clean\'',
+        tokenIndex,
+      },
     });
     expect(cli.parse(['clean', '--reset'])).toMatchObject({ type: 'value' });
   });
