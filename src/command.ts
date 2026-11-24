@@ -88,6 +88,23 @@ export type CommandHandler<in Arguments extends object> = (
 
 type Simplify<Value> = { [Key in keyof Value]: Value[Key]; } & {};
 type StringKeyOf<Value> = Extract<keyof Value, string>;
+
+/** A cross-argument validation failure associated with a declared argument. */
+export interface CommandValidationIssue<Name extends string = string> {
+  /** The canonical name of the argument to report. */
+  readonly argumentName: Name;
+  /** The detail to add to the invalid-value diagnostic. */
+  readonly message: string;
+  /** Other arguments involved in the failure. */
+  readonly relatedArguments?: readonly Name[];
+}
+
+/** A synchronous validator for the resolved arguments of a command. */
+export type CommandValidator<in Arguments extends object, out Name extends string = StringKeyOf<Arguments>> = (
+  args: Arguments,
+  // biome-ignore lint/suspicious/noConfusingVoidType: A validator can succeed without returning a value.
+) => void | CommandValidationIssue<Name>;
+
 type RelationValue<Value> = Exclude<Value, undefined> extends readonly (infer Item)[] ? Item
   : Exclude<Value, undefined>;
 
@@ -1114,6 +1131,11 @@ export interface CommandOptions<
   >;
   /** Defines clap-style argument groups and their relations. */
   readonly groups?: Groups;
+  /** Validates resolved arguments after defaults, overrides, and built-in relations. */
+  readonly validate?: CommandValidator<
+    CommandArguments<FieldsFromArguments<Arguments>, SubcommandsFromTuple<Subcommands>, SubcommandRequired>,
+    StringKeyOf<FieldsFromArguments<Arguments>>
+  >;
   /** Attaches a callback with the exact configured argument type. */
   readonly handler?: CommandHandler<
     CommandArguments<
@@ -1402,6 +1424,9 @@ export function command(
         ...rest as never,
       );
     }
+  }
+  if (options.validate !== undefined) {
+    configured = new Command(copyCommand(getCommandDefinition(configured), { validate: options.validate }));
   }
   if (options.handler !== undefined) {
     return terminalCommand(configured.handler(options.handler as never));

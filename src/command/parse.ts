@@ -2,6 +2,7 @@ import {
   ArgumentAction,
   type ArgumentDefinition,
 } from '../argument.js';
+import type { CommandValidationIssue } from '../command.js';
 import {
   collectDeprecation,
   getWarnings,
@@ -61,6 +62,7 @@ export type ColorMode = 'auto' | 'always' | 'never';
 interface ParseSession {
   readonly defaultColor: boolean;
   readonly warnings: DeprecationWarning[];
+  validators?: Array<() => void>;
   colorMode?: ColorMode;
 }
 
@@ -84,6 +86,9 @@ export function parseConfigured<Value>(
       session,
       options.config,
     ) as Value;
+    session.validators?.forEach((validate) => {
+      validate();
+    });
     const outcome = { ok: true, type: 'value', value } as const;
     if (session.colorMode !== undefined) {
       outputColorModes.set(outcome, session.colorMode);
@@ -399,11 +404,12 @@ function parseDefinition(
   const subcommandConflict = definition.argsConflictWithSubcommands && state.subcommand !== undefined
     ? definition.arguments.find((argument) => !argument.global && state.cliProvided.has(argument.name))
     : undefined;
+  const inheritedArguments = inheritedGlobals.map(({ argument }) => argument);
   applyEnvironmentFallbacks(
     definition,
     state,
     path,
-    inheritedGlobals.map(({ argument }) => argument),
+    inheritedArguments,
   );
   applyConfigValues(definition, config, path, state, inheritedGlobals);
   applyConditionalDefaults(definition, state);
@@ -415,7 +421,7 @@ function parseDefinition(
     definition,
     path,
     state,
-    inheritedGlobals.map(({ argument }) => argument),
+    inheritedArguments,
     subcommandConflict,
   );
   if (definition.subcommands.length > 0) {
@@ -435,6 +441,17 @@ function parseDefinition(
     }
   }
   setValueSources(result, sources);
+  const validate = definition.validate;
+  if (validate !== undefined) {
+    // Ancestor configuration can update inherited value sources after a child is parsed.
+    session.validators ??= [];
+    session.validators.push(() => {
+      const issue = validate(result as never);
+      if (issue !== undefined) {
+        reportValidationIssue(issue, definition, path, state, inheritedArguments);
+      }
+    });
+  }
   return result;
 }
 
@@ -1683,6 +1700,45 @@ function parseWith(
       },
     );
   }
+}
+
+function reportValidationIssue(
+  issue: CommandValidationIssue,
+  definition: CommandDefinition,
+  path: readonly string[],
+  state: ParseState,
+  inheritedArguments: readonly ArgumentDefinition[],
+): void {
+  if (
+    issue === null
+    || typeof issue !== 'object'
+    || typeof issue.argumentName !== 'string'
+    || typeof issue.message !== 'string'
+    || (issue.relatedArguments !== undefined && !Array.isArray(issue.relatedArguments))
+  ) {
+    throw new TypeError(`Validator for '${path.join(' ')}' must return a validation issue or undefined`);
+  }
+  const { argumentName, message, relatedArguments = [] } = issue;
+  const resolveArgument = (name: string): ArgumentDefinition => {
+    const argument = definition.arguments.find((candidate) => candidate.name === name);
+    if (argument === undefined) {
+      throw new TypeError(`Validator for '${path.join(' ')}' referenced an unknown argument`);
+    }
+    return argument;
+  };
+  const argument = resolveArgument(argumentName);
+  const related = Array.from(relatedArguments, resolveArgument);
+  const hideDetail = argument.sensitive || related.some((candidate) => candidate.sensitive);
+  const tokenIndex = state.sources.get(argumentName) === 'cli' ? state.tokenIndices.get(argumentName) : undefined;
+  const label = `invalid value for '${displayArgument(argument)}'`;
+  throw commandError(
+    ErrorKind.InvalidValue,
+    hideDetail ? label : `${label}: ${message}`,
+    definition,
+    path,
+    inheritedArguments,
+    { argumentName, relatedArguments, ...(tokenIndex === undefined ? {} : { tokenIndex }) },
+  );
 }
 
 function validateParsedValues(

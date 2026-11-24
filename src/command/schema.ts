@@ -1,5 +1,8 @@
 import type { ArgumentDefinition } from '../argument.js';
-import type { CommandHandler } from '../command.js';
+import type {
+  CommandHandler,
+  CommandValidator,
+} from '../command.js';
 
 /** A directional relation between two arguments. */
 export interface RequirementDefinition {
@@ -126,6 +129,8 @@ export interface CommandDefinition {
   readonly overrideHelp?: string;
   /** The text displayed for a version request. */
   readonly version?: string;
+  /** The callback invoked after standard parsing and relation checks complete. */
+  readonly validate?: CommandValidator<never, string>;
   /** The callback invoked by the runner when this command is selected. */
   readonly handler?: CommandHandler<never>;
   /** Arguments declared directly on this command, in declaration order. */

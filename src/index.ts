@@ -19,6 +19,8 @@ export {
   type CommandGroupOptions,
   type CommandHandler,
   type CommandOptions,
+  type CommandValidationIssue,
+  type CommandValidator,
   type ConfigValue,
   type HandledCommand,
   type HandlerContext,

@@ -101,8 +101,13 @@ const documented = cli.command('documented', {
     default: 3000,
     sensitive: true,
   })],
+  validate: ({ port }) => port < 1 ? { argumentName: 'port', message: 'Port must be positive.' } : undefined,
   handler: () => 0,
 });
+const fromValidation = documented.tryParse(['--port', '0']);
+assert.equal(fromValidation.type, 'error');
+assert.equal(fromValidation.error.argumentName, 'port');
+assert.equal(fromValidation.error.kind, cli.ErrorKind.InvalidValue);
 const fromConfig = documented.parse([], { config: { values: { port: '8080' } } });
 assert.equal(fromConfig.type, 'value');
 if (fromConfig.type !== 'value') {

@@ -19,6 +19,7 @@ import {
   type CommandConfigSchema,
   type CommandExample,
   type CommandMetadata,
+  type CommandValidationIssue,
   type ConditionalDefaultMetadata,
   type ConsoleOptions,
   type ConsoleWriters,
@@ -66,6 +67,17 @@ const child = command('deploy', {
     flag('dryRun'),
   ],
   requiresValue: [['dryRun', 'region', 'us']],
+  validate({ region, dryRun }) {
+    type _RegionIsExact = Expect<Equal<typeof region, 'us' | 'eu'>>;
+    if (dryRun && region === 'eu') {
+      const issue: CommandValidationIssue<'region' | 'dryRun'> = {
+        argumentName: 'region',
+        relatedArguments: ['dryRun'],
+        message: 'The selected region does not support dry runs.',
+      };
+      return issue;
+    }
+  },
   handler: async ({ region }, { stdout }) => {
     const written: Promise<void> = stdout(region);
     await written;

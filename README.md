@@ -120,6 +120,7 @@ options object.
 | `conflicts`                   | Mutually conflicting argument sets.                                     |
 | `exclusive`                   | Arguments that conflict with every other supplied argument.             |
 | `groups`                      | Named argument groups and their relations.                              |
+| `validate`                    | Synchronous validation of resolved arguments.                           |
 | `handler`                     | Synchronous or asynchronous command callback.                           |
 
 Each field is optional. Duplicate primary argument and subcommand names are
@@ -844,6 +845,36 @@ on the CLI before any target is cleared. Every override relation uses that same
 snapshot, so a chain such as `a -> b` and `b -> c` clears both targets in either
 declaration order. Environment, configuration, and default values do not make
 an override source explicit.
+
+### Cross-argument validation
+
+Use `validate(args)` for checks involving multiple parsed values. It receives
+the same typed arguments as the handler. Return an issue with `argumentName`
+and `message` to report an `InvalidValue` error. Use `relatedArguments` to
+identify other declared arguments involved in the error.
+
+```ts
+const range = command('range', {
+  args: [
+    option('start', parsers.integer, { default: 0 }),
+    option('end', parsers.integer, { required: true }),
+  ],
+  validate({ start, end }) {
+    if (end < start) {
+      return {
+        argumentName: 'end',
+        relatedArguments: ['start'],
+        message: 'End must be greater than or equal to start.',
+      };
+    }
+  },
+});
+```
+
+After the selected command path resolves defaults, overrides, and built-in
+relations, validators run from leaf to root. A validator succeeds by returning
+`undefined`. `runParsed()` uses the original parse result. Issues that identify
+a sensitive argument use a generic message in diagnostics.
 
 ## Global arguments and custom help
 

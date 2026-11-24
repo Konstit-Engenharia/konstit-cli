@@ -74,6 +74,7 @@ const commandOptionKeys = new Set([
   'conflicts',
   'exclusive',
   'groups',
+  'validate',
   'handler',
 ]);
 
@@ -462,8 +463,10 @@ export function validateCommandOptions(options: unknown): void {
   if (options.groups !== undefined) {
     validateGroups(options.groups);
   }
-  if (options.handler !== undefined && typeof options.handler !== 'function') {
-    throw new TypeError('Command option \'handler\' must be a function');
+  for (const key of ['validate', 'handler'] as const) {
+    if (options[key] !== undefined && typeof options[key] !== 'function') {
+      throw new TypeError(`Command option '${key}' must be a function`);
+    }
   }
 }
 
