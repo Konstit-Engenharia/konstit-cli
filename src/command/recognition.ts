@@ -1,6 +1,59 @@
 import type { ArgumentDefinition } from '../argument.js';
 import type { CommandDefinition } from '../command.js';
 
+export const commandWords = { kind: 'command' } as const;
+export const literalWords = { kind: 'literal' } as const;
+
+export type WordState = typeof commandWords | typeof literalWords;
+
+export interface OptionValueState {
+  readonly kind: 'option-values';
+  readonly argument: ArgumentDefinition;
+  consumed: number;
+}
+
+export type ArgvState = WordState | OptionValueState;
+type WordKind = 'end-options' | 'long-option' | 'short-options' | 'command-word' | 'positional';
+type OptionValueAction = 'take-value' | 'take-terminator' | 'resume-command';
+
+export function recognizeWord(
+  state: WordState,
+  word: string,
+  consumeAsPositional: boolean,
+): WordKind {
+  if (state.kind === 'literal') {
+    return 'positional';
+  }
+  if (word === '--') {
+    return 'end-options';
+  }
+  if (consumeAsPositional) {
+    return 'positional';
+  }
+  if (word.startsWith('--')) {
+    return 'long-option';
+  }
+  return word !== '-' && word.startsWith('-') ? 'short-options' : 'command-word';
+}
+
+export function recognizeOptionValue(
+  { argument, consumed }: OptionValueState,
+  word: string,
+  isSubcommand: (word: string) => boolean,
+): OptionValueAction {
+  if (argument.valueTerminator === word) {
+    return 'take-terminator';
+  }
+  if (stopsOptionValueCollection(argument, word) || (consumed >= argument.minValues && isSubcommand(word))) {
+    return 'resume-command';
+  }
+  return 'take-value';
+}
+
+export function optionAcceptsMoreValues({ argument, consumed }: OptionValueState): boolean {
+  return argument.maxValues === null || consumed < argument.maxValues;
+}
+
 export interface LongOptionToken {
   readonly name: string;
   readonly inlineValue?: string;
@@ -44,7 +97,7 @@ export function splitArgumentValue(
     : raw.split(argument.valueDelimiter);
 }
 
-export function stopsOptionValueCollection(
+function stopsOptionValueCollection(
   argument: ArgumentDefinition,
   token: string,
 ): boolean {

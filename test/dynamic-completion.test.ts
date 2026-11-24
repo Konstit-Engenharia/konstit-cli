@@ -144,6 +144,51 @@ describe('dynamic completion', () => {
     expect(repeated?.rawValues.mode).toEqual([]);
   });
 
+  test('restores overridden values for providers and retains the original words', async () => {
+    let received: DynamicCompletionContext | undefined;
+    const cli = command('tool', {
+      args: [
+        option('format', parsers.string, { default: 'text' }),
+        flag('reset'),
+        positional('query', parsers.string, {
+          complete: (context) => {
+            received = context;
+            return [String(context.values.format)];
+          },
+        }),
+      ],
+      overrides: [['reset', 'format']],
+    });
+
+    const result = await resolveDynamicCompletion(cli, ['--format', 'json', '--reset', 't']);
+    expect(result.candidates).toEqual([{ value: 'text' }]);
+    expect(received?.values).toMatchObject({ format: 'text', reset: true });
+    expect(received?.rawValues.format).toEqual(['json']);
+  });
+
+  test('applies ancestor overrides to globals supplied after entering a subcommand', async () => {
+    let received: DynamicCompletionContext | undefined;
+    const cli = command('tool', {
+      args: [
+        option('format', parsers.string, { default: 'text', global: true }),
+        flag('reset', { global: true }),
+      ],
+      overrides: [['reset', 'format']],
+      subcommands: [command('run', {
+        args: [positional('query', parsers.string, {
+          complete: (context) => {
+            received = context;
+            return [];
+          },
+        })],
+      })],
+    });
+
+    await resolveDynamicCompletion(cli, ['run', '--format', 'json', '--reset', '']);
+    expect(received?.values).toMatchObject({ format: 'text', reset: true });
+    expect(received?.rawValues.format).toEqual(['json']);
+  });
+
   test('supports async iterables and delimiter-aware output', async () => {
     const cli = command('tool', {
       args: [option('label', parsers.string, {

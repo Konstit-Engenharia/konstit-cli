@@ -108,29 +108,34 @@ Register-ArgumentCompleter -Native -CommandName {{EXECUTABLE_QUOTED}} -ScriptBlo
   $positionalSpec = $null
   $positionalDelimiter = ''
   $positionalTerminator = ''
-  $optionsEnabled = $true
-  $tokens = @($commandAst.CommandElements | ForEach-Object { [string]$_.Value })
+  $scanState = 'command'
+  $tokens = @($commandAst.CommandElements | ForEach-Object { {{ARGV_WORD}} })
   $currentIncluded = $wordToComplete.Length -gt 0 -and $tokens.Count -gt 0
   $limit = $tokens.Count
   if ($currentIncluded) { $limit-- }
   for ($index = 1; $index -lt $limit; $index++) {
     $word = $tokens[$index]
-    if ($null -ne $pendingOption) {
+    if ($scanState -eq 'option-values') {
+      $pendingTerminator = & $decodeHex $pendingSpec.TerminatorHex
+      if ($pendingTerminator.Length -gt 0 -and $word -ceq $pendingTerminator) {
+        $scanState = 'command'
+        continue
+      }
       $stopPending = -not $pendingSpec.AllowHyphen -and $word -ne '-' -and $word.StartsWith('-') -and (-not $pendingSpec.AllowNegative -or $word -notmatch '^-(?:[0-9]|\.[0-9])')
-      if (-not $stopPending -and $optionsEnabled -and $pendingConsumed -ge $pendingSpec.Minimum) {
+      if (-not $stopPending -and $pendingConsumed -ge $pendingSpec.Minimum) {
         $stopPending = $null -ne (& $getSubcommand $context $word)
       }
       if (-not $stopPending) {
         $pendingConsumed += & $valueCount $word $pendingDelimiter
         $pendingRawCount++
-        if (($pendingSpec.Maximum -ge 0 -and $pendingConsumed -ge $pendingSpec.Maximum) -or ($pendingSpec.SingleRaw -and $pendingRawCount -ge 1)) { $pendingOption = $null }
+        if (($pendingSpec.Maximum -ge 0 -and $pendingConsumed -ge $pendingSpec.Maximum) -or ($pendingSpec.SingleRaw -and $pendingRawCount -ge 1)) { $scanState = 'command' }
         continue
       }
-      $pendingOption = $null
+      $scanState = 'command'
     }
-    if ($word -eq '--') { $optionsEnabled = $false; continue }
+    if ($scanState -eq 'command' -and $word -eq '--') { $scanState = 'literal'; continue }
     $consumeAsPositional = $false
-    if ($optionsEnabled -and $word -ne '-' -and $word.StartsWith('-')) {
+    if ($scanState -eq 'command' -and $word -ne '-' -and $word.StartsWith('-')) {
       if ($positionalRemaining -eq 0) {
         $positionalSpec = & $getPositionalSpec $context $positionalIndex
         if ($null -ne $positionalSpec) {
@@ -143,22 +148,26 @@ Register-ArgumentCompleter -Native -CommandName {{EXECUTABLE_QUOTED}} -ScriptBlo
       $declared = (& $isBuiltinOption $context $word) -or (& $isDeclaredOption $context $declaredToken)
       if (-not $declared -and $null -ne $positionalSpec -and ($positionalSpec.AllowHyphen -or ($positionalSpec.AllowNegative -and $word -match '^-(?:[0-9]|\.[0-9])'))) { $consumeAsPositional = $true }
     }
-    if ($optionsEnabled -and -not $consumeAsPositional -and $word -match '^(--[^=]+)=') {
+    if ($scanState -eq 'command' -and -not $consumeAsPositional -and $word -match '^(--[^=]+)=') {
       $spec = & $getOptionSpec $context $Matches[1]
       if ($null -ne $spec) {
         $pendingSpec = $spec
         $pendingDelimiter = & $decodeHex $spec.DelimiterHex
         $pendingConsumed = & $valueCount ($word.Substring($word.IndexOf('=') + 1)) $pendingDelimiter
         $pendingRawCount = 1
-        if (($spec.Maximum -lt 0 -or $pendingConsumed -lt $spec.Maximum) -and (-not $spec.SingleRaw)) { $pendingOption = $Matches[1] }
+        if (($spec.Maximum -lt 0 -or $pendingConsumed -lt $spec.Maximum) -and (-not $spec.SingleRaw)) {
+          $pendingOption = $Matches[1]
+          $scanState = 'option-values'
+        }
       }
       continue
     }
-    if ($optionsEnabled -and -not $consumeAsPositional) {
+    if ($scanState -eq 'command' -and -not $consumeAsPositional) {
       $spec = & $getOptionSpec $context $word
       if ($null -ne $spec) {
         if (-not $spec.RequireEquals) {
           $pendingOption = $word
+          $scanState = 'option-values'
           $pendingSpec = $spec
           $pendingDelimiter = & $decodeHex $spec.DelimiterHex
           $pendingConsumed = 0
@@ -181,7 +190,10 @@ Register-ArgumentCompleter -Native -CommandName {{EXECUTABLE_QUOTED}} -ScriptBlo
             $pendingConsumed = & $valueCount $attached $pendingDelimiter
             $pendingRawCount = 1
           }
-          if (($attached.Length -gt 0 -or -not $spec.RequireEquals) -and ($spec.Maximum -lt 0 -or $pendingConsumed -lt $spec.Maximum) -and (-not $spec.SingleRaw -or $pendingRawCount -eq 0)) { $pendingOption = $short }
+          if (($attached.Length -gt 0 -or -not $spec.RequireEquals) -and ($spec.Maximum -lt 0 -or $pendingConsumed -lt $spec.Maximum) -and (-not $spec.SingleRaw -or $pendingRawCount -eq 0)) {
+            $pendingOption = $short
+            $scanState = 'option-values'
+          }
           break
         }
         continue
@@ -194,7 +206,7 @@ Register-ArgumentCompleter -Native -CommandName {{EXECUTABLE_QUOTED}} -ScriptBlo
         continue
       }
     }
-    if ($optionsEnabled -and -not $consumeAsPositional -and $word -ne '-' -and $word.StartsWith('-')) { continue }
+    if ($scanState -eq 'command' -and -not $consumeAsPositional -and $word -ne '-' -and $word.StartsWith('-')) { continue }
     if ($positionalRemaining -eq 0) {
       $positionalSpec = & $getPositionalSpec $context $positionalIndex
       if ($null -eq $positionalSpec) { continue }
@@ -210,6 +222,7 @@ Register-ArgumentCompleter -Native -CommandName {{EXECUTABLE_QUOTED}} -ScriptBlo
       $positionalTerminator = ''
       continue
     }
+    if ($positionalSpec.Trailing) { $scanState = 'literal' }
     if ($positionalRemaining -gt 0) {
       $positionalRemaining -= & $valueCount $word $positionalDelimiter
       if ($positionalRemaining -le 0) {
@@ -259,9 +272,10 @@ Register-ArgumentCompleter -Native -CommandName {{EXECUTABLE_QUOTED}} -ScriptBlo
       }
   }
 
-  if ($null -ne $pendingOption) {
-    $stopPending = -not $pendingSpec.AllowHyphen -and $wordToComplete -ne '-' -and $wordToComplete.StartsWith('-') -and (-not $pendingSpec.AllowNegative -or $wordToComplete -notmatch '^-(?:[0-9]|\.[0-9])')
-    if (-not $stopPending -and $optionsEnabled -and $pendingConsumed -ge $pendingSpec.Minimum) {
+  if ($scanState -eq 'option-values') {
+    $pendingTerminator = & $decodeHex $pendingSpec.TerminatorHex
+    $stopPending = ($pendingTerminator.Length -gt 0 -and $wordToComplete -ceq $pendingTerminator) -or (-not $pendingSpec.AllowHyphen -and $wordToComplete -ne '-' -and $wordToComplete.StartsWith('-') -and (-not $pendingSpec.AllowNegative -or $wordToComplete -notmatch '^-(?:[0-9]|\.[0-9])'))
+    if (-not $stopPending -and $pendingConsumed -ge $pendingSpec.Minimum) {
       $stopPending = $null -ne (& $getSubcommand $context $wordToComplete)
     }
     if (-not $stopPending) {
@@ -270,16 +284,16 @@ Register-ArgumentCompleter -Native -CommandName {{EXECUTABLE_QUOTED}} -ScriptBlo
       & $completeValue $mode $pendingOption $wordToComplete
       return
     }
-    $pendingOption = $null
+    $scanState = 'command'
   }
-  $consumeAsPositional = -not $optionsEnabled -or -not $wordToComplete.StartsWith('-')
-  if (-not $consumeAsPositional -and $optionsEnabled -and $wordToComplete -ne '--') {
+  $consumeAsPositional = $scanState -eq 'literal' -or -not $wordToComplete.StartsWith('-')
+  if (-not $consumeAsPositional -and $wordToComplete -ne '--') {
     if ($positionalRemaining -eq 0) { $positionalSpec = & $getPositionalSpec $context $positionalIndex }
     $declaredToken = if ($wordToComplete -match '^(--[^=]+)=') { $Matches[1] } elseif ($wordToComplete -match '^-[^-]') { $wordToComplete.Substring(0, 2) } else { $wordToComplete }
     $declared = (& $isBuiltinOption $context $wordToComplete) -or (& $isDeclaredOption $context $declaredToken)
     if (-not $declared -and $null -ne $positionalSpec -and ($positionalSpec.AllowHyphen -or ($positionalSpec.AllowNegative -and $wordToComplete -match '^-(?:[0-9]|\.[0-9])'))) { $consumeAsPositional = $true }
   }
-  if ($optionsEnabled -and $wordToComplete -match '^(--[^=]+)=(.*)$' -and (& $takesValue $context $Matches[1])) {
+  if ($scanState -eq 'command' -and $wordToComplete -match '^(--[^=]+)=(.*)$' -and (& $takesValue $context $Matches[1])) {
     $option = $Matches[1]
     $partial = $Matches[2]
     $mode = & $getValueMode $context $option
@@ -287,7 +301,7 @@ Register-ArgumentCompleter -Native -CommandName {{EXECUTABLE_QUOTED}} -ScriptBlo
     & $completeValue $mode $option $partial "$option="
     return
   }
-  if ($optionsEnabled -and $wordToComplete -match '^-[^-]') {
+  if ($scanState -eq 'command' -and $wordToComplete -match '^-[^-]') {
     $cluster = $wordToComplete.Substring(1)
     for ($shortIndex = 0; $shortIndex -lt $cluster.Length; $shortIndex++) {
       $short = "-$($cluster[$shortIndex])"
@@ -310,7 +324,7 @@ Register-ArgumentCompleter -Native -CommandName {{EXECUTABLE_QUOTED}} -ScriptBlo
     if ($null -ne $mode) { & $completeValue $mode $positional $wordToComplete }
     elseif (& $allowsFiles "$context`:$positionalIndex") { & $completeValue 'file' $positional $wordToComplete }
   }
-  if ($optionsEnabled -and -not $consumeAsPositional) {
+  if ($scanState -eq 'command' -and -not $consumeAsPositional) {
     foreach ($candidate in @(& $getCandidates $context)) {
       & $emit $candidate.Value $candidate.Description
     }

@@ -15,6 +15,7 @@ import {
 import {
   dynamicCompletionEnvironment,
   generateCompletion,
+  type CompletionShell,
 } from '../src/completion';
 
 const cli = command('demo', {
@@ -545,6 +546,48 @@ printf 'AFTER_TERMINATOR:%s\n' "\${COMPREPLY[*]}"
     expect(result.stderr).toBe('');
   });
 
+  const optionTerminatorCli = command('argv-state', {
+    args: [
+      option('values', parsers.enum(['one', 'two']), {
+        short: 'v',
+        numArgs: { min: 1 },
+        valueTerminator: 'END',
+      }),
+      positional('target', parsers.enum(['next'])),
+      positional('final', parsers.enum(['final'])),
+    ],
+  });
+  const trailingPositionalCli = command('argv-state', {
+    subcommands: [command('delegate', {
+      args: [positional('rest', parsers.enum(['payload', 'run', 'tail']), { trailingVarArg: true })],
+      subcommands: [command('run', {
+        args: [positional('child', parsers.enum(['child']))],
+      })],
+    })],
+  });
+
+  for (const shell of completionShells) {
+    const executable = shell === 'powershell' ? 'pwsh' : shell;
+    const shellTest = test.skipIf(Bun.which(executable) === null);
+    shellTest(`${shell} consumes the option terminator and advances to the next positional`, () => {
+      const script = generateCompletion(optionTerminatorCli, shell);
+      for (const optionWords of [['--values', 'one'], ['--values=one'], ['-vone']]) {
+        const result = completeStaticShell(shell, script, [...optionWords, 'END', 'next']);
+        expect(result.stderr).toBe('');
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout.trim()).toBe('final');
+      }
+    }, { timeout: 20_000 });
+
+    shellTest(`${shell} treats subcommand names as values after a trailing positional starts`, () => {
+      const script = generateCompletion(trailingPositionalCli, shell);
+      const result = completeStaticShell(shell, script, ['delegate', 'payload', 'run']);
+      expect(result.stderr).toBe('');
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout.trim().split(/\r?\n/).sort()).toEqual(['payload', 'run', 'tail']);
+    });
+  }
+
   test('Fish and PowerShell use their native registration interfaces', () => {
     const fish = generateCompletion(cli, 'fish');
     expect(fish).toContain('complete -c \'demo\'');
@@ -591,6 +634,57 @@ printf 'AFTER_TERMINATOR:%s\n' "\${COMPREPLY[*]}"
     );
   }
 });
+
+function completeStaticShell(shell: CompletionShell, script: string, prefix: readonly string[]) {
+  const words = ['argv-state', ...prefix];
+  switch (shell) {
+    case 'bash':
+      return runShell(
+        ['bash', '--noprofile', '--norc', '-s', '--', ...words],
+        [
+          script,
+          'COMP_WORDS=("$@" "")',
+          'COMP_CWORD=$#',
+          '_bun_clap_argv_state',
+          `printf "%s\\n" "\${COMPREPLY[@]}"`,
+        ].join('\n'),
+      );
+    case 'zsh':
+      return runShell(
+        ['zsh', '-f', '-s', '--', ...words],
+        [
+          'compdef() { :; }',
+          'compadd() { while (( $# )) && [[ "$1" != -- ]]; do shift; done; shift; print -rl -- "$@"; }',
+          script,
+          'words=("$@" "")',
+          'CURRENT=$(($# + 1))',
+          '_bun_clap_argv_state',
+        ].join('\n'),
+      );
+    case 'fish': {
+      const commandText = [
+        script,
+        'complete --do-complete (string join " " -- $argv)" "',
+      ].join('\n');
+      return runShell(['fish', '--no-config', '-c', commandText, '--', ...words], '');
+    }
+    case 'powershell': {
+      const input = words.join(' ').replaceAll('\'', '\'\'');
+      const commandText = [
+        'function Register-ArgumentCompleter {',
+        '  param([switch]$Native, [string]$CommandName, [scriptblock]$ScriptBlock)',
+        '  $script:completer = $ScriptBlock',
+        '}',
+        script,
+        `$line = '${input} '`,
+        '$tokens = $null; $errors = $null',
+        '$ast = [System.Management.Automation.Language.Parser]::ParseInput($line, [ref]$tokens, [ref]$errors)',
+        '& $script:completer "" $ast.EndBlock.Statements[0].PipelineElements[0] $line.Length | Select-Object -ExpandProperty CompletionText',
+      ].join('\n');
+      return runShell(['pwsh', '-NoProfile', '-NonInteractive', '-Command', commandText], '');
+    }
+  }
+}
 
 function checkSyntax(shell: 'bash' | 'zsh' | 'fish' | 'pwsh', script: string) {
   const args = shell === 'fish'

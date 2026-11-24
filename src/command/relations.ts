@@ -117,6 +117,13 @@ export function applyOverrides(
     state.provided.delete(target);
     state.cliProvided.delete(target);
     delete state.valueCounts[target];
+    if (argument.color && Bun.env.NO_COLOR !== undefined) {
+      state.sources?.set(target, 'env');
+    } else if (argument.presence === 'default') {
+      state.sources?.set(target, 'default');
+    } else {
+      state.sources?.delete(target);
+    }
   }
 }
 

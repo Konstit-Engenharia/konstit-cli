@@ -13,15 +13,22 @@ import {
 } from './command/output.js';
 import {
   argumentLongNames,
+  commandWords,
   isNegativeNumberToken,
+  literalWords,
   matchSubcommand,
+  optionAcceptsMoreValues,
   parseLongOptionToken,
   parseShortOptionCluster,
+  recognizeOptionValue,
+  recognizeWord,
   splitArgumentValue,
-  stopsOptionValueCollection,
+  type ArgvState,
+  type OptionValueState,
 } from './command/recognition.js';
 import {
   applyConditionalDefaults,
+  applyOverrides,
   type RelationState,
 } from './command/relations.js';
 import type { CompletionValueHint } from './parser.js';
@@ -119,12 +126,6 @@ interface CompletionEnabledArgument extends ArgumentDefinition {
   readonly completion?: DynamicCompletionProvider;
 }
 
-interface PendingValue {
-  readonly argument: ArgumentDefinition;
-  consumed: number;
-  started: boolean;
-}
-
 interface ScanState {
   command: CommandDefinition;
   commandPath: string[];
@@ -132,8 +133,7 @@ interface ScanState {
   readonly owners: Map<string, CommandDefinition>;
   readonly scopes: Map<CommandDefinition, RelationState>;
   positionalIndex: number;
-  optionsEnabled: boolean;
-  pending: PendingValue | undefined;
+  argvState: ArgvState;
   readonly values: Record<string, unknown>;
   readonly rawValues: Record<string, string[]>;
   readonly cliProvided: Set<string>;
@@ -165,7 +165,7 @@ export async function resolveDynamicCompletion(
   const filter = options.filter ?? true;
   const state = createScanState(getCommandDefinition(configuredCommand));
   scanWords(state, input.slice(0, cursor));
-  applyConditionalDefaultsForDefinitions(state);
+  finalizeRelations(state);
 
   const target = findValueTarget(state, currentWord);
   if (target !== undefined) {
@@ -179,10 +179,10 @@ export async function resolveDynamicCompletion(
   }
 
   const candidates: DynamicCompletionCandidate[] = [];
-  if (state.optionsEnabled && (currentWord.length === 0 || currentWord.startsWith('-'))) {
+  if (state.argvState.kind !== 'literal' && (currentWord.length === 0 || currentWord.startsWith('-'))) {
     candidates.push(...namedCandidates(state));
   }
-  if (state.optionsEnabled && !currentWord.startsWith('-')) {
+  if (state.argvState.kind !== 'literal' && !currentWord.startsWith('-')) {
     candidates.push(...subcommandCandidates(state));
     const positional = currentPositional(state);
     if (positional !== undefined) {
@@ -248,8 +248,7 @@ function createScanState(root: CommandDefinition): ScanState {
     owners: new Map(),
     scopes: new Map(),
     positionalIndex: 0,
-    optionsEnabled: true,
-    pending: undefined,
+    argvState: commandWords,
     values: {},
     rawValues: {},
     cliProvided: new Set(),
@@ -264,7 +263,7 @@ function createScanState(root: CommandDefinition): ScanState {
   return state;
 }
 
-function applyConditionalDefaultsForDefinitions(state: ScanState): void {
+function finalizeRelations(state: ScanState): void {
   for (const [definition, scope,] of state.scopes) {
     const globals = definition.arguments.filter(({ global }) => global);
     // Globals can be supplied after a child is selected. Resolve the parent's
@@ -274,21 +273,37 @@ function applyConditionalDefaultsForDefinitions(state: ScanState): void {
       if (state.cliProvided.has(name)) {
         scope.cliProvided.add(name);
       }
+      if (state.provided.has(name)) {
+        scope.provided.add(name);
+      }
       const source = state.sources.get(name);
       if (source !== undefined) {
         scope.sources?.set(name, source);
       }
     }
     applyConditionalDefaults(definition, scope);
-    for (const { name } of globals) {
+    applyOverrides(definition, scope);
+    for (const { name } of definition.arguments) {
+      if (state.owners.get(name) !== definition) {
+        continue;
+      }
       state.values[name] = scope.values[name];
+      if (!scope.cliProvided.has(name)) {
+        state.cliProvided.delete(name);
+      }
+      if (!scope.provided.has(name)) {
+        state.provided.delete(name);
+      }
       const source = scope.sources?.get(name);
       if (source !== undefined) {
         state.sources.set(name, source);
+      } else {
+        state.sources.delete(name);
       }
     }
   }
   applyConditionalDefaults(state.command, state);
+  applyOverrides(state.command, state);
 }
 
 function initializeArguments(
@@ -354,62 +369,48 @@ function initializeArguments(
 }
 
 function scanWords(state: ScanState, words: readonly string[]): void {
-  let index = 0;
-  while (index < words.length) {
-    const word = words[index];
+  const isSubcommand = (word: string): boolean => resolveSubcommand(state.command, word) !== undefined;
+  for (const word of words) {
     if (word === undefined) {
       break;
     }
 
-    if (state.pending !== undefined) {
-      if (word === state.pending.argument.valueTerminator) {
-        applyDefaultMissing(state.pending, state);
-        state.pending = undefined;
-        index += 1;
+    let argvState = state.argvState;
+    if (argvState.kind === 'option-values') {
+      const action = recognizeOptionValue(argvState, word, isSubcommand);
+      if (action === 'take-value') {
+        consumePending(state, argvState, word);
         continue;
       }
-      if (!stopsValueCollection(state, state.pending.argument, word)) {
-        consumePending(state, state.pending, word);
-        index += 1;
+      if (argvState.consumed === 0) {
+        storeDefaultMissing(argvState.argument, state);
+      }
+      state.argvState = commandWords;
+      argvState = commandWords;
+      if (action === 'take-terminator') {
         continue;
       }
-      applyDefaultMissing(state.pending, state);
-      state.pending = undefined;
     }
 
-    if (state.optionsEnabled && word === '--') {
-      state.optionsEnabled = false;
-      index += 1;
+    const consumeAsPositional = argvState.kind === 'command' && acceptsOptionLookingPositional(state, word);
+    const kind = recognizeWord(argvState, word, consumeAsPositional);
+    if (kind === 'end-options') {
+      state.argvState = literalWords;
       continue;
     }
-    const consumeAsPositional = state.optionsEnabled
-      && acceptsOptionLookingPositional(state, word);
-    if (
-      state.optionsEnabled
-      && !consumeAsPositional
-      && word.startsWith('--')
-      && word.length > 2
-    ) {
+    if (kind === 'long-option') {
       scanLongOption(state, word);
-      index += 1;
       continue;
     }
-    if (
-      state.optionsEnabled
-      && !consumeAsPositional
-      && word.startsWith('-')
-      && word !== '-'
-    ) {
+    if (kind === 'short-options') {
       scanShortOptions(state, word);
-      index += 1;
       continue;
     }
 
-    if (state.optionsEnabled && !consumeAsPositional) {
+    if (kind === 'command-word') {
       const child = resolveSubcommand(state.command, word);
       if (child !== undefined) {
         enterSubcommand(state, child);
-        index += 1;
         continue;
       }
     }
@@ -428,11 +429,10 @@ function scanWords(state: ScanState, words: readonly string[]): void {
           state.positionalIndex += 1;
         }
         if (positional.trailingVarArg) {
-          state.optionsEnabled = false;
+          state.argvState = literalWords;
         }
       }
     }
-    index += 1;
   }
 }
 
@@ -522,19 +522,11 @@ function setPending(
   argument: ArgumentDefinition,
   consumed: number,
 ): void {
-  if (argument.maxValues === null || consumed < argument.maxValues) {
-    state.pending = { argument, consumed, started: consumed > 0 };
-  } else {
-    state.pending = undefined;
-    if (consumed === 0) {
-      storeDefaultMissing(argument, state);
-    }
-  }
-}
-
-function applyDefaultMissing(pending: PendingValue, state: ScanState): void {
-  if (pending.consumed === 0 && !pending.started) {
-    storeDefaultMissing(pending.argument, state);
+  const optionState: OptionValueState = { kind: 'option-values', argument, consumed };
+  if (optionAcceptsMoreValues(optionState)) {
+    state.argvState = optionState;
+  } else if (consumed === 0) {
+    storeDefaultMissing(argument, state);
   }
 }
 
@@ -572,32 +564,15 @@ function storeDefaultMissing(
 
 function consumePending(
   state: ScanState,
-  pending: PendingValue,
+  pending: OptionValueState,
   word: string,
 ): void {
   const values = splitValue(pending.argument, word);
-  storeArgumentValues(pending.argument, values, state, true, !pending.started);
-  pending.started = true;
+  storeArgumentValues(pending.argument, values, state, true, pending.consumed === 0);
   pending.consumed += values.length;
-  if (
-    pending.argument.maxValues !== null
-    && pending.consumed >= pending.argument.maxValues
-  ) {
-    state.pending = undefined;
+  if (!optionAcceptsMoreValues(pending)) {
+    state.argvState = commandWords;
   }
-}
-
-function stopsValueCollection(
-  state: ScanState,
-  argument: ArgumentDefinition,
-  word: string,
-): boolean {
-  if (stopsOptionValueCollection(argument, word)) {
-    return true;
-  }
-  return state.optionsEnabled
-    && argument.minValues <= (state.pending?.consumed ?? 0)
-    && resolveSubcommand(state.command, word) !== undefined;
 }
 
 function acceptsOptionLookingPositional(state: ScanState, token: string): boolean {
@@ -765,7 +740,6 @@ function enterSubcommand(state: ScanState, child: CommandDefinition): void {
   state.command = child;
   state.commandPath.push(child.name);
   state.positionalIndex = 0;
-  state.pending = undefined;
   for (const argument of child.arguments) {
     state.owners.set(argument.name, child);
   }
@@ -782,13 +756,14 @@ function findValueTarget(
   state: ScanState,
   currentWord: string,
 ): ValueTarget | undefined {
-  if (
-    state.pending !== undefined
-    && !stopsValueCollection(state, state.pending.argument, currentWord)
-  ) {
-    return valueTarget(state.pending.argument, currentWord, '');
+  const argvState = state.argvState;
+  if (argvState.kind === 'option-values') {
+    const action = recognizeOptionValue(argvState, currentWord, (word) => resolveSubcommand(state.command, word) !== undefined);
+    if (action === 'take-value') {
+      return valueTarget(argvState.argument, currentWord, '');
+    }
   }
-  if (!state.optionsEnabled) {
+  if (argvState.kind === 'literal') {
     return currentPositionalTarget(state, currentWord);
   }
   if (acceptsOptionLookingPositional(state, currentWord)) {

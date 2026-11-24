@@ -67,6 +67,8 @@ const completionTemplates: Readonly<Record<CompletionShell, string>> = Object.fr
 });
 const blockTemplatePlaceholder = /^\{\{([A-Z_]+)\}\}\n/gm;
 const templatePlaceholder = /\{\{([A-Z_]+)\}\}/g;
+const powerShellArgvWord =
+  'if ($_ -is [System.Management.Automation.Language.CommandParameterAst]) { $_.Extent.Text } else { [string]$_.Value }';
 
 /** Generates a standalone completion script from a configured command. */
 export function generateCompletion(
@@ -387,6 +389,7 @@ function shellOptionSpec(argument: ArgumentDefinition): string {
     argument.allowHyphenValues ? 1 : 0,
     argument.allowNegativeNumbers ? 1 : 0,
     argument.repeatable && argument.maxValues === 1 ? 1 : 0,
+    encodeShellDelimiter(argument.valueTerminator),
   ].join('\t');
 }
 
@@ -398,6 +401,7 @@ function shellPositionalSpec(argument: ArgumentDefinition): string {
     argument.allowNegativeNumbers ? 1 : 0,
     argument.repeatable ? 1 : 0,
     encodeShellDelimiter(argument.valueTerminator),
+    argument.trailingVarArg ? 1 : 0,
   ].join('\t');
 }
 
@@ -540,7 +544,7 @@ function generateDynamicCompletion(
         '    }',
         '    return [Text.Encoding]::UTF8.GetString($bytes)',
         '  }',
-        '  $arguments = @($commandAst.CommandElements | Select-Object -Skip 1 | ForEach-Object { [string]$_.Value })',
+        `  $arguments = @($commandAst.CommandElements | Select-Object -Skip 1 | ForEach-Object { ${powerShellArgvWord} })`,
         '  if ([string]::IsNullOrEmpty($wordToComplete)) { $arguments += \'\' }',
         `  $previous = [Environment]::GetEnvironmentVariable(${environmentQuoted}, 'Process')`,
         '  try {',
@@ -765,7 +769,7 @@ function generateFish(
   const registrations: string[] = [];
 
   for (const node of nodes) {
-    const condition = fishQuote(`string match -q '${node.id}:*' (${name})`);
+    const condition = fishQuote(`string match -q '${node.id}:*' (${name} named)`);
     for (const argument of visibleArguments(node)) {
       if (argument.kind === 'positional') {
         continue;
@@ -864,6 +868,7 @@ function generateFish(
               `                    set pending_allow_hyphen ${argument.allowHyphenValues ? 1 : 0}`,
               `                    set pending_allow_negative ${argument.allowNegativeNumbers ? 1 : 0}`,
               `                    set pending_single_raw ${argument.repeatable && argument.maxValues === 1 ? 1 : 0}`,
+              `                    set pending_terminator_hex ${fishQuote(encodeShellDelimiter(argument.valueTerminator))}`,
             ];
           });
       }).join('\n'),
@@ -873,7 +878,7 @@ function generateFish(
           `                        set context ${fishQuote(target.id)}`,
           '                        set positional_index 0',
           '                        set positional_remaining 0',
-          '                        set pending_option',
+          '                        set scan_state command',
           '                        continue',
         ])
       ).join('\n'),
@@ -895,6 +900,7 @@ function generateFish(
           `                    set positional_allow_negative ${argument.allowNegativeNumbers ? 1 : 0}`,
           `                    set positional_repeatable ${argument.repeatable ? 1 : 0}`,
           `                    set positional_terminator_hex ${fishQuote(encodeShellDelimiter(argument.valueTerminator))}`,
+          `                    set positional_trailing ${argument.trailingVarArg ? 1 : 0}`,
         ])
       ).join('\n'),
       DECLARED_OPTION_CASES: nodes.flatMap((node) => {
@@ -968,7 +974,7 @@ function generatePowerShell(
             powerShellQuote(encodeShellDelimiter(argument.valueDelimiter))
           }; AllowHyphen = $${argument.allowHyphenValues}; AllowNegative = $${argument.allowNegativeNumbers}; SingleRaw = $${
             argument.repeatable && argument.maxValues === 1
-          } } }`,
+          }; TerminatorHex = ${powerShellQuote(encodeShellDelimiter(argument.valueTerminator))} } }`,
         );
       }
     }
@@ -978,7 +984,7 @@ function generatePowerShell(
           powerShellQuote(encodeShellDelimiter(argument.valueDelimiter))
         }; AllowHyphen = $${argument.allowHyphenValues}; AllowNegative = $${argument.allowNegativeNumbers}; Repeatable = $${argument.repeatable}; TerminatorHex = ${
           powerShellQuote(encodeShellDelimiter(argument.valueTerminator))
-        } } }`,
+        }; Trailing = $${argument.trailingVarArg} } }`,
       );
     }
     const declared = declaredOptionTokens(node);
@@ -1029,6 +1035,7 @@ function generatePowerShell(
 
   return renderTemplate('powershell', {
     EXECUTABLE: executable,
+    ARGV_WORD: powerShellArgvWord,
     EXECUTABLE_QUOTED: powerShellQuote(executable),
     TAKES_VALUE_CASES: takesValueCases.join('\n'),
     OPTION_SPEC_CASES: optionSpecCases.join('\n'),

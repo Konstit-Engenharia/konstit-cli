@@ -38,12 +38,18 @@ import {
 } from './help.js';
 import {
   argumentLongNames,
+  commandWords,
   isNegativeNumberToken,
+  literalWords,
   matchSubcommand,
+  optionAcceptsMoreValues,
   parseLongOptionToken,
   parseShortOptionCluster,
+  recognizeOptionValue,
+  recognizeWord,
   splitArgumentValue,
-  stopsOptionValueCollection,
+  type OptionValueState,
+  type WordState,
 } from './recognition.js';
 import {
   applyConditionalDefaults,
@@ -189,20 +195,15 @@ function parseDefinition(
   const globals = [...inheritedGlobals, ...localGlobals];
 
   let index = 0;
-  let optionsEnabled = true;
+  let wordState: WordState = commandWords;
   while (index < argv.length) {
     const token = argv[index];
     if (token === undefined) {
       break;
     }
 
-    if (optionsEnabled && token === '--') {
-      optionsEnabled = false;
-      index += 1;
-      continue;
-    }
     if (
-      optionsEnabled
+      wordState.kind === 'command'
       && !definition.disableHelpFlag
       && (token === '--help' || token === '-h')
     ) {
@@ -218,7 +219,7 @@ function parseDefinition(
       });
     }
     if (
-      optionsEnabled
+      wordState.kind === 'command'
       && !definition.disableVersionFlag
       && definition.version !== undefined
       && (token === '--version' || token === '-V')
@@ -231,7 +232,7 @@ function parseDefinition(
       });
     }
     const positionalArgument = currentPositional(positionals, state);
-    const consumeAsPositional = optionsEnabled
+    const consumeAsPositional = wordState.kind === 'command'
       && positionalArgument !== undefined
       && acceptsOptionLookingPositional(
         positionalArgument,
@@ -240,12 +241,13 @@ function parseDefinition(
         state,
         inheritedGlobals,
       );
-    if (
-      optionsEnabled
-      && !consumeAsPositional
-      && token.startsWith('--')
-      && token.length > 2
-    ) {
+    const kind = recognizeWord(wordState, token, consumeAsPositional);
+    if (kind === 'end-options') {
+      wordState = literalWords;
+      index += 1;
+      continue;
+    }
+    if (kind === 'long-option') {
       index = parseLongOption(
         definition,
         argv,
@@ -258,12 +260,7 @@ function parseDefinition(
       );
       continue;
     }
-    if (
-      optionsEnabled
-      && !consumeAsPositional
-      && token.startsWith('-')
-      && token !== '-'
-    ) {
+    if (kind === 'short-options') {
       index = parseShortOptions(
         definition,
         argv,
@@ -277,7 +274,7 @@ function parseDefinition(
       continue;
     }
 
-    if (optionsEnabled && !consumeAsPositional) {
+    if (kind === 'command-word') {
       if (
         token === 'help'
         && definition.subcommands.length > 0
@@ -395,7 +392,7 @@ function parseDefinition(
       state.positionalIndex += 1;
     }
     if (positionalArgument.trailingVarArg) {
-      optionsEnabled = false;
+      wordState = literalWords;
     }
     index += 1;
   }
@@ -413,9 +410,7 @@ function parseDefinition(
   );
   applyConfigValues(definition, config, path, state, inheritedGlobals);
   applyConditionalDefaults(definition, state);
-  const cliProvidedBeforeOverrides = new Set(state.cliProvided);
   applyOverrides(definition, state);
-  resetOverriddenSources(definition, state, cliProvidedBeforeOverrides);
   refreshInheritedSources(state.subcommand, localGlobals);
   validateParsedValues(
     definition,
@@ -714,37 +709,6 @@ function isOverriddenTarget(
   return definition.overrides.some(
     ({ source, target }) => target === name && state.cliProvided.has(source),
   );
-}
-
-function resetOverriddenSources(
-  definition: CommandDefinition,
-  state: ParseState,
-  cliProvidedBeforeOverrides: ReadonlySet<string>,
-): void {
-  for (const { source, target } of definition.overrides) {
-    if (!cliProvidedBeforeOverrides.has(source)) {
-      continue;
-    }
-    const argument = definition.arguments.find(({ name }) => name === target);
-    if (argument === undefined) {
-      continue;
-    }
-    const collectsValues = argument.repeatable
-      || argument.trailingVarArg
-      || argument.defaultValues !== undefined;
-    if (argument.color && Bun.env.NO_COLOR !== undefined) {
-      state.sources.set(target, 'env');
-    } else if (argument.presence === 'default') {
-      state.sources.set(target, 'default');
-    } else {
-      state.sources.delete(target);
-    }
-    if (collectsValues) {
-      state.values[target] = argument.defaultValues === undefined
-        ? []
-        : [...argument.defaultValues];
-    }
-  }
 }
 
 function applyEnvironmentFallbacks(
@@ -1322,8 +1286,17 @@ function consumeOptionValues(
 ): ConsumedOptionValues {
   const values: string[] = [];
   const valueIndices: number[] = [];
-  let rawCount = 0;
+  const optionState: OptionValueState = { kind: 'option-values', argument, consumed: 0 };
   let nextIndex = optionIndex + 1;
+  const isSubcommand = (word: string): boolean =>
+    resolveSubcommandWithArguments(
+      definition,
+      word,
+      path,
+      inheritedArguments,
+      argvOffset + nextIndex,
+      argument.sensitive,
+    ) !== undefined;
 
   const append = (raw: string, rawIndex: number): void => {
     const parts = splitRawValue(argument, raw);
@@ -1347,38 +1320,23 @@ function consumeOptionValues(
     }
     values.push(...parts);
     valueIndices.push(...parts.map(() => argvOffset + rawIndex));
-    rawCount += 1;
+    optionState.consumed = values.length;
   };
 
   if (inlineValue !== undefined) {
     append(inlineValue, optionIndex);
   }
-  while (
-    (argument.maxValues === null || values.length < argument.maxValues)
-    && !(argument.repeatable && argument.maxValues === 1 && rawCount >= 1)
-  ) {
+  while (optionAcceptsMoreValues(optionState)) {
     const raw = argv[nextIndex];
     if (raw === undefined) {
       break;
     }
-    if (argument.valueTerminator === raw) {
+    const action = recognizeOptionValue(optionState, raw, isSubcommand);
+    if (action === 'take-terminator') {
       nextIndex += 1;
       break;
     }
-    if (
-      stopsOptionValueCollection(argument, raw)
-      || (
-        values.length >= argument.minValues
-        && resolveSubcommandWithArguments(
-            definition,
-            raw,
-            path,
-            inheritedArguments,
-            argvOffset + nextIndex,
-            argument.sensitive,
-          ) !== undefined
-      )
-    ) {
+    if (action === 'resume-command') {
       break;
     }
     append(raw, nextIndex);
