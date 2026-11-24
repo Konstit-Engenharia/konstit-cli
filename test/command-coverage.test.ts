@@ -14,7 +14,7 @@ import {
   parsers,
   positional,
 } from '../src';
-import type { ParseOutcome } from '../src/error';
+import type { ParseOutcome } from '../src/result/error';
 
 function parse<Value>(
   configured: { parse(argv: readonly string[]): ParseOutcome<Value>; },

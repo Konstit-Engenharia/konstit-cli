@@ -11,39 +11,63 @@ export {
   positional,
   type PositionalOptions,
   type ValueCountRange,
-} from './argument.js';
+} from './argument/index.js';
+export { command } from './command/index.js';
+export type { CommandExample } from './command/schema.js';
+export type {
+  CommandGroupOptions,
+  CommandHandler,
+  CommandOptions,
+  CommandValidationIssue,
+  CommandValidator,
+  HandledCommand,
+  HandlerContext,
+  HandlerResult,
+  Infer,
+  RunOptions,
+  RunParsedOptions,
+} from './command/types.js';
+export { type CompletionShell, completionShells, isCompletionShell } from './completion/shell.js';
+export { loadConfig, loadConfigs } from './configuration/load.js';
+export { type CommandConfigSchema, generateConfigSchema } from './configuration/schema.js';
+export type { CommandConfig, ConfigValue, ParseOptions } from './configuration/shape.js';
 export {
-  command,
-  type CommandConfig,
-  type CommandExample,
-  type CommandGroupOptions,
-  type CommandHandler,
-  type CommandOptions,
-  type CommandValidationIssue,
-  type CommandValidator,
-  type ConfigValue,
-  type HandledCommand,
-  type HandlerContext,
-  type HandlerResult,
-  type Infer,
-  type ParseOptions,
-  type RunOptions,
-  type RunParsedOptions,
-} from './command.js';
-export type { ConsoleOptions, ConsoleWriters, HandlerConsole, SyncOutputWriter } from './command/console.js';
-export type { OutputWriter } from './command/output.js';
-export { type CompletionShell, completionShells, isCompletionShell } from './completion-shell.js';
-export { loadConfigs } from './config-layers.js';
-export {
-  type CommandConfigSchema,
   type ConfigValidationIssue,
   type ConfigValidationIssueKind,
   type ConfigValidationResult,
-  generateConfigSchema,
-  loadConfig,
   validateConfig,
-} from './config.js';
-export { type DeprecationWarning, getWarnings } from './deprecation.js';
+} from './configuration/validation.js';
+export { describeCommand } from './metadata/describe.js';
+export { type ManPageOptions, renderManPage } from './metadata/man-page.js';
+export { type MarkdownOptions, renderMarkdown } from './metadata/markdown.js';
+export type {
+  ArgumentArityMetadata,
+  ArgumentMetadata,
+  CommandAliasMetadata,
+  CommandMetadata,
+  CommandMetadataOptions,
+  ConditionalDefaultMetadata,
+  ConditionalRequirementMetadata,
+  ConditionalSetRequirementMetadata,
+  GroupMetadata,
+  MetadataValue,
+  ParserMetadata,
+  RequiredUnlessMetadata,
+  RequirementMetadata,
+  ValueConditionMetadata,
+} from './metadata/types.js';
+export {
+  type CompletionValueHint,
+  type EnumParserOptions,
+  type EnumValue,
+  type KeyValuePair,
+  parsers,
+  type PathParserOptions,
+  type RangeParserOptions,
+  type ValueParser,
+  type ValueParserOptions,
+} from './parser/index.js';
+export { type DeprecationWarning, getWarnings } from './result/deprecation.js';
 export {
   CliError,
   type CliErrorDetails,
@@ -55,38 +79,8 @@ export {
   type ParseOutcome,
   type ParseResult,
   type ParseValue,
-} from './error.js';
-export {
-  type ArgumentArityMetadata,
-  type ArgumentMetadata,
-  type CommandAliasMetadata,
-  type CommandMetadata,
-  type CommandMetadataOptions,
-  type ConditionalDefaultMetadata,
-  type ConditionalRequirementMetadata,
-  type ConditionalSetRequirementMetadata,
-  describeCommand,
-  type GroupMetadata,
-  type ManPageOptions,
-  type MarkdownOptions,
-  type MetadataValue,
-  type ParserMetadata,
-  renderManPage,
-  renderMarkdown,
-  type RequiredUnlessMetadata,
-  type RequirementMetadata,
-  type ValueConditionMetadata,
-} from './metadata.js';
-export {
-  type CompletionValueHint,
-  type EnumParserOptions,
-  type EnumValue,
-  type KeyValuePair,
-  parsers,
-  type PathParserOptions,
-  type RangeParserOptions,
-  type ValueParser,
-  type ValueParserOptions,
-} from './parser.js';
-export type { FileStat, FileStyleOptions, LinkStyleOptions, PathStyleOptions, Style, StyleOptions } from './style.js';
-export { getConfigValueFile, getValueSource, type ValueSource } from './value-source.js';
+} from './result/error.js';
+export { getConfigValueFile, getValueSource, type ValueSource } from './result/value-source.js';
+export type { ConsoleOptions, ConsoleWriters, HandlerConsole, SyncOutputWriter } from './terminal/console.js';
+export type { OutputWriter } from './terminal/output.js';
+export type { FileStat, FileStyleOptions, LinkStyleOptions, PathStyleOptions, Style, StyleOptions } from './terminal/style.js';

@@ -13,8 +13,8 @@ import {
   parsers,
   positional,
 } from '../src';
-import type { ParseOutcome } from '../src/error';
-import { updateValueSource } from '../src/value-source';
+import type { ParseOutcome } from '../src/result/error';
+import { updateValueSource } from '../src/result/value-source';
 
 (() => {
   const parsed = { value: 'text' };

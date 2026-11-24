@@ -4,17 +4,17 @@ import {
   test,
 } from 'bun:test';
 import {
-  CliError,
-  CommandFailure,
-  ErrorKind,
-} from '../src/error.js';
-import {
   command,
   flag,
   option,
   parsers,
   positional,
 } from '../src/index.js';
+import {
+  CliError,
+  CommandFailure,
+  ErrorKind,
+} from '../src/result/error.js';
 
 test('CommandFailure accepts a message and a nonzero exit code', () => {
   const failure = new CommandFailure('expected failure');

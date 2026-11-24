@@ -3,7 +3,7 @@ import {
   test,
 } from 'bun:test';
 import type { Style } from '../src';
-import { createStyle } from '../src/style';
+import { createStyle } from '../src/terminal/style';
 
 const enabled = { enabled: true, format: 'ansi-16m' } as const;
 const style = createStyle({ stdout: enabled, stderr: { ...enabled, enabled: false } }, undefined);

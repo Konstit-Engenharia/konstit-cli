@@ -1,8 +1,8 @@
 import type {
   HandledCommand,
   RunOptions,
-} from './command.js';
-import type { OutputChannel } from './command/output.js';
+} from './command/types.js';
+import type { OutputChannel } from './terminal/output.js';
 
 /** One captured write to a standard stream. */
 export interface InvokeWrite {

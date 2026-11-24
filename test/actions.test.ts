@@ -16,11 +16,11 @@ import {
   command,
   type Infer,
 } from '../src/command';
+import { parsers } from '../src/parser';
 import {
   ErrorKind,
   type ParseOutcome,
-} from '../src/error';
-import { parsers } from '../src/parser';
+} from '../src/result/error';
 
 function parse<Value>(
   configured: { parse(argv: readonly string[]): ParseOutcome<Value>; },

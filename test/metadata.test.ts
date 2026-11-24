@@ -7,19 +7,17 @@ import {
   colorFlag,
   command,
   count,
+  describeCommand,
   flag,
   option,
   parsers,
   positional,
+  renderManPage,
+  renderMarkdown,
 } from '../src';
 import { getCommandDefinition } from '../src/command';
 import type { CommandDefinition } from '../src/command/schema';
 import { setCommandDefinition } from '../src/command/store';
-import {
-  describeCommand,
-  renderManPage,
-  renderMarkdown,
-} from '../src/metadata';
 
 describe('command metadata', () => {
   test('exports immutable callback-free metadata and filters hidden entries', () => {

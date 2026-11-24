@@ -3,38 +3,38 @@ import {
   type AnyGlobalArgument,
   type ArgumentDefinition,
   type ArgumentOutput,
-} from '../argument.js';
-import type {
-  HandlerContext,
-  HandlerResult,
-  RunOptions,
-} from '../command.js';
-import { getWarnings } from '../deprecation.js';
+} from '../argument/index.js';
+import { sanitizeDiagnostic } from '../help/diagnostics.js';
+import {
+  helpDisplayMetadata,
+  type HelpDisplayMetadata,
+} from '../help/render.js';
+import { getWarnings } from '../result/deprecation.js';
 import {
   CommandFailure,
   DisplayKind,
   type CliError,
   type ParseDisplay,
   type ParseResult,
-} from '../error.js';
-import { createStyle } from '../style.js';
+} from '../result/error.js';
 import {
   resolveOutputColor,
   type AnsiColorFormat,
-} from './color.js';
-import { createConsole } from './console.js';
-import { readEnv } from './environment.js';
-import {
-  helpDisplayMetadata,
-  sanitizeDiagnostic,
-  type HelpDisplayMetadata,
-} from './help.js';
+} from '../terminal/color.js';
+import { createConsole } from '../terminal/console.js';
 import {
   writeOutput,
   type OutputChannel,
-} from './output.js';
+} from '../terminal/output.js';
+import { createStyle } from '../terminal/style.js';
+import { readEnv } from './environment.js';
 import { outputColorModes } from './parse.js';
 import type { CommandDefinition } from './schema.js';
+import type {
+  HandlerContext,
+  HandlerResult,
+  RunOptions,
+} from './types.js';
 
 interface SelectedCommand {
   readonly definition: CommandDefinition;

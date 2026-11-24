@@ -18,7 +18,7 @@ import {
   getWarnings,
   setWarnings,
   type DeprecationWarning,
-} from '../src/deprecation';
+} from '../src/result/deprecation';
 
 test('stores immutable deprecation metadata on arguments', () => {
   const aliases = { old: 'Use --output.' };

@@ -19,7 +19,7 @@ import { generateCompletion } from '../src/completion';
 import {
   resolveDynamicCompletion,
   type DynamicCompletionContext,
-} from '../src/dynamic-completion';
+} from '../src/completion/dynamic';
 
 interface ColorEnvironment {
   readonly noColor: string | null;

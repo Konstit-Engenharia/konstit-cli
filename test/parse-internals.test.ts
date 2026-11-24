@@ -10,6 +10,7 @@ import {
   flag,
   option,
   parsers,
+  renderMarkdown,
 } from '../src';
 import {
   ArgumentAction,
@@ -20,10 +21,9 @@ import { getCommandDefinition } from '../src/command';
 import { parseConfigured } from '../src/command/parse';
 import type { CommandDefinition } from '../src/command/schema';
 import { setCommandDefinition } from '../src/command/store';
-import { validateCommandRelations } from '../src/command/validation';
+import { validateCommandRelations } from '../src/command/validation/relations';
 import { generateCompletion } from '../src/completion';
-import { resolveDynamicCompletion } from '../src/dynamic-completion';
-import { renderMarkdown } from '../src/metadata';
+import { resolveDynamicCompletion } from '../src/completion/dynamic';
 
 function definitionWithArguments(...args: ArgumentDefinition[]): CommandDefinition {
   return { ...getCommandDefinition(command('tool')), arguments: args };

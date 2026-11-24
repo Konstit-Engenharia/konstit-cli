@@ -18,13 +18,13 @@ import type {
   ParseOptions,
 } from '../src';
 import { getArgumentDefinition } from '../src/argument';
-import { recordSuppliedArgument } from '../src/command/argument-state';
+import { recordSuppliedArgument } from '../src/command/parsing/argument-state';
 import {
   applyConditionalDefaults,
   type RelationState,
-} from '../src/command/relations';
+} from '../src/command/parsing/relations';
 import type { CommandDefinition } from '../src/command/schema';
-import type { ParseOutcome } from '../src/error';
+import type { ParseOutcome } from '../src/result/error';
 
 type Equal<Left, Right> = (
   <Value>() => Value extends Left ? 1 : 2

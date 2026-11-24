@@ -1,0 +1,50 @@
+import type { Environment } from '../../command/environment.js';
+import type { CommandType } from '../../command/types.js';
+import type { CommandConfig } from '../../configuration/shape.js';
+import {
+  writeOutput,
+  type OutputWriter,
+} from '../../terminal/output.js';
+import { resolveCompletion } from './resolve.js';
+import type { DynamicCompletionResult } from './types.js';
+
+/** Internal inputs used by Command.run for one shell completion request. */
+export interface DynamicCompletionRequestOptions {
+  /** Arguments after the executable, including the incomplete word. */
+  readonly argv?: readonly string[];
+  /** Index of the incomplete word. Defaults to the final argv item. */
+  readonly cursor?: number;
+  readonly env?: Environment;
+  /** Configuration values used below CLI and environment values. */
+  readonly config?: CommandConfig;
+  readonly stdout?: OutputWriter;
+}
+
+/** Resolves and writes the shell request detected by Command.run. */
+export async function runDynamicCompletionRequest(
+  configuredCommand: CommandType,
+  options: DynamicCompletionRequestOptions = {},
+): Promise<number> {
+  const result: DynamicCompletionResult = await resolveCompletion(
+    configuredCommand,
+    options.argv ?? Bun.argv.slice(2),
+    {
+      ...(options.cursor === undefined ? {} : { cursor: options.cursor }),
+      ...(options.config === undefined ? {} : { config: options.config }),
+    },
+    options.env ?? Bun.env,
+  );
+  if (result.candidates.length > 0) {
+    const output = `${
+      result.candidates.map(({ value, description }) => `${encodeProtocolField(value)}\t${encodeProtocolField(description ?? '')}`).join(
+        '\n',
+      )
+    }\n`;
+    await writeOutput('stdout', output, options.stdout);
+  }
+  return 0;
+}
+
+function encodeProtocolField(value: string): string {
+  return Buffer.from(value).toString('hex');
+}

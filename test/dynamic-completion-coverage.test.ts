@@ -15,7 +15,7 @@ import {
   resolveDynamicCompletion,
   type DynamicCompletionContext,
   type DynamicCompletionProvider,
-} from '../src/dynamic-completion';
+} from '../src/completion/dynamic';
 
 describe('dynamic completion coverage', () => {
   test('returns a positional file hint alongside command candidates', async () => {

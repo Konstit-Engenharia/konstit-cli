@@ -15,7 +15,7 @@ import {
 import {
   resolveDynamicCompletion,
   type DynamicCompletionContext,
-} from '../src/dynamic-completion';
+} from '../src/completion/dynamic';
 
 describe('dynamic completion', () => {
   test('uses config values after CLI and environment values for provider context', async () => {

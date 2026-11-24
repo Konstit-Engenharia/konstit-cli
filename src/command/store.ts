@@ -1,6 +1,6 @@
-import type { CommandType } from '../command.js';
 import type { CommandDefinition } from './schema.js';
-import { validateBuiltInCollisions } from './validation.js';
+import type { CommandType } from './types.js';
+import { validateBuiltInCollisions } from './validation/definition.js';
 
 const commandDefinitions = new WeakMap<object, CommandDefinition>();
 

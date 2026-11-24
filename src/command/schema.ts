@@ -1,8 +1,8 @@
-import type { ArgumentDefinition } from '../argument.js';
+import type { ArgumentDefinition } from '../argument/index.js';
 import type {
   CommandHandler,
   CommandValidator,
-} from '../command.js';
+} from './types.js';
 
 /** A directional relation between two arguments. */
 export interface RequirementDefinition {

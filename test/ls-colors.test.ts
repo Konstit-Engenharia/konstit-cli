@@ -9,8 +9,8 @@ import {
 import * as fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parseLsColors } from '../src/ls-colors';
-import { createStyle } from '../src/style';
+import { parseLsColors } from '../src/terminal/ls-colors';
+import { createStyle } from '../src/terminal/style';
 
 const colors = {
   stdout: { enabled: true, format: 'ansi-16m' },

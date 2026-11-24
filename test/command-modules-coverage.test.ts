@@ -14,7 +14,7 @@ import {
 } from '../src';
 import { getArgumentDefinition } from '../src/argument';
 import { getCommandDefinition } from '../src/command';
-import { validateArgument } from '../src/command/validation';
+import { validateArgument } from '../src/command/validation/definition';
 
 const runtimeCommand = command as unknown as (
   name: unknown,
