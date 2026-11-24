@@ -211,7 +211,7 @@ void (() => {
       void port;
     },
   });
-  const config: CommandConfig = { values: { port: '8080' } };
+  const config: CommandConfig = { $schema: './serve.schema.json', values: { port: '8080' } };
   const result = app.tryParse([], { config });
   const warnings: readonly DeprecationWarning[] = getWarnings(result);
   if (result.type === 'value') {

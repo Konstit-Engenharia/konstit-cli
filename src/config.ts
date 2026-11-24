@@ -39,6 +39,7 @@ interface CommandSchema extends
 export interface CommandConfigSchema extends CommandSchema {
   readonly $schema: 'https://json-schema.org/draft/2020-12/schema';
   readonly title: string;
+  readonly properties: CommandSchema['properties'] & { readonly $schema: { readonly type: 'string'; }; };
 }
 
 function objectSchema<Properties>(properties: Properties): ObjectSchema<Properties> {
@@ -74,10 +75,12 @@ function commandSchema(definition: CommandDefinition, inheritedGlobals: readonly
 /** Generates JSON Schema for canonical config keys and their raw JSON value types. */
 export function generateConfigSchema(cli: CommandType): CommandConfigSchema {
   const definition = getCommandDefinition(cli);
+  const schema = commandSchema(definition, []);
   return {
     $schema: 'https://json-schema.org/draft/2020-12/schema',
     title: `${definition.name} configuration`,
-    ...commandSchema(definition, []),
+    ...schema,
+    properties: { $schema: { type: 'string' }, ...schema.properties },
   };
 }
 

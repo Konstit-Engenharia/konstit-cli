@@ -3,12 +3,17 @@ import type { Environment } from './environment.js';
 /** Values accepted by caller supplied command configuration. */
 export type ConfigValue = string | readonly string[] | boolean | number;
 
-/** Configuration values for one command in a command tree. */
-export interface CommandConfig {
+interface CommandConfigNode {
   /** Values keyed by the argument's configured name. */
   readonly values?: Readonly<Record<string, ConfigValue>>;
   /** Configuration for child commands, keyed by their canonical name. */
-  readonly subcommands?: Readonly<Record<string, CommandConfig>>;
+  readonly subcommands?: Readonly<Record<string, CommandConfigNode>>;
+}
+
+/** Configuration for a command tree. */
+export interface CommandConfig extends CommandConfigNode {
+  /** Associates the config with a JSON Schema for editors and validators. */
+  readonly $schema?: string;
 }
 
 /** Options that affect parsing without changing the command definition. */
@@ -58,8 +63,17 @@ export function validateConfigShape(
     throw new TypeError(`Config at '${path.join('.')}' must be an object`);
   }
   for (const key of Object.keys(value)) {
-    if (key !== 'values' && key !== 'subcommands') {
+    if (key !== '$schema' && key !== 'values' && key !== 'subcommands') {
       throw new TypeError(`Unknown config field '${[...path, key].join('.')}'`);
+    }
+  }
+  if (Object.hasOwn(value, '$schema')) {
+    const schemaPath = `${path.join('.')}.$schema`;
+    if (path.length !== 1) {
+      throw new TypeError(`Unknown config field '${schemaPath}'`);
+    }
+    if (typeof value.$schema !== 'string') {
+      throw new TypeError(`Config field '${schemaPath}' must be a string`);
     }
   }
   if (Object.hasOwn(value, 'values')) {

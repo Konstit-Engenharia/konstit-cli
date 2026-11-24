@@ -430,6 +430,16 @@ the raw JSON value types each key accepts. Use it with an editor or validator
 for config files. The runner checks parsed values, arity, and relations when it
 uses the config.
 
+Add an optional top-level `$schema` string to associate a config file with the
+generated schema. The loader preserves this field as metadata.
+
+```json
+{
+  "$schema": "./tool.schema.json",
+  "values": { "host": "127.0.0.1", "verbose": 1 }
+}
+```
+
 Configuration keys use canonical argument and subcommand names. Each
 `config.values` entry must be a string, a readonly string array, a boolean, or
 a nonnegative safe integer. Value options and positionals accept strings or
