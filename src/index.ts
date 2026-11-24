@@ -33,7 +33,16 @@ export {
 export type { ConsoleOptions, ConsoleWriters, HandlerConsole, SyncOutputWriter } from './command/console.js';
 export type { OutputWriter } from './command/output.js';
 export { type CompletionShell, completionShells, isCompletionShell } from './completion-shell.js';
-export { type CommandConfigSchema, generateConfigSchema, loadConfig } from './config.js';
+export { loadConfigs } from './config-layers.js';
+export {
+  type CommandConfigSchema,
+  type ConfigValidationIssue,
+  type ConfigValidationIssueKind,
+  type ConfigValidationResult,
+  generateConfigSchema,
+  loadConfig,
+  validateConfig,
+} from './config.js';
 export { type DeprecationWarning, getWarnings } from './deprecation.js';
 export {
   CliError,
@@ -80,4 +89,4 @@ export {
   type ValueParserOptions,
 } from './parser.js';
 export type { FileStat, FileStyleOptions, LinkStyleOptions, PathStyleOptions, Style, StyleOptions } from './style.js';
-export { getValueSource, type ValueSource } from './value-source.js';
+export { getConfigValueFile, getValueSource, type ValueSource } from './value-source.js';

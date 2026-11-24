@@ -50,6 +50,13 @@ interface ParserMetadata {
   readonly ignoreCase?: boolean;
 }
 
+const authoritativeEnumParsers = new WeakSet<object>();
+
+/** Identifies parsers whose choices describe every accepted input spelling. */
+export function isAuthoritativeEnumParser(parser: ValueParser<unknown>): boolean {
+  return authoritativeEnumParsers.has(parser);
+}
+
 /** An enum choice declared as a canonical string or a descriptor. */
 type EnumDefinition = string | EnumValue<string>;
 
@@ -493,7 +500,7 @@ function createEnumParser<const Values extends readonly [EnumDefinition, ...Enum
     .filter(({ hide }) => hide !== true)
     .map(({ value }) => value);
   const allowedText = visibleValues.join(', ');
-  return createValueParser(
+  const parser = createValueParser(
     visibleValues.length === 0 ? 'VALUE' : visibleValues.join('|'),
     (input): EnumCanonicalValues<Values> => {
       const canonical = lookup.get(normalizeEnumToken(input, ignoreCase));
@@ -511,6 +518,8 @@ function createEnumParser<const Values extends readonly [EnumDefinition, ...Enum
       ...(options.ignoreCase === undefined ? {} : { ignoreCase }),
     },
   );
+  authoritativeEnumParsers.add(parser);
+  return parser;
 }
 
 /** Parses JSON using the unknown output type. */

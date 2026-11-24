@@ -16,6 +16,12 @@ import {
   suppliedArgument,
   type ArgumentValues,
 } from './command/argument-state.js';
+import { prepareConfigValue } from './command/config-value.js';
+import {
+  validateConfigShape,
+  type CommandConfig,
+  type ConfigValue,
+} from './command/config.js';
 import {
   readEnv,
   type Environment,
@@ -82,9 +88,9 @@ export interface DynamicCompletionContext<
   readonly command: CommandDefinition;
   /** The normalized definition of the argument whose value is being completed. */
   readonly argument: ArgumentDefinition;
-  /** Defaults and successfully parsed words visible at the active command. */
+  /** Parsed values and fallbacks visible at the active command. */
   readonly values: Values;
-  /** Raw values collected before the current word. */
+  /** Raw argument values from preceding words, the environment, or config. */
   readonly rawValues: DynamicCompletionRawValues;
 }
 
@@ -109,6 +115,10 @@ export interface DynamicCompletionOptions {
   readonly cursor?: number;
   /** Applies prefix filtering to provider and static values. The default is true. */
   readonly filter?: boolean;
+  /** Environment variables used for argument fallbacks. Defaults to `Bun.env`. */
+  readonly env?: Environment;
+  /** Configuration values used below CLI and environment values. */
+  readonly config?: CommandConfig;
 }
 
 /** The candidates and context resolved for one completion request. */
@@ -132,6 +142,8 @@ export interface DynamicCompletionRequestOptions {
   /** Index of the incomplete word. Defaults to the final argv item. */
   readonly cursor?: number;
   readonly env?: Environment;
+  /** Configuration values used below CLI and environment values. */
+  readonly config?: CommandConfig;
   readonly stdout?: OutputWriter;
 }
 
@@ -145,14 +157,20 @@ interface ActiveCommandScope {
   readonly inheritedGlobals: readonly ArgumentDefinition[];
   positionalIndex: number;
   argvState: ArgvState;
+  readonly config?: CommandConfig | undefined;
 }
 
 interface ScanState extends ArgumentValues {
   active: ActiveCommandScope;
   readonly env: Environment;
   readonly owners: Map<string, CommandDefinition>;
-  readonly scopes: Map<CommandDefinition, RelationState>;
+  readonly scopes: Map<CommandDefinition, ScopeSnapshot>;
   readonly rawValues: Record<string, string[]>;
+}
+
+interface ScopeSnapshot extends RelationState {
+  readonly config: CommandConfig | undefined;
+  readonly inheritedGlobals: readonly ArgumentDefinition[];
 }
 
 interface ValueTarget {
@@ -170,7 +188,7 @@ export function resolveDynamicCompletion(
   argv: readonly string[],
   options: DynamicCompletionOptions = {},
 ): Promise<DynamicCompletionResult> {
-  return resolveCompletion(configuredCommand, argv, options, Bun.env);
+  return resolveCompletion(configuredCommand, argv, options, options.env ?? Bun.env);
 }
 
 async function resolveCompletion(
@@ -181,11 +199,12 @@ async function resolveCompletion(
 ): Promise<DynamicCompletionResult> {
   const cursor = options.cursor ?? (argv.length === 0 ? 0 : argv.length - 1);
   validateCursor(cursor, argv.length);
+  validateConfigShape(options.config);
 
   const input = Object.freeze([...argv]);
   const currentWord = input[cursor] ?? '';
   const filter = options.filter ?? true;
-  const state = createScanState(getCommandDefinition(configuredCommand), env);
+  const state = createScanState(getCommandDefinition(configuredCommand), env, options.config);
   scanWords(state, input.slice(0, cursor));
   resolvePendingWordBoundary(state, currentWord);
   finalizeRelations(state);
@@ -244,7 +263,10 @@ export async function runDynamicCompletionRequest(
   const result = await resolveCompletion(
     configuredCommand,
     options.argv ?? Bun.argv.slice(2),
-    options.cursor === undefined ? {} : { cursor: options.cursor },
+    {
+      ...(options.cursor === undefined ? {} : { cursor: options.cursor }),
+      ...(options.config === undefined ? {} : { config: options.config }),
+    },
     options.env ?? Bun.env,
   );
   if (result.candidates.length > 0) {
@@ -264,7 +286,11 @@ function validateCursor(cursor: number, argvLength: number): void {
   }
 }
 
-function createScanState(root: CommandDefinition, env: Environment): ScanState {
+function createScanState(
+  root: CommandDefinition,
+  env: Environment,
+  config: CommandConfig | undefined,
+): ScanState {
   const state: ScanState = {
     active: {
       command: root,
@@ -272,6 +298,7 @@ function createScanState(root: CommandDefinition, env: Environment): ScanState {
       inheritedGlobals: [],
       positionalIndex: 0,
       argvState: commandWords,
+      config,
     },
     env,
     owners: new Map(),
@@ -288,16 +315,31 @@ function createScanState(root: CommandDefinition, env: Environment): ScanState {
 }
 
 function finalizeRelations(state: ScanState): void {
-  finalizeScope(state.active.command, state, state);
+  finalizeScope(
+    state.active.command,
+    state,
+    state,
+    state.active.config,
+    state.active.inheritedGlobals,
+  );
   for (const [definition, scope,] of [...state.scopes].reverse()) {
     // Globals can be supplied after a child is selected. Resolve the parent's
     // rules using those final values and its saved, unshadowed local values.
-    for (const { name, global } of definition.arguments) {
-      if (global) {
-        copyArgument(state, scope, name);
+    const globals = [
+      ...scope.inheritedGlobals,
+      ...definition.arguments.filter(({ global }) => global),
+    ];
+    for (const argument of globals) {
+      if (isVisibleArgument(state, argument)) {
+        copyArgument(state, scope, argument.name);
       }
     }
-    finalizeScope(definition, scope, state);
+    finalizeScope(definition, scope, state, scope.config, scope.inheritedGlobals);
+    for (const argument of scope.inheritedGlobals) {
+      if (isVisibleArgument(state, argument)) {
+        copyArgument(scope, state, argument.name);
+      }
+    }
     for (const { name } of definition.arguments) {
       if (state.owners.get(name) === definition) {
         copyArgument(scope, state, name);
@@ -306,7 +348,17 @@ function finalizeRelations(state: ScanState): void {
   }
 }
 
-function finalizeScope(definition: CommandDefinition, target: ArgumentValues, state: ScanState): void {
+function isVisibleArgument(state: ScanState, argument: ArgumentDefinition): boolean {
+  return state.owners.get(argument.name)?.arguments.includes(argument) === true;
+}
+
+function finalizeScope(
+  definition: CommandDefinition,
+  target: ArgumentValues,
+  state: ScanState,
+  config: CommandConfig | undefined,
+  inheritedGlobals: readonly ArgumentDefinition[],
+): void {
   const overriddenTargets = new Set(
     definition.overrides
       .filter(({ source }) => hasCommandLineInput(target, source))
@@ -326,6 +378,7 @@ function finalizeScope(definition: CommandDefinition, target: ArgumentValues, st
       applyEnvironmentValue(argument, raw, target, visibleRawValues);
     }
   }
+  applyConfigValues(definition, config, target, state, inheritedGlobals, overriddenTargets);
   applyConditionalDefaults(definition, target, state.env);
   applyOverrides(definition, target, state.env);
 }
@@ -362,6 +415,65 @@ function applyEnvironmentValue(
   if (parsed.length > 0) {
     storeCompletedValues(argument, parsed, target, 'env');
   }
+}
+
+function applyConfigValues(
+  definition: CommandDefinition,
+  config: CommandConfig | undefined,
+  target: ArgumentValues,
+  state: ScanState,
+  inheritedGlobals: readonly ArgumentDefinition[],
+  overriddenTargets: ReadonlySet<string>,
+): void {
+  if (config?.values === undefined) {
+    return;
+  }
+  for (const [name, value,] of Object.entries(config.values)) {
+    const localArgument = definition.arguments.find(({ name: argumentName }) => argumentName === name);
+    const argument = localArgument
+      ?? inheritedGlobals.find(({ name: argumentName }) => argumentName === name);
+    if (
+      argument === undefined
+      || hasCommandLineInput(target, name)
+      || target.argumentStates.get(name)?.source === 'env'
+      || target.argumentStates.get(name)?.source === 'config'
+      || hasEnvironmentValue(state.env, argument)
+      || overriddenTargets.has(name)
+    ) {
+      continue;
+    }
+    const visible = localArgument === undefined
+      ? isVisibleArgument(state, argument)
+      : state.owners.get(name) === definition;
+    applyConfigValue(argument, value, target, state, visible);
+  }
+}
+
+function hasEnvironmentValue(env: Environment, argument: ArgumentDefinition): boolean {
+  return argument.env !== undefined && readEnv(env, argument.env) !== undefined;
+}
+
+function applyConfigValue(
+  argument: ArgumentDefinition,
+  value: ConfigValue,
+  target: ArgumentValues,
+  state: ScanState,
+  visibleRawValues: boolean,
+): void {
+  const prepared = prepareConfigValue(argument, value);
+  if (prepared.kind === 'error') {
+    return;
+  }
+  if (prepared.kind === 'switch') {
+    target.values[argument.name] = prepared.value;
+    recordSuppliedArgument(target, argument.name, 'config');
+    return;
+  }
+  target.values[argument.name] = collectsValues(argument) ? [] : undefined;
+  if (visibleRawValues) {
+    state.rawValues[argument.name] = [...prepared.values];
+  }
+  storeCompletedValues(argument, parseCompletionValues(argument, prepared.values), target, 'config');
 }
 
 function copyArgument(from: ArgumentValues, to: ArgumentValues, name: string): void {
@@ -672,7 +784,10 @@ function parseCompletionValues(argument: ArgumentDefinition, rawValues: readonly
   const parsed: unknown[] = [];
   for (const raw of rawValues) {
     try {
-      parsed.push(argument.parser?.parse(raw) ?? raw);
+      const value = argument.parser === undefined ? raw : argument.parser.parse(raw);
+      if (value !== undefined) {
+        parsed.push(value);
+      }
     } catch {
       // Completion must continue when a partial value cannot be parsed yet.
     }
@@ -696,7 +811,7 @@ function storeCompletedValues(
   argument: ArgumentDefinition,
   parsed: readonly unknown[],
   state: ArgumentValues,
-  input: 'cli' | 'env',
+  input: 'cli' | 'env' | 'config',
 ): void {
   if (parsed.length > 0) {
     if (collectsValues(argument)) {
@@ -760,6 +875,8 @@ function enterSubcommand(state: ScanState, child: CommandDefinition): void {
   state.scopes.set(parent.command, {
     values: { ...state.values },
     argumentStates: new Map(state.argumentStates),
+    config: parent.config,
+    inheritedGlobals: parent.inheritedGlobals,
   });
   state.active = {
     command: child,
@@ -767,6 +884,7 @@ function enterSubcommand(state: ScanState, child: CommandDefinition): void {
     inheritedGlobals: [...parent.inheritedGlobals, ...parent.command.arguments.filter(({ global }) => global)],
     positionalIndex: 0,
     argvState: commandWords,
+    config: parent.config?.subcommands?.[child.name],
   };
   for (const argument of child.arguments) {
     state.owners.set(argument.name, child);

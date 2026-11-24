@@ -96,6 +96,21 @@ function writeMessage(channel: OutputChannel, text: string, options: RunOptions)
 }
 
 async function writeParseFailure(error: CliError, options: RunOptions): Promise<number> {
+  const exitCode = options.parseErrorExitCode ?? error.exitCode;
+  if (options.diagnostics === 'json') {
+    await writeJsonDiagnostic({
+      type: 'parse-error',
+      kind: error.kind,
+      message: sanitizeDiagnostic(error.message),
+      exitCode,
+      ...(error.argumentName === undefined ? {} : { argumentName: error.argumentName }),
+      commandPath: error.commandPath,
+      ...(error.tokenIndex === undefined ? {} : { tokenIndex: error.tokenIndex }),
+      suggestions: error.suggestions,
+      relatedArguments: error.relatedArguments,
+    }, options);
+    return exitCode;
+  }
   const decision = resolveOutputColor('stderr', outputColorModes.get(error), options.color, options.stderr, options.env);
   await writeMessage(
     'stderr',
@@ -104,7 +119,14 @@ async function writeParseFailure(error: CliError, options: RunOptions): Promise<
       : error.output,
     options,
   );
-  return options.parseErrorExitCode ?? error.exitCode;
+  return exitCode;
+}
+
+async function writeJsonDiagnostic(
+  diagnostic: Readonly<Record<string, unknown>>,
+  options: RunOptions,
+): Promise<void> {
+  await writeMessage('stderr', `${JSON.stringify(diagnostic)}\n`, options);
 }
 
 const helpAnsi = Object.freeze({ strong: '\x1b[1m', reset: '\x1b[0m' });
@@ -224,8 +246,10 @@ export async function runConfiguredHandler<Args extends object>(
     stderr: resolveOutputColor('stderr', mode, options.color, options.stderr, options.env),
   };
   let stdin = options.stdin;
+  const signal = options.signal ?? new AbortController().signal;
   const context: HandlerContext = Object.freeze({
     commandPath: Object.freeze([...selected.path]),
+    signal,
     get stdin(): ReadableStream<Uint8Array> {
       stdin ??= Bun.stdin.stream();
       return stdin;
@@ -260,6 +284,15 @@ export async function runConfiguredHandler<Args extends object>(
       throw error;
     }
     const { message, exitCode } = error;
+    if (options.diagnostics === 'json') {
+      await writeJsonDiagnostic({
+        type: 'command-failure',
+        message: sanitizeDiagnostic(message),
+        exitCode,
+        commandPath: selected.path,
+      }, options);
+      return exitCode;
+    }
     await writeMessage('stderr', message.endsWith('\n') ? message : `${message}\n`, options);
     return exitCode;
   }
@@ -269,6 +302,16 @@ async function writeWarnings(result: object, options: RunOptions): Promise<void>
   for (const warning of getWarnings(result)) {
     if (options.onWarning !== undefined) {
       options.onWarning(warning);
+    } else if (options.diagnostics === 'json') {
+      await writeJsonDiagnostic({
+        type: 'warning',
+        kind: warning.kind,
+        target: warning.target,
+        name: sanitizeDiagnostic(warning.name),
+        message: sanitizeDiagnostic(warning.message),
+        commandPath: warning.commandPath,
+        ...(warning.argumentName === undefined ? {} : { argumentName: warning.argumentName }),
+      }, options);
     } else {
       const message = sanitizeDiagnostic(`${warning.target} '${warning.name}' is deprecated: ${warning.message}`);
       await writeMessage('stderr', `warning: ${message}\n`, options);

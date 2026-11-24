@@ -212,8 +212,19 @@ assert.doesNotMatch(defaults.renderHelp(), /legacy/);
 const consumerDirectory = await mkdtemp(resolve(root, '.node-next-consumer-'));
 try {
   const configFile = resolve(consumerDirectory, 'tool.json');
+  const localConfig = resolve(consumerDirectory, 'tool.local.json');
   await writeFile(configFile, '{"values":{"verbose":2}}');
+  await writeFile(localConfig, '{"values":{"verbose":3}}');
   assert.deepEqual(await cli.loadConfig(configFile), { values: { verbose: 2 } });
+  const config = await cli.loadConfigs([configFile, localConfig]);
+  assert.deepEqual(cli.validateConfig(configured, config), { valid: true, issues: [] });
+  const layered = configured.parse(['status'], { config });
+  assert.equal(layered.type, 'value');
+  if (layered.type !== 'value') {
+    throw new Error('Expected layered config to produce a parsed value');
+  }
+  assert.equal(layered.value.verbose, 3);
+  assert.equal(cli.getConfigValueFile(layered.value, 'verbose'), localConfig);
   await writeFile(
     resolve(consumerDirectory, 'consumer.ts'),
     [

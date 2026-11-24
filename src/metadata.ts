@@ -10,6 +10,10 @@ import {
   renderPositionalCount,
   renderValueCount,
 } from './command/syntax.js';
+import {
+  groupHelpArguments,
+  type HelpArgumentGroup,
+} from './help-sections.js';
 import type {
   CompletionValueHint,
   EnumValue,
@@ -74,6 +78,8 @@ export interface ArgumentMetadata {
   readonly deprecatedAliases?: Readonly<Record<string, string>>;
   /** The description shown in help. */
   readonly help?: string;
+  /** The heading under which this argument is rendered in generated help and documentation. */
+  readonly helpHeading?: string;
   /** The value placeholder shown in usage and help. */
   readonly valueName?: string;
   /** The argument's requiredness or default status. */
@@ -420,6 +426,7 @@ function describeArgument(argument: ArgumentDefinition, includeHidden: boolean):
       ? {}
       : { deprecatedAliases: copyStringMap(argument.deprecatedAliases) }),
     ...(argument.help === undefined ? {} : { help: argument.help }),
+    ...(argument.helpHeading === undefined ? {} : { helpHeading: argument.helpHeading }),
     ...(argument.valueName === undefined ? {} : { valueName: argument.valueName }),
     presence: argument.presence,
     hasDefaultValue,
@@ -778,23 +785,25 @@ function appendMarkdownArguments(
   lines: string[],
   headingLevel: number,
 ): void {
-  const positionals = command.arguments.filter(({ kind }) => kind === 'positional');
-  const options = [
-    ...command.inheritedArguments,
-    ...command.arguments.filter(({ kind }) => kind !== 'positional'),
-  ];
-  if (positionals.length > 0) {
-    lines.push('', markdownHeading(headingLevel, 'Arguments'));
-    for (const argument of positionals) {
+  for (const group of metadataArgumentGroups(command)) {
+    lines.push('', markdownHeading(headingLevel, markdownText(group.heading)));
+    for (const argument of group.arguments) {
       lines.push(`- ${markdownInline(argumentDisplay(argument))} — ${markdownText(argumentDescription(argument))}`);
     }
   }
-  if (options.length > 0) {
-    lines.push('', markdownHeading(headingLevel, 'Options'));
-    for (const argument of options) {
-      lines.push(`- ${markdownInline(argumentDisplay(argument))} — ${markdownText(argumentDescription(argument))}`);
-    }
-  }
+}
+
+function metadataArgumentGroups(
+  command: CommandMetadata,
+): readonly HelpArgumentGroup<ArgumentMetadata>[] {
+  return groupHelpArguments(
+    [
+      ...command.arguments.filter(({ kind }) => kind === 'positional'),
+      ...command.inheritedArguments,
+      ...command.arguments.filter(({ kind }) => kind !== 'positional'),
+    ],
+    (argument) => argument.kind === 'positional' ? 'Arguments' : 'Options',
+  );
 }
 
 function appendMarkdownCommands(
@@ -953,18 +962,9 @@ function appendManCommand(
 }
 
 function appendManArguments(command: CommandMetadata, lines: string[]): void {
-  const positionals = command.arguments.filter(({ kind }) => kind === 'positional');
-  const options = [
-    ...command.inheritedArguments,
-    ...command.arguments.filter(({ kind }) => kind !== 'positional'),
-  ];
-  if (positionals.length > 0) {
-    lines.push('.SH ARGUMENTS');
-    appendManArgumentEntries(positionals, lines);
-  }
-  if (options.length > 0) {
-    lines.push('.SH OPTIONS');
-    appendManArgumentEntries(options, lines);
+  for (const group of metadataArgumentGroups(command)) {
+    lines.push(roffSectionHeading(group.heading));
+    appendManArgumentEntries(group.arguments, lines);
   }
 }
 
@@ -1157,6 +1157,13 @@ function markdownText(value: string): string {
 
 function roffQuote(value: string): string {
   return `"${roffText(value).replaceAll('"', '\\"')}"`;
+}
+
+function roffSectionHeading(title: string): string {
+  const heading = title.toUpperCase();
+  return /[\s"]/u.test(heading)
+    ? `.SH ${roffQuote(heading)}`
+    : `.SH ${roffText(heading)}`;
 }
 
 function roffText(value: string): string {

@@ -18,15 +18,18 @@ test('keeps the runtime package exports explicit', () => {
     'describeCommand',
     'flag',
     'generateConfigSchema',
+    'getConfigValueFile',
     'getValueSource',
     'getWarnings',
     'isCompletionShell',
     'loadConfig',
+    'loadConfigs',
     'option',
     'parsers',
     'positional',
     'renderManPage',
     'renderMarkdown',
+    'validateConfig',
   ]);
   expect(Object.keys(completionApi).sort()).toEqual([
     'completionShells',

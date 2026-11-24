@@ -4,6 +4,7 @@ import {
   test,
 } from 'bun:test';
 import {
+  colorFlag,
   command,
   count,
   flag,
@@ -17,6 +18,231 @@ import {
 } from '../src/dynamic-completion';
 
 describe('dynamic completion', () => {
+  test('uses config values after CLI and environment values for provider context', async () => {
+    const received: DynamicCompletionContext[] = [];
+    const envName = 'KONSTIT_COMPLETION_CONFIG_ENV';
+    const cli = command('tool', {
+      args: [
+        option('workspace', parsers.string, { env: envName }),
+        option('profile', parsers.string),
+        option('query', parsers.string, {
+          complete: (context) => {
+            received.push(context);
+            return ['done'];
+          },
+        }),
+      ],
+    });
+
+    const fromConfig = await resolveDynamicCompletion(cli, ['--query', ''], {
+      env: { [envName]: undefined },
+      config: { values: { workspace: 'config-workspace', profile: 'config-profile' } },
+    });
+    expect(fromConfig.candidates).toEqual([{ value: 'done' }]);
+    expect(received.at(-1)?.values).toMatchObject({
+      workspace: 'config-workspace',
+      profile: 'config-profile',
+    });
+    expect(received.at(-1)?.rawValues).toMatchObject({
+      workspace: ['config-workspace'],
+      profile: ['config-profile'],
+    });
+
+    await resolveDynamicCompletion(cli, ['--profile', 'cli-profile', '--query', ''], {
+      env: { [envName]: 'env-workspace' },
+      config: { values: { workspace: 'config-workspace', profile: 'config-profile' } },
+    });
+    expect(received.at(-1)?.values).toMatchObject({
+      workspace: 'env-workspace',
+      profile: 'cli-profile',
+    });
+  });
+
+  test('applies selected subcommand config and ignores inactive branches', async () => {
+    let values: DynamicCompletionContext | undefined;
+    const cli = command('tool', {
+      subcommands: [
+        command('deploy', {
+          args: [
+            option('region', parsers.string),
+            option('package', parsers.string, {
+              complete: (context) => {
+                values = context;
+                return ['web'];
+              },
+            }),
+          ],
+        }),
+        command('clean', { args: [option('region', parsers.string)] }),
+      ],
+    });
+
+    await resolveDynamicCompletion(cli, ['deploy', '--package', ''], {
+      config: {
+        subcommands: {
+          deploy: { values: { region: 'eu-west-1' } },
+          clean: { values: { region: 'ignored' } },
+        },
+      },
+    });
+    expect(values?.values.region).toBe('eu-west-1');
+    expect(values?.rawValues.region).toEqual(['eu-west-1']);
+  });
+
+  test('continues completion when a config value is not parseable yet', async () => {
+    let called = false;
+    const cli = command('tool', {
+      args: [
+        option('number', parsers.integer),
+        option('query', parsers.string, {
+          complete: ({ values }) => {
+            called = true;
+            return values.number === undefined ? ['fallback'] : ['number'];
+          },
+        }),
+      ],
+    });
+
+    const result = await resolveDynamicCompletion(cli, ['--query', ''], {
+      config: { values: { number: 'partial' } },
+    });
+    expect(called).toBe(true);
+    expect(result.candidates).toEqual([{ value: 'fallback' }]);
+  });
+
+  test('passes config through the shell completion request', async () => {
+    let workspace: unknown;
+    const cli = command('tool', {
+      args: [
+        option('workspace', parsers.string),
+        option('query', parsers.string, {
+          complete: (context) => {
+            workspace = context.values.workspace;
+            return ['done'];
+          },
+        }),
+      ],
+    });
+    const output: string[] = [];
+    const exitCode = await cli.run({
+      argv: ['--query', ''],
+      env: { KONSTIT_CLI_COMPLETE: '1' },
+      config: { values: { workspace: 'from-config' } },
+      stdout: (chunk) => output.push(chunk),
+    });
+    expect(exitCode).toBe(0);
+    expect(workspace).toBe('from-config');
+    expect(output).toEqual(['646f6e65\t\n']);
+  });
+
+  test('propagates config values for inherited globals across three command levels', async () => {
+    const profiles: unknown[] = [];
+    const leaf = command('leaf', {
+      args: [option('query', parsers.string, {
+        complete: ({ values }) => {
+          profiles.push(values.profile);
+          return ['done'];
+        },
+      })],
+    });
+    const cli = command('tool', {
+      args: [option('profile', parsers.string, { global: true })],
+      subcommands: [command('middle', { subcommands: [leaf] })],
+    });
+
+    await resolveDynamicCompletion(cli, ['middle', 'leaf', '--query', ''], {
+      config: {
+        values: { profile: 'root' },
+        subcommands: {
+          middle: { values: { profile: 'middle' }, subcommands: { leaf: {} } },
+        },
+      },
+    });
+    await resolveDynamicCompletion(cli, ['middle', 'leaf', '--query', ''], {
+      config: {
+        values: { profile: 'root' },
+        subcommands: {
+          middle: {
+            values: { profile: 'middle' },
+            subcommands: { leaf: { values: { profile: 'leaf' } } },
+          },
+        },
+      },
+    });
+
+    expect(profiles).toEqual(['middle', 'leaf']);
+  });
+
+  test('replaces collection defaults with configured values', async () => {
+    let values: DynamicCompletionContext['values'] | undefined;
+    const cli = command('tool', {
+      args: [
+        option('tags', parsers.string, { repeatable: true, defaultValues: ['default'] }),
+        option('empty', parsers.map(parsers.string, () => null)),
+        option('query', parsers.string, {
+          complete: (context) => {
+            values = context.values;
+            return ['done'];
+          },
+        }),
+      ],
+    });
+
+    await resolveDynamicCompletion(cli, ['--query', ''], {
+      config: { values: { tags: ['configured'], empty: 'null' } },
+    });
+    expect(values).toMatchObject({ tags: ['configured'], empty: null });
+  });
+
+  test('hides a parent config value when a child shadows the argument', async () => {
+    let context: DynamicCompletionContext | undefined;
+    const value = option('value', parsers.string);
+    const cli = command('tool', {
+      args: [value],
+      subcommands: [command('run', {
+        args: [
+          value,
+          option('query', parsers.string, {
+            complete: (received) => {
+              context = received;
+              return ['done'];
+            },
+          }),
+        ],
+      })],
+    });
+
+    await resolveDynamicCompletion(cli, ['run', '--query', ''], {
+      config: { values: { value: 'parent' } },
+    });
+    expect(context?.values.value).toBeUndefined();
+    expect(context?.rawValues.value).toBeUndefined();
+  });
+
+  test('uses configured flags and counters in provider context', async () => {
+    let values: DynamicCompletionContext['values'] | undefined;
+    const cli = command('tool', {
+      args: [
+        flag('verbose'),
+        count('level'),
+        colorFlag('color'),
+        flag('watch'),
+        option('query', parsers.string, {
+          complete: (context) => {
+            values = context.values;
+            return ['done'];
+          },
+        }),
+      ],
+    });
+
+    const config = { values: { verbose: true, level: 2, color: true, watch: 'invalid' } };
+    await resolveDynamicCompletion(cli, ['--query', ''], { config, env: {} });
+    expect(values).toMatchObject({ verbose: true, level: 2, color: true, watch: false });
+    await resolveDynamicCompletion(cli, ['--query', ''], { config, env: { NO_COLOR: '' } });
+    expect(values?.color).toBe(false);
+  });
+
   test('resolves static values, aliases, inline options, and global options', async () => {
     const cli = command('tool', {
       args: [flag('verbose', { global: true })],

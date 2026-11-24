@@ -19,6 +19,7 @@ import {
   option,
   parsers,
   positional,
+  validateConfig,
 } from '../src';
 
 test('generates a closed schema with canonical names, raw values, and inherited globals', () => {
@@ -59,7 +60,13 @@ test('generates a closed schema with canonical names, raw values, and inherited 
   expect(serve?.properties).not.toHaveProperty('$schema');
   expect(serve?.properties.values.properties).toEqual({
     verbose,
-    port: { description: 'Listening port', anyOf: [{ type: 'string' }, { type: 'array', items: { type: 'string' } }] },
+    port: {
+      description: 'Listening port',
+      anyOf: [
+        { type: 'string' },
+        { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 1 },
+      ],
+    },
     watch: { type: 'boolean' },
   });
   expect(Object.keys(serve?.properties.subcommands.properties.check?.properties.values.properties ?? {})).toEqual([
@@ -92,6 +99,185 @@ test('loads JSON config from a file URL and applies it to a nested command', asy
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+test('includes enum spellings and faithful fixed array bounds in the config schema', () => {
+  const cli = command('tool', {
+    args: [
+      option(
+        'mode',
+        parsers.enum(
+          [
+            { value: 'fast', aliases: ['f'] },
+            { value: 'safe' },
+          ] as const,
+        ),
+      ),
+      option('range', parsers.integer, { numArgs: { min: 2, max: 4 } }),
+      option('secret', parsers.enum(['one', 'two'] as const), { sensitive: true }),
+      option('split', parsers.enum(['one', 'two'] as const), { numArgs: 2, valueDelimiter: ',' }),
+      option(
+        'hiddenChoice',
+        parsers.enum(
+          [
+            { value: 'visible' },
+            { value: 'hidden', hide: true },
+          ] as const,
+        ),
+      ),
+      option('repeatable', parsers.integer, { repeatable: true, numArgs: { min: 2, max: 3 } }),
+    ],
+  });
+  const values = generateConfigSchema(cli).properties.values.properties;
+  expect(values.mode).toEqual({
+    anyOf: [
+      { type: 'string', enum: ['fast', 'f', 'safe'] },
+      {
+        type: 'array',
+        items: { type: 'string', enum: ['fast', 'f', 'safe'] },
+        minItems: 1,
+        maxItems: 1,
+      },
+    ],
+  });
+  expect(values.range).toEqual({
+    anyOf: [
+      { type: 'array', items: { type: 'string' }, minItems: 2, maxItems: 4 },
+    ],
+  });
+  expect(values.secret).toEqual({
+    anyOf: [
+      { type: 'string' },
+      { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 1 },
+    ],
+  });
+  expect(values.split).toEqual({
+    anyOf: [
+      { type: 'string' },
+      { type: 'array', items: { type: 'string' } },
+    ],
+  });
+  expect(values.hiddenChoice).toEqual({
+    anyOf: [
+      { type: 'string' },
+      { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 1 },
+    ],
+  });
+  expect(values.repeatable).toEqual({
+    anyOf: [
+      { type: 'array', items: { type: 'string' }, minItems: 2 },
+    ],
+  });
+});
+
+test('validates every configured branch and redacts sensitive parser failures', () => {
+  const cli = command('tool', {
+    args: [option('token', parsers.integer, { sensitive: true, global: true })],
+    subcommands: [command('serve', {
+      args: [option('port', parsers.integer, { numArgs: 2 })],
+    })],
+  });
+  const result = validateConfig(cli, {
+    values: { token: 'hunter2', missing: 'value' },
+    subcommands: {
+      serve: { values: { port: ['80', '81', '82'] } },
+      absent: { values: { port: '80' } },
+    },
+  });
+  expect(result.valid).toBe(false);
+  expect(result.issues.map(({ kind }) => kind)).toEqual([
+    'invalid-value',
+    'unknown-argument',
+    'too-many-values',
+    'unknown-subcommand',
+  ]);
+  expect(result.issues[0]).toMatchObject({
+    argumentName: 'token',
+    path: ['config', 'values', 'token'],
+  });
+  expect(result.issues[0]?.message).not.toContain('hunter2');
+  expect(result.issues[2]).toMatchObject({
+    argumentName: 'port',
+    path: ['config', 'subcommands', 'serve', 'values', 'port'],
+    commandPath: ['tool', 'serve'],
+  });
+  expect(Object.isFrozen(result)).toBe(true);
+  expect(Object.isFrozen(result.issues)).toBe(true);
+  expect(Object.isFrozen(result.issues[0])).toBe(true);
+});
+
+test('accepts a partial config with inherited globals and parser aliases', () => {
+  const cli = command('tool', {
+    args: [option(
+      'mode',
+      parsers.enum(
+        [
+          { value: 'fast', aliases: ['f'] },
+        ] as const,
+      ),
+      { global: true },
+    )],
+    subcommands: [command('serve', {
+      args: [option('port', parsers.integer, { required: true })],
+    })],
+  });
+  expect(validateConfig(cli, {
+    values: { mode: 'f' },
+    subcommands: { serve: { values: { port: '8080' } } },
+  })).toMatchObject({ valid: true, issues: [] });
+  expect(validateConfig(cli, undefined)).toEqual({ valid: true, issues: [] });
+});
+
+test('reports every config coercion and arity failure without stopping at the first issue', () => {
+  const undefinedParser = parsers.custom('UNDEFINED', () => undefined);
+  const cli = command('tool', {
+    args: [
+      flag('enabled'),
+      count('verbose'),
+      option('pair', parsers.integer, { numArgs: { min: 2, max: 3 }, repeatable: true }),
+      option('requiredPair', parsers.integer, { numArgs: 2 }),
+      option('text', parsers.string),
+      option('number', parsers.integer),
+      option('undefinedValue', undefinedParser),
+    ],
+  });
+  const result = validateConfig(cli, {
+    values: {
+      enabled: 'yes',
+      verbose: 'two',
+      pair: ['1'],
+      requiredPair: [],
+      text: true,
+      number: 'bad',
+      undefinedValue: 'value',
+    },
+  });
+  expect(result.issues.map(({ kind }) => kind)).toEqual([
+    'invalid-value',
+    'invalid-value',
+    'too-few-values',
+    'too-few-values',
+    'invalid-value',
+    'invalid-value',
+    'invalid-value',
+  ]);
+  expect(result.issues.map(({ argumentName }) => argumentName)).toEqual([
+    'enabled',
+    'verbose',
+    'pair',
+    'requiredPair',
+    'text',
+    'number',
+    'undefinedValue',
+  ]);
+});
+
+test('accepts valid switch values during config validation', () => {
+  const cli = command('tool', { args: [flag('enabled'), count('verbose')] });
+  expect(validateConfig(cli, { values: { enabled: true, verbose: 2 } })).toEqual({
+    valid: true,
+    issues: [],
+  });
 });
 
 test('identifies read, JSON syntax, and config structure errors by file', async () => {

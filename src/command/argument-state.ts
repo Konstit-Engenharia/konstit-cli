@@ -9,6 +9,7 @@ interface SuppliedArgument {
   readonly source: InputSource;
   readonly valueCount: number;
   readonly tokenIndex: number | undefined;
+  readonly configFile?: string;
 }
 
 // A missing map entry represents an absent argument. An implicit value can have

@@ -78,6 +78,8 @@ export interface ArgumentDefinition {
   readonly deprecatedAliases?: Readonly<Record<string, string>>;
   /** The description shown in help. */
   readonly help?: string;
+  /** The heading under which this argument is rendered in generated help and documentation. */
+  readonly helpHeading?: string;
   /** The value placeholder shown in usage and help. */
   readonly valueName?: string;
   /** The argument's requiredness or default status. */
@@ -134,6 +136,8 @@ export interface ArgumentOptions {
   readonly deprecated?: string;
   /** Sets the argument description shown in generated help. */
   readonly describe?: string;
+  /** Groups this argument under a custom heading in generated help and documentation. */
+  readonly helpHeading?: string;
   /** Reads a missing value from this environment variable. Flags use its presence. */
   readonly env?: string;
   /** Hides the argument from help and completion while keeping it parseable. */
@@ -532,6 +536,9 @@ function applyArgumentOptions(
   if (options.describe !== undefined) {
     configured = copyDefinition(configured, { help: options.describe });
   }
+  if (options.helpHeading !== undefined) {
+    configured = copyDefinition(configured, { helpHeading: options.helpHeading });
+  }
   if (options.env !== undefined) {
     if (options.env.length === 0) {
       throw new TypeError('An environment variable name cannot be empty');
@@ -704,6 +711,7 @@ function validateArgumentOptionKeys(
   const allowed = [
     'deprecated',
     'describe',
+    'helpHeading',
     'env',
     'hide',
     'sensitive',
@@ -745,6 +753,7 @@ function validateArgumentOptionKeys(
     const key of [
       'deprecated',
       'describe',
+      'helpHeading',
       'env',
       'long',
       'valueName',
@@ -755,6 +764,12 @@ function validateArgumentOptionKeys(
     if (configured[key] !== undefined && typeof configured[key] !== 'string') {
       throw new TypeError(`${kind} argument option '${key}' must be a string`);
     }
+  }
+  if (configured.helpHeading === '') {
+    throw new TypeError(`${kind} argument option 'helpHeading' cannot be empty`);
+  }
+  if (typeof configured.helpHeading === 'string' && /[\r\n]/u.test(configured.helpHeading)) {
+    throw new TypeError(`${kind} argument option 'helpHeading' cannot contain line breaks`);
   }
   for (
     const key of [

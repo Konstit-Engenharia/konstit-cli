@@ -1,0 +1,121 @@
+import {
+  expect,
+  test,
+} from 'bun:test';
+import {
+  command,
+  describeCommand,
+  flag,
+  option,
+  parsers,
+  positional,
+  renderManPage,
+  renderMarkdown,
+} from '../src';
+
+test('groups arguments under custom headings in help and documentation', () => {
+  const cli = command('tool', {
+    args: [
+      positional('input', parsers.string, {
+        required: true,
+        helpHeading: 'Input files',
+      }),
+      option('output', parsers.string, {
+        helpHeading: 'Output files',
+      }),
+      flag('verbose', {
+        short: 'v',
+        helpHeading: 'Logging',
+      }),
+    ],
+  });
+
+  expect(cli.renderHelp()).toContain(
+    'Input files:\n  <INPUT>\n\nOutput files:\n  --output <STRING>\n\nLogging:\n  -v, --verbose\n\nOptions:\n  -h, --help  Print help\n',
+  );
+  expect(renderMarkdown(cli)).toContain(
+    '## Input files\n- `<input>` — syntax \\<STRING\\>; arity 1; parser STRING\n\n## Output files\n',
+  );
+  expect(renderManPage(cli)).toContain(
+    '.SH "INPUT FILES"\n.TP\n.B <input>\nsyntax <STRING>; arity 1; parser STRING\n.SH "OUTPUT FILES"\n.TP\n.B \\-\\-output\n',
+  );
+
+  const metadata = describeCommand(cli);
+  expect(metadata.arguments.map(({ helpHeading }) => helpHeading)).toEqual([
+    'Input files',
+    'Output files',
+    'Logging',
+  ]);
+  expect(Object.isFrozen(metadata.arguments[0])).toBe(true);
+});
+
+test('renders one shared heading for positional and option arguments', () => {
+  const cli = command('tool', {
+    args: [
+      positional('input', parsers.string, {
+        required: true,
+        helpHeading: 'Input "files"',
+      }),
+      option('output', parsers.string, {
+        helpHeading: 'Input "files"',
+      }),
+    ],
+  });
+
+  expect(cli.renderHelp()).toContain(
+    'Input "files":\n  <INPUT>\n  --output <STRING>\n\nOptions:\n',
+  );
+  expect(cli.renderHelp().split('Input "files":')).toHaveLength(2);
+  expect(renderMarkdown(cli).split('## Input "files"')).toHaveLength(2);
+  expect(renderManPage(cli)).toContain('.SH "INPUT \\"FILES\\""\n');
+  expect(renderManPage(cli).split('.SH "INPUT \\"FILES\\""')).toHaveLength(2);
+});
+
+test('keeps built-ins in a shared Options heading', () => {
+  const cli = command('tool', {
+    args: [
+      positional('input', parsers.string, {
+        required: true,
+        helpHeading: 'Options',
+      }),
+    ],
+  });
+
+  const help = cli.renderHelp();
+  expect(help).toContain('Options:\n  <INPUT>\n  -h, --help  Print help\n');
+  expect(help.split('Options:')).toHaveLength(2);
+});
+
+test('keeps the default options section for generated built-ins', () => {
+  const cli = command('tool', {
+    args: [option('output', parsers.string, { helpHeading: 'Output' })],
+    version: '1.0.0',
+  });
+
+  expect(cli.renderHelp()).toContain(
+    'Output:\n  --output <STRING>\n\nOptions:\n  -h, --help     Print help\n  -V, --version  Print version\n',
+  );
+});
+
+test('accepts custom headings on inherited globals', () => {
+  const verbose = flag('verbose', { global: true, helpHeading: 'Logging' });
+  const cli = command('tool', {
+    args: [verbose],
+    subcommands: [command('run')],
+  });
+
+  expect(cli.renderHelp()).toContain('Logging:\n  --verbose\n');
+  expect(cli.renderHelp()).toContain('Options:\n  -h, --help  Print help\n');
+});
+
+test('rejects empty or multiline custom headings', () => {
+  expect(() => option('output', parsers.string, { helpHeading: '' })).toThrow(
+    'helpHeading\' cannot be empty',
+  );
+  expect(() => option('output', parsers.string, { helpHeading: 'Output\nfiles' })).toThrow(
+    'helpHeading\' cannot contain line breaks',
+  );
+  expect(() => option('output', parsers.string, { helpHeading: 1 as never })).toThrow(
+    'helpHeading\' must be a string',
+  );
+});

@@ -6,6 +6,7 @@ import {
   type ErrorKind,
   type ParseDisplay,
 } from '../error.js';
+import { groupHelpArguments } from '../help-sections.js';
 import { argumentLongNames } from './recognition.js';
 import type { CommandDefinition } from './schema.js';
 import {
@@ -172,7 +173,7 @@ export function renderUsage(
 }
 
 /** The headings emitted by the generated help renderer. */
-export type GeneratedHelpSection = 'Arguments' | 'Commands' | 'Options' | 'Examples';
+export type GeneratedHelpSection = string;
 
 export type HelpLineRole =
   | { readonly kind: 'plain'; }
@@ -254,18 +255,39 @@ function renderHelpDocument(
   }
   appendFirstLineRole(lines, renderUsage(definition, path, inheritedArguments), { kind: 'usage' });
 
-  const positionals = definition.arguments.filter(
-    (argument) => argument.kind === 'positional' && !argument.hidden,
+  const argumentsToRender = [
+    ...definition.arguments,
+    ...inheritedArguments,
+  ].filter(({ hidden }) => !hidden);
+  const builtInEntries: Array<readonly [string, string]> = [];
+  if (!definition.disableHelpFlag) {
+    builtInEntries.push(['  -h, --help', 'Print help']);
+  }
+  if (definition.version !== undefined && !definition.disableVersionFlag) {
+    builtInEntries.push(['  -V, --version', 'Print version']);
+  }
+  const argumentGroups = groupHelpArguments(
+    argumentsToRender,
+    (argument) => argument.kind === 'positional' ? 'Arguments' : 'Options',
   );
-  if (positionals.length > 0) {
+  const groupsWithBuiltIns = builtInEntries.length === 0 || argumentGroups.some(
+      ({ heading }) => heading === 'Options',
+    )
+    ? argumentGroups
+    : [...argumentGroups, { heading: 'Options', arguments: [] }];
+  const positionalGroups = groupsWithBuiltIns.filter(
+    ({ arguments: groupArguments }) => groupArguments.some(({ kind }) => kind === 'positional'),
+  );
+  const optionGroups = groupsWithBuiltIns.filter(
+    ({ arguments: groupArguments }) => groupArguments.every(({ kind }) => kind !== 'positional'),
+  );
+  for (const group of positionalGroups) {
     appendLine(lines, '', { kind: 'plain' });
-    appendLine(lines, 'Arguments:', { kind: 'heading', section: 'Arguments' });
-    const entries: Array<readonly [string, string]> = positionals.map((argument) => {
-      const name = argument.valueName ?? argument.name.toUpperCase();
-      const label = renderPositionalCount(argument, name);
-      return [`  ${label}`, annotateHelp(argument)] as const;
+    appendLine(lines, `${sanitizeDiagnostic(group.heading)}:`, {
+      kind: 'heading',
+      section: group.heading,
     });
-    pushAligned(lines, entries, 'Arguments');
+    pushAligned(lines, helpGroupEntries(group, builtInEntries), group.heading);
   }
 
   const subcommands = definition.subcommands.filter(({ hidden }) => !hidden);
@@ -293,32 +315,13 @@ function renderHelpDocument(
     pushAligned(lines, commandEntries, 'Commands');
   }
 
-  const options = [...definition.arguments, ...inheritedArguments].filter(
-    (argument) => argument.kind !== 'positional' && !argument.hidden,
-  );
-  const entries: Array<readonly [string, string]> = options.map((argument) => {
-    const names = [
-      ...(argument.short === undefined ? [] : [`-${argument.short}`]),
-      ...(argument.long === undefined ? [] : [`--${argument.long}`]),
-      ...(argument.negativeLong === undefined ? [] : [`--${argument.negativeLong}`]),
-    ].join(', ');
-    const value = argument.kind !== 'option'
-      ? ''
-      : argument.requireEquals
-      ? renderEqualsValueCount(argument)
-      : renderValueCount(argument);
-    return [`  ${names}${value}`, annotateHelp(argument)] as const;
-  });
-  if (!definition.disableHelpFlag) {
-    entries.push(['  -h, --help', 'Print help']);
-  }
-  if (definition.version !== undefined && !definition.disableVersionFlag) {
-    entries.push(['  -V, --version', 'Print version']);
-  }
-  if (entries.length > 0) {
+  for (const group of optionGroups) {
     appendLine(lines, '', { kind: 'plain' });
-    appendLine(lines, 'Options:', { kind: 'heading', section: 'Options' });
-    pushAligned(lines, entries, 'Options');
+    appendLine(lines, `${sanitizeDiagnostic(group.heading)}:`, {
+      kind: 'heading',
+      section: group.heading,
+    });
+    pushAligned(lines, helpGroupEntries(group, builtInEntries), group.heading);
   }
   if (includeLongAbout && definition.longAbout !== undefined) {
     appendLine(lines, '', { kind: 'plain' });
@@ -370,6 +373,40 @@ function renderPositionalCount(
   name: string,
 ): string {
   return renderSyntaxPositionalCount(argument, name);
+}
+
+function helpArgumentEntries(
+  argumentsToRender: readonly ArgumentDefinition[],
+): Array<readonly [string, string]> {
+  return argumentsToRender.map((argument) => {
+    if (argument.kind === 'positional') {
+      const name = argument.valueName ?? argument.name.toUpperCase();
+      const label = renderPositionalCount(argument, name);
+      return [`  ${label}`, annotateHelp(argument)] as const;
+    }
+    const names = [
+      ...(argument.short === undefined ? [] : [`-${argument.short}`]),
+      ...(argument.long === undefined ? [] : [`--${argument.long}`]),
+      ...(argument.negativeLong === undefined ? [] : [`--${argument.negativeLong}`]),
+    ].join(', ');
+    const value = argument.kind !== 'option'
+      ? ''
+      : argument.requireEquals
+      ? renderEqualsValueCount(argument)
+      : renderValueCount(argument);
+    return [`  ${names}${value}`, annotateHelp(argument)] as const;
+  });
+}
+
+function helpGroupEntries(
+  group: { readonly heading: string; readonly arguments: readonly ArgumentDefinition[]; },
+  builtInEntries: readonly (readonly [string, string])[],
+): Array<readonly [string, string]> {
+  const entries = helpArgumentEntries(group.arguments);
+  if (group.heading === 'Options') {
+    entries.push(...builtInEntries);
+  }
+  return entries;
 }
 
 function annotateHelp(argument: ArgumentDefinition): string {

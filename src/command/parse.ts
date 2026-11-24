@@ -21,7 +21,7 @@ import { parsers } from '../parser.js';
 import {
   setValueSources,
   updateValueSource,
-  type ValueSource,
+  type TrackedValueSource,
 } from '../value-source.js';
 import {
   defaultArgument,
@@ -31,8 +31,11 @@ import {
   restoreArgumentDefault,
   suppliedArgument,
   suppliedArgumentNames,
+  type ArgumentState,
   type InputSource,
 } from './argument-state.js';
+import { configEntryFile } from './config-origin.js';
+import { prepareConfigValue } from './config-value.js';
 import {
   validateConfigShape,
   type CommandConfig,
@@ -479,14 +482,15 @@ function parseDefinition(
     }
   }
   const result = Object.freeze(state.values);
-  const sources = new Map<string, ValueSource>();
-  for (const [name, { source },] of state.argumentStates) {
+  const sources = new Map<string, TrackedValueSource>();
+  for (const [name, argumentState,] of state.argumentStates) {
+    const source = trackedValueSource(argumentState);
     if (source !== undefined) {
       sources.set(name, source);
     }
   }
   for (const { argument, state: inheritedState } of inheritedGlobals) {
-    const source = inheritedState.argumentStates.get(argument.name)?.source;
+    const source = trackedValueSource(inheritedState.argumentStates.get(argument.name));
     if (source !== undefined) {
       sources.set(argument.name, source);
     }
@@ -505,6 +509,12 @@ function parseDefinition(
   return result;
 }
 
+function trackedValueSource(state: ArgumentState | undefined): TrackedValueSource | undefined {
+  return state?.kind === 'supplied' && state.configFile !== undefined
+    ? { file: state.configFile }
+    : state?.source;
+}
+
 function refreshInheritedSources(
   subcommand: ParseState['subcommand'],
   globals: readonly GlobalBinding[],
@@ -513,7 +523,7 @@ function refreshInheritedSources(
     return;
   }
   for (const { argument, state } of globals) {
-    updateValueSource(subcommand.args, argument.name, state.argumentStates.get(argument.name)?.source);
+    updateValueSource(subcommand.args, argument.name, trackedValueSource(state.argumentStates.get(argument.name)));
   }
   const nested = subcommand.args.subcommand;
   if (
@@ -608,13 +618,11 @@ function configArgumentValue(
   state: ParseState,
   inheritedArguments: readonly ArgumentDefinition[],
 ): void {
-  if (argument.kind === 'flag') {
-    if (typeof value !== 'boolean') {
-      throw new TypeError(`Config value for '${display}' must be a boolean`);
-    }
+  const prepared = prepareConfigValue(argument, value);
+  if (prepared.kind === 'switch') {
     state.values[argument.name] = argument.color && readEnv(state.session.env, 'NO_COLOR') !== undefined
       ? false
-      : value;
+      : prepared.value;
     recordSuppliedArgument(state, argument.name, 'config');
     if (argument.color) {
       state.session.colorMode = state.values[argument.name] === true
@@ -623,58 +631,37 @@ function configArgumentValue(
     }
     return;
   }
-  if (argument.kind === 'count') {
-    if (
-      typeof value !== 'number'
-      || !Number.isSafeInteger(value)
-      || value < 0
-    ) {
-      throw new TypeError(`Config value for '${display}' must be a nonnegative integer`);
+  if (prepared.kind === 'error') {
+    switch (prepared.reason) {
+      case 'boolean':
+        throw new TypeError(`Config value for '${display}' must be a boolean`);
+      case 'count':
+        throw new TypeError(`Config value for '${display}' must be a nonnegative integer`);
+      case 'strings':
+        throw new TypeError(`Config value for '${display}' must be a string or string array`);
+      case 'max':
+        throw commandError(
+          ErrorKind.TooManyValues,
+          `argument '${display}' accepts at most ${argument.maxValues} value(s)`,
+          definition,
+          path,
+          inheritedArguments,
+          { argumentName: argument.name },
+        );
+      case 'occurrences':
+        throw commandError(
+          ErrorKind.TooFewValues,
+          `argument '${display}' requires complete occurrences of ${argument.minValues} to ${argument.maxValues} value(s)`,
+          definition,
+          path,
+          inheritedArguments,
+          { argumentName: argument.name },
+        );
     }
-    state.values[argument.name] = value;
-    recordSuppliedArgument(state, argument.name, 'config');
-    return;
-  }
-  if (
-    typeof value !== 'string'
-    && !(Array.isArray(value) && value.every((item) => typeof item === 'string'))
-  ) {
-    throw new TypeError(`Config value for '${display}' must be a string or string array`);
-  }
-  const rawValues = typeof value === 'string' ? [value] : value;
-  const values = rawValues.flatMap((raw) => splitRawValue(argument, raw));
-  if (
-    (!argument.repeatable || argument.maxValues === 0)
-    && argument.maxValues !== null
-    && values.length > argument.maxValues
-  ) {
-    throw commandError(
-      ErrorKind.TooManyValues,
-      `argument '${display}' accepts at most ${argument.maxValues} value(s)`,
-      definition,
-      path,
-      inheritedArguments,
-      { argumentName: argument.name },
-    );
-  }
-  if (
-    argument.repeatable
-    && argument.minValues > 0
-    && argument.maxValues !== null
-    && Math.ceil(values.length / argument.maxValues) > Math.floor(values.length / argument.minValues)
-  ) {
-    throw commandError(
-      ErrorKind.TooFewValues,
-      `argument '${display}' requires complete occurrences of ${argument.minValues} to ${argument.maxValues} value(s)`,
-      definition,
-      path,
-      inheritedArguments,
-      { argumentName: argument.name },
-    );
   }
   storeRawValues(
     argument,
-    values,
+    prepared.values,
     display,
     definition,
     path,
@@ -722,6 +709,11 @@ function applyConfigValues(
       binding.state,
       inheritedArguments,
     );
+    const file = binding.argument.sensitive ? undefined : configEntryFile(config, name);
+    const supplied = suppliedArgument(binding.state, name);
+    if (file !== undefined && supplied !== undefined) {
+      binding.state.argumentStates.set(name, { ...supplied, configFile: file });
+    }
   }
 }
 

@@ -181,10 +181,10 @@ process.exitCode = await serve.runParsed(result, { parseErrorExitCode: 1 });
 `runParsed()` runs the deepest selected handler or writes the stored help,
 version, or error output. It reuses parsed values and inherited globals without
 parsing or applying environment fallbacks again. Its `RunParsedOptions` accepts
-`stdin`, `stdout`, `stderr`, `output`, `lsColors`, `color`, and `parseErrorExitCode`;
-`color` controls output styling while preserving resolved argument values. Use `run()` for executable
-entry points that must detect shell completion requests; `runParsed()` only
-executes the supplied result.
+`stdin`, `stdout`, `stderr`, `output`, `lsColors`, `color`, `signal`,
+`diagnostics`, `onWarning`, and `parseErrorExitCode`. The `color` option
+controls output styling while preserving resolved argument values. Use `run()`
+for executable entry points that detect shell completion requests.
 
 Each command path that can be selected by `run()` needs a handler. Set
 `subcommandRequired: true` when only subcommands are runnable.
@@ -201,6 +201,20 @@ const echo = command('echo', {
 });
 
 await echo.run({ argv: [], stdin: new Blob(['hello\n']).stream() });
+```
+
+Handlers receive `context.signal`. Pass an `AbortSignal` to `run()` or
+`runParsed()` to control cancellation for that invocation. A handler can pass
+the signal to APIs such as `fetch()` or check it with `signal.throwIfAborted()`.
+The handler decides how to respond to cancellation, including when the signal
+is already aborted on entry. Without a supplied signal, the handler receives
+a fresh, un-aborted signal.
+
+```ts
+const controller = new AbortController();
+const running = importer.run({ argv: [], signal: controller.signal });
+controller.abort();
+const exitCode = await running;
 ```
 
 Handlers can `await context.stdout(chunk)` and `await context.stderr(chunk)`.
@@ -340,6 +354,15 @@ if (result.type === 'error') {
 }
 ```
 
+Set `diagnostics: 'json'` on `run()`, `runParsed()`, or `invoke()` to emit
+one JSON object per line on stderr. The `type` field is `parse-error`,
+`command-failure`, or `warning`. Parse errors include `kind`, `message`,
+`commandPath`, `exitCode`, and any applicable argument and token details.
+Command failures include the message, command path, and exit code.
+Deprecation warnings include their kind, target, name, message, and command
+path. An `onWarning` callback still receives warnings in place of stderr
+output. Help, version, and handler writes keep their usual formats.
+
 ## Testing commands
 
 `invoke(cli, argv)` from `@konstit/cli/testing` runs a command in process with
@@ -372,6 +395,9 @@ const result = await invoke(serve, [], {
 
 Pass `env` in the same options object to supply environment variables for the
 invocation. An empty map gives the test an empty environment.
+
+Pass `signal` to test cancellation or `diagnostics: 'json'` to capture
+framework diagnostics as newline-delimited JSON on stderr.
 
 `stdout` and `stderr` contain the concatenated text for each stream. Each item
 in `writes` has a `stream` and a `chunk`, preserving the order and boundaries of
@@ -424,11 +450,61 @@ const schema = generateConfigSchema(cli);
 await Bun.write('./tool.schema.json', `${JSON.stringify(schema, null, 2)}\n`);
 ```
 
+Use `loadConfigs(paths)` to load an explicit list of JSON config files in
+increasing priority order. Each later file replaces earlier values at the
+same command path and argument key. Arrays are replaced as a whole, child
+command nodes are merged recursively, and the last supplied `$schema` wins.
+For inherited globals, configuration at the deepest selected command still
+wins across command scopes.
+
+```ts
+import {
+  getConfigValueFile,
+  loadConfigs,
+} from '@konstit/cli';
+
+const config = await loadConfigs([
+  './user.json',
+  './project.json',
+  './local.json',
+]);
+const result = cli.parse(['serve'], { config });
+if (result.type === 'value') {
+  console.log(getConfigValueFile(result.value, 'host'));
+}
+```
+
+`getConfigValueFile(parsedValue, argumentName)` reports the path passed to
+`loadConfig()` or `loadConfigs()` for a winning config value. For a file URL it
+returns the URL string. It also accepts an argument declaration, including for
+an inherited global on a nested parsed value. The result is `undefined` for
+sensitive arguments, inline config, and values supplied by other sources.
+
 `generateConfigSchema(cli)` returns a draft 2020-12 JSON Schema for the
 command tree. It lists canonical config keys, inherited global arguments, and
-the raw JSON value types each key accepts. Use it with an editor or validator
-for config files. The runner checks parsed values, arity, and relations when it
-uses the config.
+the raw JSON value types each key accepts. It also describes enum spellings
+and arity where JSON Schema can express those constraints. The runner checks
+parsed values, arity, and relations when it uses the config.
+
+Use `validateConfig(cli, config)` to check every configured branch, including
+subcommands the current invocation would leave inactive. The result contains
+`valid` and a list of issues with a `kind`, `path`, `commandPath`, and
+`message`. It checks keys, supplied values, and arity without requiring
+missing values that can come from argv, the environment, or defaults. Command
+relations and custom command validators run during normal parsing. Malformed
+config structure raises a `TypeError`.
+
+```ts
+import {
+  loadConfig,
+  validateConfig,
+} from '@konstit/cli';
+
+const { issues } = validateConfig(cli, await loadConfig('./tool.json'));
+for (const issue of issues) {
+  console.error(`${issue.path.join('.')}: ${issue.message}`);
+}
+```
 
 Add an optional top-level `$schema` string to associate a config file with the
 generated schema. The loader preserves this field as metadata.
@@ -589,10 +665,16 @@ const color = option(
 );
 ```
 
-All argument kinds accept `describe`, `env`, `hide`, `sensitive`, and `deprecated`. For value arguments
-and counters, `env` parses the variable content. For flags, `env` tests only
-whether the variable exists; an empty value counts as present. Named arguments
-also accept `global`, `short`, `long`, `aliases`, and `deprecatedAliases`.
+All argument kinds accept `describe`, `helpHeading`, `env`, `hide`, `sensitive`,
+and `deprecated`. For value arguments and counters, `env` parses the variable
+content. For flags, `env` tests whether the variable exists. An empty value
+counts as present. Named arguments also accept `global`, `short`, `long`,
+`aliases`, and `deprecatedAliases`.
+
+Set `helpHeading` to group arguments under a named heading in terminal help,
+Markdown, and man pages. For example, assign `helpHeading: 'Output'` to format
+and destination options. The argument metadata returned by `describeCommand()`
+includes the configured heading.
 
 Set `sensitive: true` for values such as tokens or passwords. Parser failures
 identify the argument and hide the raw value and parser error details. Help,
@@ -1049,6 +1131,11 @@ const packageOption = option('package', parsers.string, {
 
 Providers can return an array, a promise, or an async iterable. Scripts can
 also be generated directly with `generateCompletion(cli, shell, options)`.
+
+Dynamic providers can read preceding parsed arguments and their fallbacks in
+`context.values`. Pass `config` and `env` to `resolveDynamicCompletion()` to
+use the same inputs as a command invocation. The shell completion request
+served by `run()` uses that invocation's `config` and `env`.
 
 ## Command metadata and documentation
 

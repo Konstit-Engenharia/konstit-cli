@@ -64,6 +64,8 @@ export type HandlerResult = void | number;
 export interface HandlerContext {
   /** The selected command path, from the root command to the handler. */
   readonly commandPath: readonly string[];
+  /** A caller-controlled cancellation signal for this invocation. */
+  readonly signal: AbortSignal;
   /** The input byte stream for this invocation. Defaults to process stdin. */
   readonly stdin: ReadableStream<Uint8Array>;
   /** Writes a raw chunk to the configured standard output. */
@@ -797,6 +799,7 @@ class Command<
           runDynamicCompletionRequest(this, {
             argv,
             env,
+            ...(options.config === undefined ? {} : { config: options.config }),
             ...(options.stdout === undefined ? {} : { stdout: options.stdout }),
           }),
       );
@@ -1477,6 +1480,10 @@ export interface RunParsedOptions extends ConsoleOptions {
   readonly stderr?: OutputWriter;
   /** Controls ANSI styling. Parsed argument values are unchanged. */
   readonly color?: boolean;
+  /** Supplies a caller-controlled signal exposed to the selected handler. */
+  readonly signal?: AbortSignal;
+  /** Selects the serialization of framework diagnostics. Defaults to terminal text. */
+  readonly diagnostics?: 'text' | 'json';
   /** Overrides parse-failure exit codes with an integer from 1 to 255. Defaults to CliError.exitCode (2). */
   readonly parseErrorExitCode?: number;
 }
