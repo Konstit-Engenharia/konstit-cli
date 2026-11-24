@@ -14,12 +14,29 @@ import {
 } from '../src/index.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const packagePath = resolve(root, 'package.json');
 const versionPattern = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
 
 interface PackageManifest extends Record<string, unknown> {
   readonly version: string;
 }
+
+interface ReleaseEnvironment {
+  readonly root: string;
+  readonly run: (args: readonly string[]) => Promise<void>;
+  readonly capture: (args: readonly string[]) => Promise<string>;
+  readonly log: (message: string) => void;
+}
+
+type ReleaseStage =
+  | 'version validation'
+  | 'repository validation'
+  | 'package checks'
+  | 'manifest update'
+  | 'manifest staging'
+  | 'release commit'
+  | 'local tag creation'
+  | 'atomic push'
+  | 'GitHub Release creation';
 
 const versionParser = parsers.custom<string>(
   'MAJOR.MINOR.PATCH',
@@ -36,7 +53,7 @@ const releaseCli = command('release', {
     }),
   ],
   handler: async ({ version }) => {
-    await release(version);
+    await release(version, { root, run, capture, log: console.log });
   },
 });
 
@@ -52,7 +69,9 @@ function parseVersion(input: string): string {
   return input;
 }
 
-async function release(nextVersion: string): Promise<void> {
+export async function release(nextVersion: string, environment: ReleaseEnvironment): Promise<void> {
+  const { root, run, log } = environment;
+  const packagePath = resolve(root, 'package.json');
   const packageText = await readFile(packagePath, 'utf8');
   const manifest = parsePackageManifest(packageText);
   const currentVersion = parseVersion(manifest.version);
@@ -63,42 +82,63 @@ async function release(nextVersion: string): Promise<void> {
   }
 
   const tag = `v${nextVersion}`;
-  await validateRepository(tag);
+  const createReleaseCommand = ['gh', 'release', 'create', tag, '--verify-tag', '--generate-notes', '--title', tag];
 
-  console.log('Running package checks...');
-  await run(['bun', 'run', 'check']);
-  await run(['bun', 'run', 'lint']);
+  async function advance(stage: Exclude<ReleaseStage, 'GitHub Release creation'>): Promise<ReleaseStage> {
+    switch (stage) {
+      case 'version validation':
+        await validateRepository(tag, environment);
+        return 'repository validation';
+      case 'repository validation':
+        log('Running package checks...');
+        await run(['bun', 'run', 'check']);
+        await run(['bun', 'run', 'lint']);
+        return 'package checks';
+      case 'package checks':
+        log(`Updating package version to ${nextVersion}...`);
+        await writeFile(
+          packagePath,
+          `${JSON.stringify({ ...manifest, version: nextVersion }, null, 2)}\n`,
+        );
+        return 'manifest update';
+      case 'manifest update':
+        await run(['git', 'add', '--', 'package.json']);
+        return 'manifest staging';
+      case 'manifest staging':
+        await run(['git', 'commit', '-m', `release: ${tag}`]);
+        return 'release commit';
+      case 'release commit':
+        await run(['git', 'tag', '--annotate', tag, '--message', tag]);
+        return 'local tag creation';
+      case 'local tag creation':
+        await run(['git', 'push', '--atomic', 'origin', 'main', `refs/tags/${tag}`]);
+        return 'atomic push';
+      case 'atomic push':
+        await run(createReleaseCommand);
+        return 'GitHub Release creation';
+    }
+  }
 
-  console.log(`Updating package version to ${nextVersion}...`);
-  await writeFile(
-    packagePath,
-    `${JSON.stringify({ ...manifest, version: nextVersion }, null, 2)}\n`,
-  );
-
-  await run(['git', 'add', '--', 'package.json']);
-  await run(['git', 'commit', '-m', `release: ${tag}`]);
-  await run(['git', 'tag', '--annotate', tag, '--message', tag]);
-  await run(['git', 'push', '--atomic', 'origin', 'main', `refs/tags/${tag}`]);
-
+  let lastCompletedStage: ReleaseStage = 'version validation';
   try {
-    await run([
-      'gh',
-      'release',
-      'create',
-      tag,
-      '--verify-tag',
-      '--generate-notes',
-      '--title',
-      tag,
-    ]);
+    while (lastCompletedStage !== 'GitHub Release creation') {
+      lastCompletedStage = await advance(lastCompletedStage);
+    }
   } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (lastCompletedStage === 'atomic push') {
+      throw new Error(
+        `The commit and tag were pushed. GitHub Release creation failed.\n${message}\nRetry with\n${formatCommand(createReleaseCommand)}`,
+        { cause: error },
+      );
+    }
     throw new Error(
-      `the commit and tag were pushed, but GitHub Release creation failed; retry with: gh release create ${tag} --verify-tag --generate-notes --title ${tag}`,
+      `Release ${tag} stopped after ${lastCompletedStage}.\n${message}`,
       { cause: error },
     );
   }
 
-  console.log(
+  log(
     `Published GitHub Release ${tag}. GitHub Actions will attach the tarball and publish npm.`,
   );
 }
@@ -116,7 +156,7 @@ function parsePackageManifest(source: string): PackageManifest {
   return value as PackageManifest;
 }
 
-async function validateRepository(tag: string): Promise<void> {
+async function validateRepository(tag: string, { root, run, capture }: ReleaseEnvironment): Promise<void> {
   const repositoryRoot = await capture(['git', 'rev-parse', '--show-toplevel']);
   if (resolve(repositoryRoot) !== root) {
     throw new Error(`release must run in repository ${root}`);
