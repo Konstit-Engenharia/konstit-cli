@@ -45,6 +45,10 @@ import {
   type CompletionOptions,
   type DynamicCompletionProvider,
 } from '@konstit/cli/completion';
+import {
+  invoke,
+  type InvokeResult,
+} from '@konstit/cli/testing';
 
 type Equal<Left, Right> = (<Value>() => Value extends Left ? 1 : 2) extends (<Value>() => Value extends Right ? 1 : 2) ? true : false;
 type Expect<Value extends true> = Value;
@@ -119,7 +123,8 @@ void (() => {
   const executed: Promise<number> = cli.runParsed(outcome, options);
   const attempted: Promise<number> = cli.runParsed(cli.tryParse([]), options);
   const run: Promise<number> = cli.run(runOptions);
-  void [executed, attempted, run];
+  const invocation: Promise<InvokeResult> = invoke(cli, ['--config', 'tool.json', 'deploy', '--region', 'us']);
+  void [executed, attempted, run, invocation];
   // @ts-expect-error a child parse result cannot replace the root result
   void cli.runParsed(child.parse(['--region', 'us']));
   // @ts-expect-error runParsed cannot take argv

@@ -311,6 +311,23 @@ if (result.type === 'error') {
 }
 ```
 
+## Testing commands
+
+`invoke(cli, argv)` from `@konstit/cli/testing` runs a command in process with
+the supplied arguments. It captures both the runner's messages and writes from
+the handler's `output`, `stdout`, and `stderr` APIs.
+
+```ts
+import { invoke } from '@konstit/cli/testing';
+
+const { exitCode, stdout, stderr, writes } = await invoke(cli, ['--help']);
+```
+
+`stdout` and `stderr` contain the concatenated text for each stream. Each item
+in `writes` has a `stream` and a `chunk`, preserving the order and boundaries of
+individual writes across both streams. Unexpected handler exceptions reject
+the invocation.
+
 ## Configuration and value sources
 
 `parse()` and `tryParse()` accept an optional second `ParseOptions` argument.

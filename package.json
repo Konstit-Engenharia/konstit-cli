@@ -46,6 +46,10 @@
     "./completion": {
       "types": "./dist/completion.d.ts",
       "import": "./dist/completion.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.js"
     }
   },
   "publishConfig": {
@@ -55,7 +59,7 @@
     "build": "bun run build:artifacts && bun run build:validate",
     "build:artifacts": "bun run build:clean && bun run --parallel build:js build:types",
     "build:clean": "bun ./scripts/clean-dist.ts",
-    "build:js": "bun build ./src/index.ts ./src/completion.ts --outdir ./dist --target=bun --format=esm --sourcemap=external --keep-names --splitting --chunk-naming 'chunks/[name]-[hash].[ext]'",
+    "build:js": "bun build ./src/index.ts ./src/completion.ts ./src/testing.ts --outdir ./dist --target=bun --format=esm --sourcemap=external --keep-names --splitting --chunk-naming 'chunks/[name]-[hash].[ext]'",
     "build:types": "tsc -p tsconfig.build.json",
     "build:validate": "bun ./scripts/validate-package.ts && bun ./scripts/check-package-consumer.ts",
     "benchmark:types": "bun run build:artifacts && bun ./scripts/benchmark-types.ts",

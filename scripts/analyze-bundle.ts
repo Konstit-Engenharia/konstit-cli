@@ -24,6 +24,7 @@ try {
       'build',
       './src/index.ts',
       './src/completion.ts',
+      './src/testing.ts',
       '--outdir',
       outputDirectory,
       '--target=bun',

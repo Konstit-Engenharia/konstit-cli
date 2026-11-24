@@ -17,7 +17,7 @@ import { createPackedPackage } from './packed-package';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const fixturePath = resolve(root, 'fixtures/package-consumer.ts');
-const entries = ['.', './completion'] as const;
+const entries = ['.', './completion', './testing'] as const;
 
 const packed = await createPackedPackage(root);
 try {

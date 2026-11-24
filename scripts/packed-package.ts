@@ -68,16 +68,10 @@ export async function createPackedPackage(root: string): Promise<PackedPackage> 
   );
 
   const directory = resolve(installDirectory, 'node_modules/@konstit/cli');
-  assert.equal(
-    await Bun.file(resolve(directory, 'dist/index.d.ts')).exists(),
-    true,
-    'The package archive does not contain dist/index.d.ts',
-  );
-  assert.equal(
-    await Bun.file(resolve(directory, 'dist/completion.d.ts')).exists(),
-    true,
-    'The package archive does not contain dist/completion.d.ts',
-  );
+  for (const entry of ['index', 'completion', 'testing']) {
+    const declaration = `dist/${entry}.d.ts`;
+    assert.equal(await Bun.file(resolve(directory, declaration)).exists(), true, `The package archive does not contain ${declaration}`);
+  }
 
   return {
     directory,

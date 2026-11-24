@@ -14,8 +14,10 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 const mainExport: string = '@konstit/cli';
 const completionExport: string = '@konstit/cli/completion';
+const testingExport: string = '@konstit/cli/testing';
 const cli = await import(mainExport) as typeof import('../src');
 const completion = await import(completionExport) as typeof import('../src/completion');
+const testing = await import(testingExport) as typeof import('../src/testing');
 
 assert.equal(typeof cli.command, 'function');
 assert.equal(typeof cli.flag, 'function');
@@ -64,6 +66,13 @@ assert.match(configured.renderHelp(), /status/);
 assert.equal(configured.tryParse([]).type, 'display');
 assert.equal(configured.tryParse(['--version']).type, 'display');
 assert.equal(await configured.run(['status']), 4);
+const help = configured.renderHelp();
+assert.deepEqual(await testing.invoke(configured, ['--help']), {
+  exitCode: 0,
+  stdout: help,
+  stderr: '',
+  writes: [{ stream: 'stdout', chunk: help }],
+});
 const parsed = configured.parse(['-vv']);
 assert.equal(parsed.type, 'value');
 if (parsed.type !== 'value') {
