@@ -41,18 +41,22 @@ export function applyConditionalDefaults(
     rules.push(rule);
     rulesByTarget.set(rule.target, rules);
   }
-  const resolving = new Set<string>();
-  const resolved = new Set<string>();
+  const resolutionStates = new Map<string, 'resolving' | 'resolved'>();
 
   const resolve = (targetName: string): void => {
-    if (resolved.has(targetName) || hasInputForConditionalDefault(state, targetName)) {
-      resolved.add(targetName);
+    switch (resolutionStates.get(targetName) ?? 'unresolved') {
+      case 'resolved':
+        return;
+      case 'resolving':
+        throw new TypeError('Conditional defaults contain a dependency cycle');
+      case 'unresolved':
+        break;
+    }
+    if (hasInputForConditionalDefault(state, targetName)) {
+      resolutionStates.set(targetName, 'resolved');
       return;
     }
-    if (resolving.has(targetName)) {
-      throw new TypeError('Conditional defaults contain a dependency cycle');
-    }
-    resolving.add(targetName);
+    resolutionStates.set(targetName, 'resolving');
     const target = definition.arguments.find(({ name }) => name === targetName);
     const rules = rulesByTarget.get(targetName) ?? [];
     if (target !== undefined) {
@@ -84,8 +88,7 @@ export function applyConditionalDefaults(
         break;
       }
     }
-    resolving.delete(targetName);
-    resolved.add(targetName);
+    resolutionStates.set(targetName, 'resolved');
   };
 
   for (const target of rulesByTarget.keys()) {

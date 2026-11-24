@@ -333,21 +333,21 @@ function validateConditionalDefaults(
     graph.set(rule.target, dependencies);
   }
 
-  const visiting = new Set<string>();
-  const visited = new Set<string>();
+  const visitStates = new Map<string, 'visiting' | 'visited'>();
   const visit = (name: string): void => {
-    if (visiting.has(name)) {
-      throw new TypeError(`${context} contains a dependency cycle`);
+    switch (visitStates.get(name) ?? 'unvisited') {
+      case 'visited':
+        return;
+      case 'visiting':
+        throw new TypeError(`${context} contains a dependency cycle`);
+      case 'unvisited':
+        break;
     }
-    if (visited.has(name)) {
-      return;
-    }
-    visiting.add(name);
+    visitStates.set(name, 'visiting');
     for (const dependency of graph.get(name) ?? []) {
       visit(dependency);
     }
-    visiting.delete(name);
-    visited.add(name);
+    visitStates.set(name, 'visited');
   };
   for (const target of graph.keys()) {
     visit(target);
