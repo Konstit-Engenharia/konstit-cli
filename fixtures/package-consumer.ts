@@ -14,6 +14,7 @@ import {
   renderManPage,
   renderMarkdown,
   type CommandConfig,
+  type CommandExample,
   type CommandMetadata,
   type ConditionalDefaultMetadata,
   type ConsoleOptions,
@@ -54,7 +55,9 @@ import {
 type Equal<Left, Right> = (<Value>() => Value extends Left ? 1 : 2) extends (<Value>() => Value extends Right ? 1 : 2) ? true : false;
 type Expect<Value extends true> = Value;
 
+const deployExample: CommandExample = { command: 'tool --config app.json deploy --region us', description: 'Deploy to the US region.' };
 const child = command('deploy', {
+  examples: [deployExample],
   args: [
     option('region', parsers.enum(['us', 'eu']), { required: true }),
     flag('dryRun'),

@@ -2,6 +2,7 @@ import type { ArgumentDefinition } from './argument.js';
 import {
   getCommandDefinition,
   type CommandDefinition,
+  type CommandExample,
   type CommandType,
 } from './command.js';
 import {
@@ -227,6 +228,8 @@ export interface CommandMetadata {
   readonly beforeHelp?: string;
   /** Text placed after the generated help content. */
   readonly afterHelp?: string;
+  /** Example invocations in display order. */
+  readonly examples?: readonly CommandExample[];
   /** Text that replaces the generated usage line. */
   readonly overrideUsage?: string;
   /** Text that replaces the generated help output. */
@@ -369,6 +372,7 @@ function describeDefinition(
     ...(definition.author === undefined ? {} : { author: definition.author }),
     ...(definition.beforeHelp === undefined ? {} : { beforeHelp: definition.beforeHelp }),
     ...(definition.afterHelp === undefined ? {} : { afterHelp: definition.afterHelp }),
+    ...(definition.examples === undefined ? {} : { examples: definition.examples }),
     ...(definition.overrideUsage === undefined ? {} : { overrideUsage: definition.overrideUsage }),
     ...(definition.overrideHelp === undefined ? {} : { overrideHelp: definition.overrideHelp }),
     ...(definition.version === undefined ? {} : { version: definition.version }),
@@ -740,6 +744,12 @@ function appendMarkdownCommand(
   if (command.longAbout !== undefined) {
     lines.push('', markdownHeading(headingLevel, 'Description'), '', markdownText(command.longAbout));
   }
+  if (command.examples !== undefined) {
+    lines.push('', markdownHeading(headingLevel, 'Examples'));
+    for (const { command: invocation, description } of command.examples) {
+      lines.push('', markdownText(description), '', ...invocation.split(/\r\n?|\n/).map((line) => `    ${line}`));
+    }
+  }
   if (command.overrideHelp !== undefined) {
     lines.push('', markdownHeading(headingLevel, 'Help'), '', markdownText(command.overrideHelp));
   }
@@ -893,6 +903,20 @@ function appendManCommand(
   appendManArguments(command, lines);
   appendManCommands(command, lines);
   appendManRelations(command, lines);
+  if (command.examples !== undefined) {
+    lines.push('.SH EXAMPLES');
+    for (const { command: invocation, description } of command.examples) {
+      lines.push(
+        '.PP',
+        roffText(description.replace(/\r\n?/g, '\n')),
+        '.RS',
+        '.nf',
+        roffText(invocation.replace(/\r\n?/g, '\n')),
+        '.fi',
+        '.RE',
+      );
+    }
+  }
   if (command.author !== undefined || command.version !== undefined) {
     lines.push(
       '.SH INFO',

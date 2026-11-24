@@ -15,6 +15,7 @@ export {
 export {
   command,
   type CommandConfig,
+  type CommandExample,
   type CommandGroupOptions,
   type CommandHandler,
   type CommandOptions,

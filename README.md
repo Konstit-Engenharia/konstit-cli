@@ -90,6 +90,7 @@ options object.
 | `author`                      | Author line in help.                                                    |
 | `beforeHelp`                  | Text before generated help.                                             |
 | `afterHelp`                   | Text after generated help.                                              |
+| `examples`                    | Command lines with descriptions for help, Markdown, and man pages.      |
 | `overrideUsage`               | Exact replacement for generated usage.                                  |
 | `overrideHelp`                | Exact replacement for generated help.                                   |
 | `aliases`                     | Parseable aliases hidden from help and completion.                      |
@@ -912,6 +913,20 @@ Providers can return an array, a promise, or an async iterable. Scripts can
 also be generated directly with `generateCompletion(cli, shell, options)`.
 
 ## Command metadata and documentation
+
+Set `examples` on a command or subcommand to include an Examples section in
+`--help`, Markdown, and man pages. Examples appear in declaration order.
+
+```ts
+const cli = command('tiny-git', {
+  examples: [
+    {
+      command: 'tiny-git clone ./project',
+      description: 'Clone a local repository.',
+    },
+  ],
+});
+```
 
 Export an immutable, callback-free command tree with `describeCommand()`:
 

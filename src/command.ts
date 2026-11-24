@@ -30,6 +30,7 @@ import {
 import { runConfiguredHandler } from './command/runner.js';
 import type {
   CommandDefinition,
+  CommandExample,
   GroupDefinition,
   GroupOptions,
   ValueConditionDefinition,
@@ -54,7 +55,7 @@ import type {
 import type { Style } from './style.js';
 
 export { getCommandDefinition };
-export type { CommandDefinition };
+export type { CommandDefinition, CommandExample };
 export type { CommandConfig, ConfigValue, ParseOptions } from './command/config.js';
 
 /** A handler exit code from 0 to 255, or no return value for exit code 0. */
@@ -1033,6 +1034,8 @@ export interface CommandOptions<
   readonly beforeHelp?: string;
   /** Adds text after the generated help content. */
   readonly afterHelp?: string;
+  /** Adds example invocations to generated help, Markdown, and man pages. */
+  readonly examples?: readonly CommandExample[];
   /** Replaces the generated usage line with exact text. */
   readonly overrideUsage?: string;
   /** Replaces all generated help output with exact text. */
@@ -1243,6 +1246,11 @@ export function command(
   }
   if (options.afterHelp !== undefined) {
     configured = configured.afterHelp(options.afterHelp);
+  }
+  if (options.examples !== undefined && options.examples.length > 0) {
+    configured = new Command(copyCommand(getCommandDefinition(configured), {
+      examples: Object.freeze(options.examples.map(({ command, description }) => Object.freeze({ command, description }))),
+    }));
   }
   if (options.overrideUsage !== undefined) {
     configured = configured.overrideUsage(options.overrideUsage);

@@ -46,6 +46,7 @@ const commandOptionKeys = new Set([
   'author',
   'beforeHelp',
   'afterHelp',
+  'examples',
   'overrideUsage',
   'overrideHelp',
   'aliases',
@@ -101,6 +102,7 @@ const commandBooleanOptionKeys = [
 ] as const;
 
 const conditionalSetKeys = new Set(['conditions', 'target']);
+const commandExampleKeys = new Set(['command', 'description']);
 const requiredUnlessKeys = new Set(['alternatives', 'target']);
 const conditionalDefaultKeys = new Set(['source', 'equals', 'target', 'value']);
 const commandGroupKeys = new Set([
@@ -399,6 +401,14 @@ export function validateCommandOptions(options: unknown): void {
   for (const key of ['args', 'subcommands'] as const) {
     if (options[key] !== undefined) {
       validateArray(options[key], `Command option '${key}'`);
+    }
+  }
+  if (options.examples !== undefined) {
+    for (const example of validateArray(options.examples, 'Command option \'examples\'')) {
+      validateClosedObject(example, commandExampleKeys, 'Command example');
+      if (typeof example.command !== 'string' || typeof example.description !== 'string') {
+        throw new TypeError('A command example must contain string command and description fields');
+      }
     }
   }
   if (

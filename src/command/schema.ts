@@ -90,6 +90,14 @@ export interface GroupOptions {
   readonly multiple?: boolean;
 }
 
+/** An invocation and its description shown in generated documentation. */
+export interface CommandExample {
+  /** The command line as it should appear to the reader. */
+  readonly command: string;
+  /** What the example demonstrates. */
+  readonly description: string;
+}
+
 /** The normalized command configuration available to completion providers. */
 export interface CommandDefinition {
   /** The canonical command name. */
@@ -110,6 +118,8 @@ export interface CommandDefinition {
   readonly beforeHelp?: string;
   /** Text placed after the generated help content. */
   readonly afterHelp?: string;
+  /** Example invocations in display order. */
+  readonly examples?: readonly CommandExample[];
   /** Text that replaces the generated usage line. */
   readonly overrideUsage?: string;
   /** Text that replaces the generated help output. */

@@ -131,7 +131,7 @@ function styleHelp(output: string, format: AnsiColorFormat): string {
   const palette = helpPalette(format);
   let entrySection = false;
   return output.split('\n').map((line) => {
-    if (/^(Arguments|Commands|Options):$/.test(line)) {
+    if (/^(Arguments|Commands|Options|Examples):$/.test(line)) {
       entrySection = true;
       return `${palette.heading}${line}${palette.reset}`;
     }

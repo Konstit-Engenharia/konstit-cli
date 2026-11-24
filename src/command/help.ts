@@ -260,6 +260,16 @@ export function renderHelp(
   if (includeLongAbout && definition.longAbout !== undefined) {
     lines.push('', definition.longAbout);
   }
+  if (definition.examples !== undefined) {
+    lines.push('', 'Examples:');
+    for (const { command, description } of definition.examples) {
+      lines.push(
+        '',
+        ...description.split(/\r\n?|\n/).map((line) => `  ${sanitizeDiagnostic(line)}`),
+        ...command.split(/\r\n?|\n/).map((line) => `    ${sanitizeDiagnostic(line)}`),
+      );
+    }
+  }
   if (definition.afterHelp !== undefined) {
     lines.push('', definition.afterHelp);
   }
