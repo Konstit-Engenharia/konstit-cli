@@ -20,6 +20,7 @@ const clone = command('clone', {
     positional('repository', parsers.refine(parsers.string, (v) => URL.canParse(v), 'invalid URL'), {
       required: true,
       describe: 'Repository URL',
+      valueName: 'url',
     }),
     positional('directory', parsers.path({ kind: 'directory', mustExist: true }), {
       required: true,
