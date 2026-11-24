@@ -26,7 +26,7 @@ const clone = command('clone', {
       required: true,
       describe: 'Repository URL',
     }),
-    positional('directory', parsers.string, {
+    positional('directory', parsers.path({ kind: 'directory', mustExist: true }), {
       valueHint: 'directory',
       describe: 'Target directory',
     }),
@@ -40,26 +40,32 @@ const clone = command('clone', {
       describe: 'Set configuration before fetching',
     }),
   ],
-  handler: ({
+  handler: async ({
     repository,
     directory,
     bare,
     config,
   }, context) => {
+    const { output, style } = context;
     const verbosity = context.global(verbose);
     const colorEnabled = context.global(color);
-    console.log(`clone ${repository}`);
+    const repositoryUrl = URL.parse(repository);
+    const repositoryText = style(repository, { color: 'cyan' });
+    const repositoryLabel = repositoryUrl === null
+      ? repositoryText
+      : style.link(repositoryUrl, { label: repositoryText });
+    output.log(`clone ${repositoryLabel}`);
     if (directory !== undefined) {
-      console.log(`directory: ${directory}`);
+      output.log(`directory: ${await style.path(directory)}`);
     }
     if (bare) {
-      console.log('bare repository');
+      output.log('bare repository');
     }
     for (const setting of config) {
-      console.log(`config: ${setting}`);
+      output.log(`config: ${setting}`);
     }
     if (verbosity > 0) {
-      console.log(`verbosity: ${verbosity}; color: ${colorEnabled}`);
+      output.log(`verbosity: ${verbosity}; color: ${colorEnabled}`);
     }
   },
 });
@@ -74,10 +80,10 @@ const commit = command('commit', {
     }),
     flag('amend', { describe: 'Replace the last commit' }),
   ],
-  handler: ({ message, amend }) => {
-    console.log(`commit: ${message}`);
+  handler: ({ message, amend }, { output, style }) => {
+    output.log(`commit: ${style(message, { color: 'green' })}`);
     if (amend) {
-      console.log('amend previous commit');
+      output.log('amend previous commit');
     }
   },
 });
@@ -104,4 +110,7 @@ const cli = command('tiny-git', {
   defaultToHelp: true,
 });
 
-process.exitCode = await cli.run();
+process.exitCode = await cli.run({
+  color: true,
+  lsColors: Bun.env.LS_COLORS ?? 'di=01;34',
+});
