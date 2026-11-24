@@ -1065,6 +1065,10 @@ value with its exact inferred type.
 Use `overrideUsage`, `overrideHelp`, `disableHelpFlag`,
 `disableVersionFlag`, and `disableHelpSubcommand` for custom control output.
 
+Set `hideStandardFlagsInSubcommandHelp: true` on a parent command to omit the
+generated help and version flags and any `colorFlag()` switches from its
+descendants' help text. The flags remain available on the command line.
+
 ## Shell completions
 
 Generate scripts for Bash, Zsh, Fish, and PowerShell with a completion
@@ -1142,14 +1146,37 @@ served by `run()` uses that invocation's `config` and `env`.
 
 Set `examples` on a command or subcommand to include an Examples section in
 `--help`, Markdown, and man pages. Examples appear in declaration order.
+Terminal help adds a `$` prompt before each command. Use an empty description
+for a compact list of invocations.
+
+Use an `args` object keyed by the command's declared argument names. Required
+arguments must be present. Use arrays for arguments that collect multiple
+values, booleans for flags, and integers for counters. The renderer adds the
+command path, option spellings, and shell quoting. Use `args: {}` for a command
+that accepts an argument-free invocation, or `command` for a full shell snippet.
+Use canonical enum values and a raw token string for parsers that return
+objects. Application parsers and validators run when executing the CLI.
 
 ```ts
 const cli = command('tiny-git', {
-  examples: [
-    {
-      command: 'tiny-git clone ./project',
-      description: 'Clone a local repository.',
-    },
+  subcommands: [
+    command('clone', {
+      args: [
+        positional('repository', parsers.string, { required: true }),
+        positional('directory', parsers.string, { required: true }),
+        flag('bare'),
+      ],
+      examples: [
+        {
+          args: {
+            repository: 'https://github.com/oven-sh/bun',
+            directory: '.',
+            bare: true,
+          },
+          description: 'Clone into the current directory.',
+        },
+      ],
+    }),
   ],
 });
 ```

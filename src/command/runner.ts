@@ -130,13 +130,16 @@ async function writeJsonDiagnostic(
   await writeMessage('stderr', `${JSON.stringify(diagnostic)}\n`, options);
 }
 
-const helpAnsi = Object.freeze({ strong: '\x1b[1m', reset: '\x1b[0m' });
+const helpAnsi = Object.freeze({ strong: '\x1b[1m', faint: '\x1b[2m', reset: '\x1b[0m' });
 const helpAccent = '#0891b2';
 const errorAccent = '#dc2626';
 
 function helpPalette(format: AnsiColorFormat): {
   readonly heading: string;
   readonly label: string;
+  readonly exampleCommand: string;
+  readonly exampleValue: string;
+  readonly faint: string;
   readonly strong: string;
   readonly reset: string;
 } {
@@ -144,8 +147,26 @@ function helpPalette(format: AnsiColorFormat): {
   return {
     heading: `${helpAnsi.strong}${accent}`,
     label: accent,
+    exampleCommand: `${helpAnsi.strong}${Bun.color('#22c55e', format) ?? ''}`,
+    exampleValue: Bun.color('#2563eb', format) ?? '',
     ...helpAnsi,
   };
+}
+
+function styleExampleCommand(text: string, invocation: string | undefined, palette: ReturnType<typeof helpPalette>): string {
+  const command = text.slice(4);
+  const invocationEnd = invocation !== undefined && (command === invocation || command.startsWith(`${invocation} `))
+    ? invocation.length
+    : 0;
+  const prompt = invocation === undefined ? text.slice(0, 4) : `  ${palette.faint}$${palette.reset} `;
+  const highlighted = command.replace(/(?:\\.|"(?:\\.|[^"\\])*"|'[^']*'|[^\s"'\\])+/g, (word, offset: number) => {
+    if (invocation !== undefined && (offset === 0 || offset < invocationEnd)) {
+      return `${palette.exampleCommand}${word}${palette.reset}`;
+    }
+    const color = /^--?[a-z]/i.test(word) ? palette.label : palette.exampleValue;
+    return `${color}${word}${palette.reset}`;
+  });
+  return prompt + highlighted;
 }
 
 function styleHelp(
@@ -159,18 +180,39 @@ function styleHelp(
     if (role?.kind === 'heading') {
       return `${palette.heading}${text}${palette.reset}`;
     }
+    if (role?.kind === 'title') {
+      const { nameEnd, versionStart } = role;
+      const name = `${palette.heading}${text.slice(0, nameEnd)}${palette.reset}`;
+      const description = text.slice(nameEnd, versionStart);
+      const version = versionStart === undefined
+        ? ''
+        : `${palette.faint}${text.slice(versionStart)}${palette.reset}`;
+      return `${name}${description}${version}`;
+    }
     if (role?.kind === 'usage' || (metadata === undefined && text.startsWith('Usage: '))) {
       return `${palette.heading}Usage:${palette.reset} ${palette.strong}${text.slice(7)}${palette.reset}`;
     }
     if (role?.kind === 'author' || (metadata === undefined && text.startsWith('Author: '))) {
       return `${palette.heading}Author:${palette.reset} ${text.slice(8)}`;
     }
+    if (role?.kind === 'exampleDescription') {
+      return `  ${palette.faint}${text.slice(2)}${palette.reset}`;
+    }
+    if (role?.kind === 'exampleCommand') {
+      return styleExampleCommand(text, role.invocation, palette);
+    }
     if (role?.kind !== 'entry') {
       return text;
     }
-    return `${text.slice(0, role.labelStart)}${palette.label}${text.slice(role.labelStart, role.labelEnd)}${palette.reset}${
-      text.slice(role.labelEnd)
-    }`;
+    const { labelStart, labelEnd, placeholderEnd } = role;
+    const indentation = text.slice(0, labelStart);
+    const suffix = text.slice(labelEnd);
+    if (placeholderEnd !== undefined) {
+      const placeholder = text.slice(labelStart, placeholderEnd);
+      const flag = text.slice(placeholderEnd + 1, labelEnd);
+      return `${indentation}${palette.faint}${placeholder}${palette.reset} ${palette.heading}${flag}${palette.reset}${suffix}`;
+    }
+    return `${indentation}${palette.label}${text.slice(labelStart, labelEnd)}${palette.reset}${suffix}`;
   }).join('\n');
   return metadata === undefined ? styled : `${styled}\n`;
 }

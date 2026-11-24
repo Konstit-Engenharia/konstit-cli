@@ -3,6 +3,7 @@ import {
   test,
 } from 'bun:test';
 import {
+  colorFlag,
   command,
   describeCommand,
   flag,
@@ -120,6 +121,54 @@ test('lists subcommand help in Commands when disableVersionFlag is off', () => {
   expect(command('tool', { ...options, disableVersionFlag: true }).renderHelp()).not.toContain('<command> --help');
   expect(command('tool', { subcommands: [command('run', { disableHelpFlag: true })] }).renderHelp())
     .not.toContain('<command> --help');
+});
+
+test('can hide standard flags from descendant help while keeping them available', () => {
+  const leaf = command('leaf', { version: '1.2.3', defaultToHelp: true });
+  const cli = command('tool', {
+    version: '3.0.0',
+    args: [colorFlag('color')],
+    subcommands: [
+      command('branch', { version: '2.0.0', args: [flag('debug')], subcommands: [leaf] }),
+    ],
+    hideStandardFlagsInSubcommandHelp: true,
+  });
+
+  expect(cli.renderHelp()).toContain('--color, --no-color');
+  expect(cli.renderHelp()).toContain('-h, --help');
+  expect(cli.renderHelp()).toContain('-V, --version');
+  expect(cli.renderHelp()).toContain('<command> --help');
+  expect(leaf.renderHelp()).toContain('-h, --help');
+  expect(cli.tryParse(['branch', '--help'])).toMatchObject({
+    type: 'display',
+    kind: 'help',
+    output:
+      'branch (2.0.0)\n\nUsage: tool branch [OPTIONS] <COMMAND>\n\nCommands:\n  leaf\n  help  Print help for a subcommand\n\nOptions:\n  --debug\n',
+  });
+  for (
+    const argv of [
+      ['branch', 'leaf', '--help'],
+      ['branch', 'leaf', '-h'],
+      ['help', 'branch', 'leaf'],
+      ['branch', 'help', 'leaf'],
+      ['branch', 'leaf'],
+    ]
+  ) {
+    expect(cli.tryParse(argv)).toMatchObject({
+      type: 'display',
+      kind: 'help',
+      output: 'leaf (1.2.3)\n\nUsage: tool branch leaf\n',
+    });
+  }
+  expect(cli.tryParse(['branch', 'leaf', '--version'])).toMatchObject({
+    type: 'display',
+    kind: 'version',
+    output: 'leaf 1.2.3\n',
+  });
+  expect(cli.tryParse(['branch', '--no-color', '--debug'], { env: {} })).toMatchObject({
+    type: 'value',
+    value: { color: false, subcommand: { name: 'branch', args: { debug: true } } },
+  });
 });
 
 test('rejects empty or multiline custom headings', () => {

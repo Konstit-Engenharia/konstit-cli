@@ -1,5 +1,8 @@
 import type { ArgumentDefinition } from '../argument/index.js';
-import type { CommandDefinition } from '../command/schema.js';
+import type {
+  CommandDefinition,
+  CommandExampleDefinition,
+} from '../command/schema.js';
 import {
   renderEqualsValueCount as renderSyntaxEqualsValueCount,
   renderPositionalCount,
@@ -28,26 +31,33 @@ export function positionalValueName(argument: ArgumentDefinition): string {
   return argument.valueName ?? argument.name.toUpperCase();
 }
 
+export function resolveExampleCommand(example: CommandExampleDefinition, invocation: string): string {
+  if (example.command !== undefined) {
+    return example.command;
+  }
+  return example.args === '' ? invocation : `${invocation} ${example.args}`;
+}
+
 export function renderUsageText(
   definition: CommandDefinition,
   path: readonly string[],
   inheritedArguments: readonly ArgumentDefinition[],
+  hideColorFlags = false,
 ): string {
   if (definition.overrideUsage !== undefined) {
     return definition.overrideUsage;
   }
-  const allArguments = [...definition.arguments, ...inheritedArguments];
-  const requiredOptions = allArguments.filter(
+  const visibleArguments = [...definition.arguments, ...inheritedArguments]
+    .filter(({ hidden, color }) => !hidden && (!hideColorFlags || !color));
+  const requiredOptions = visibleArguments.filter(
     (argument) =>
       argument.kind !== 'positional'
-      && argument.presence === 'required'
-      && !argument.hidden,
+      && argument.presence === 'required',
   );
-  const options = allArguments.some(
-    ({ kind, presence, hidden }) =>
+  const options = visibleArguments.some(
+    ({ kind, presence }) =>
       kind !== 'positional'
-      && presence !== 'required'
-      && !hidden,
+      && presence !== 'required',
   );
   const requiredOptionUsage = requiredOptions.map((argument) => {
     const value = argument.requireEquals
@@ -71,8 +81,9 @@ export function renderUsage(
   definition: CommandDefinition,
   path: readonly string[],
   inheritedArguments: readonly ArgumentDefinition[] = [],
+  hideColorFlags = false,
 ): string {
-  return `Usage: ${renderUsageText(definition, path, inheritedArguments)}`;
+  return `Usage: ${renderUsageText(definition, path, inheritedArguments, hideColorFlags)}`;
 }
 
 /** The headings emitted by the generated help renderer. */

@@ -27,7 +27,10 @@ import {
   copyDefinition,
   validateArgumentOptionKeys,
 } from './runtime.js';
-import type { ArgumentType } from './types.js';
+import type {
+  ArgumentType,
+  RequiredArgumentFromOptions,
+} from './types.js';
 
 /** Creates a named option that accepts one string value. */
 export function option<const Name extends string>(
@@ -52,14 +55,16 @@ export function option<
     & CheckedValueOptions<Value, Options>
     & CheckedOptionOptions<Value, Options>
     & CheckedOptionKeys<Options, OptionOptions<Value>, 'option'>,
-): ArgumentType<
-  Name,
-  Value,
-  ConfiguredValueOutput<Value, Options>,
-  'option',
-  ConfiguredCardinality<Options>,
-  ConfiguredGlobal<Options>
->;
+):
+  & ArgumentType<
+    Name,
+    Value,
+    ConfiguredValueOutput<Value, Options>,
+    'option',
+    ConfiguredCardinality<Options>,
+    ConfiguredGlobal<Options>
+  >
+  & RequiredArgumentFromOptions<Options>;
 export function option(
   name: string,
   parser: ValueParser<unknown> = parsers.string,
@@ -95,14 +100,16 @@ export function positional<
     & CheckedValueOptions<Value, Options>
     & CheckedPositionalOptions<Options>
     & CheckedOptionKeys<Options, PositionalOptions<Value>, 'positional'>,
-): ArgumentType<
-  Name,
-  Value,
-  ConfiguredValueOutput<Value, Options>,
-  'positional',
-  ConfiguredCardinality<Options>,
-  false
->;
+):
+  & ArgumentType<
+    Name,
+    Value,
+    ConfiguredValueOutput<Value, Options>,
+    'positional',
+    ConfiguredCardinality<Options>,
+    false
+  >
+  & RequiredArgumentFromOptions<Options>;
 export function positional(
   name: string,
   parser: ValueParser<unknown> = parsers.string,

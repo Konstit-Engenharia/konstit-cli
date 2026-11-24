@@ -70,7 +70,7 @@ assert.match(bash, /# bash completion for validate/);
 assert.match(configured.renderHelp(), /Validate the built package/);
 assert.match(configured.renderHelp(), /--verbose/);
 assert.match(configured.renderHelp(), /status/);
-assert.ok(configured.renderHelp().includes('Examples:\n\n  Report the current status.\n    validate status'));
+assert.ok(configured.renderHelp().includes('Examples:\n  Report the current status.\n  $ validate status'));
 assert.equal(configured.tryParse([]).type, 'display');
 assert.equal(configured.tryParse(['--version']).type, 'display');
 assert.equal(await configured.run(['status']), 4);

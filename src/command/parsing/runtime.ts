@@ -176,6 +176,7 @@ function parseDefinition(
   inheritedGlobals: readonly GlobalBinding[],
   session: CollectingParseSession,
   config: CommandConfig | undefined,
+  hideStandardFlags = false,
 ): Record<string, unknown> {
   collectDeprecation(
     session.warnings,
@@ -188,6 +189,7 @@ function parseDefinition(
     values: {},
     argumentStates: new Map(),
     session,
+    hideStandardFlags,
     positionalIndex: 0,
   };
   const positionals = definition.arguments.filter(({ kind }) => kind === 'positional');
@@ -216,6 +218,7 @@ function parseDefinition(
         definition,
         path,
         inheritedGlobals.map(({ argument }) => argument),
+        { hideStandardFlags },
       ));
     }
     if (
@@ -287,6 +290,7 @@ function parseDefinition(
           argvOffset + index + 1,
           path,
           inheritedGlobals,
+          hideStandardFlags,
         ));
       }
       const child = resolveSubcommand(
@@ -323,6 +327,7 @@ function parseDefinition(
             globals,
             session,
             config?.subcommands?.[child.name],
+            hideStandardFlags || definition.hideStandardFlagsInSubcommandHelp,
           ),
         });
         index = argv.length;

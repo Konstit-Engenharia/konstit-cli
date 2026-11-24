@@ -41,6 +41,7 @@ export interface CompleteParseSession extends ParseSessionData {
 
 export interface ParseState extends RelationState {
   readonly session: CollectingParseSession;
+  readonly hideStandardFlags: boolean;
   positionalIndex: number;
   subcommand?: { readonly name: string; readonly args: Record<string, unknown>; };
 }

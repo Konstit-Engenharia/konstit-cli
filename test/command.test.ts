@@ -706,25 +706,27 @@ describe('help, version, and runner', () => {
     expect(output[0]).toContain('A demo');
   });
 
-  test('styles interactive help without changing plain or custom help', async () => {
+  test('styles interactive help while keeping plain and custom help free of generated colors', async () => {
     const previousNoColor = Bun.env.NO_COLOR;
     delete Bun.env.NO_COLOR;
     try {
       const styledCli = command('styled', {
-        about: 'A styled command',
+        about: 'A styled command\r\nMore details.',
+        version: '1.2.3',
         author: 'Konstit',
         args: [
           positional('file', parsers.string, { describe: 'Input file' }),
           flag('verbose', { describe: 'Show details' }),
         ],
         subcommands: [command('child')],
+        defaultToHelp: true,
         handler: () => {},
       });
       const plain = styledCli.renderHelp();
       const plainOutput: string[] = [];
       const styledOutput: string[] = [];
 
-      await styledCli.run({ argv: ['--help'], stdout: (text) => plainOutput.push(text) });
+      await styledCli.run({ argv: [], stdout: (text) => plainOutput.push(text) });
       await styledCli.run({
         argv: ['--help'],
         color: true,
@@ -733,13 +735,21 @@ describe('help, version, and runner', () => {
 
       const accent = Bun.color('#0891b2', 'ansi-16m') ?? '';
       expect(accent).not.toBe('');
+      expect(plain).toStartWith('styled A styled command (1.2.3)\nMore details.\n\n');
       expect(plainOutput[0]).toBe(plain);
+      expect(styledOutput[0]).toStartWith(
+        `\x1b[1m${accent}styled\x1b[0m A styled command \x1b[2m(1.2.3)\x1b[0m\nMore details.\n\n`,
+      );
       expect(styledOutput[0]).toContain(`\x1b[1m${accent}Usage:\x1b[0m`);
       expect(styledOutput[0]).toContain(`\x1b[1m${accent}Commands:\x1b[0m`);
       expect(styledOutput[0]).toContain(`  ${accent}child\x1b[0m`);
+      expect(styledOutput[0]).toContain(
+        `  \x1b[2m<command>\x1b[0m \x1b[1m${accent}--help\x1b[0m  Print help text for command.`,
+      );
       const unstyled = styledOutput[0]
         ?.replaceAll(accent, '')
         .replaceAll('\x1b[1m', '')
+        .replaceAll('\x1b[2m', '')
         .replaceAll('\x1b[0m', '');
       expect(unstyled).toBe(plain);
 
@@ -773,7 +783,7 @@ describe('help, version, and runner', () => {
       args: [flag('verbose')],
     });
     const help = cli.renderHelp();
-    expect(help).toStartWith('Before\n');
+    expect(help).toStartWith('Before\ndemo A demo\n\n');
     expect(help).toContain('Author: Konstit');
     expect(help).toContain('Usage: demo [CUSTOM]');
     expect(help).toEndWith('After\n');
@@ -787,6 +797,7 @@ describe('help, version, and runner', () => {
       disableHelpFlag: true,
       disableVersionFlag: true,
     });
+    expect(disabled.renderHelp()).toStartWith('plain (1.0.0)\n\n');
     expect(disabled.tryParse(['--help'])).toMatchObject({
       ok: false,
       error: { kind: ErrorKind.UnknownArgument },

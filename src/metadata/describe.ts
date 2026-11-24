@@ -2,6 +2,7 @@ import type { ArgumentDefinition } from '../argument/index.js';
 import type { CommandDefinition } from '../command/schema.js';
 import { getCommandDefinition } from '../command/store.js';
 import type { CommandType } from '../command/types.js';
+import { resolveExampleCommand } from '../help/usage.js';
 import type { ValueParser } from '../parser/index.js';
 import { describeRelations } from './describe-relations.js';
 import type {
@@ -54,6 +55,10 @@ function describeDefinition(
   const subcommands = definition.subcommands
     .filter(({ hidden }) => includeHidden || !hidden)
     .map((subcommand) => describeDefinition(subcommand, [...path, subcommand.name], includeHidden, childGlobals));
+  const invocation = path.join(' ');
+  const examples = definition.examples?.map((example) =>
+    Object.freeze({ command: resolveExampleCommand(example, invocation), description: example.description })
+  );
 
   return Object.freeze({
     name: definition.name,
@@ -81,7 +86,7 @@ function describeDefinition(
     ...(definition.author === undefined ? {} : { author: definition.author }),
     ...(definition.beforeHelp === undefined ? {} : { beforeHelp: definition.beforeHelp }),
     ...(definition.afterHelp === undefined ? {} : { afterHelp: definition.afterHelp }),
-    ...(definition.examples === undefined ? {} : { examples: definition.examples }),
+    ...(examples === undefined ? {} : { examples: Object.freeze(examples) }),
     ...(definition.overrideUsage === undefined ? {} : { overrideUsage: definition.overrideUsage }),
     ...(definition.overrideHelp === undefined ? {} : { overrideHelp: definition.overrideHelp }),
     ...(definition.version === undefined ? {} : { version: definition.version }),

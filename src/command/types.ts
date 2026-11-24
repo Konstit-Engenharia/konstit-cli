@@ -3,7 +3,9 @@ import type {
   AnyGlobalArgument,
   ArgumentName,
   ArgumentOutput,
+  ArgumentType,
 } from '../argument/index.js';
+import type { RequiredArgument } from '../argument/types.js';
 import type { ParseOptions } from '../configuration/shape.js';
 import type { DeprecationWarning } from '../result/deprecation.js';
 import type {
@@ -17,7 +19,7 @@ import type {
 import type { OutputWriter } from '../terminal/output.js';
 import type { Style } from '../terminal/style.js';
 import type {
-  CommandExample,
+  CommandExampleInput,
   GroupOptions,
 } from './schema.js';
 
@@ -194,6 +196,35 @@ export type FieldsFromArguments<Arguments extends readonly AnyArgument[]> = Simp
   }
 >;
 
+type ExampleScalar<Value> = Value extends string | number | boolean | bigint ? Value : string;
+
+type ExampleCollection<Output, Scalar> = Output extends readonly unknown[] ? { readonly [Index in keyof Output]: Scalar; }
+  : readonly Scalar[];
+
+type ExampleValue<Argument> = Argument extends ArgumentType<string, infer Value, infer Output, infer Kind, infer Cardinality>
+  ? Kind extends 'flag' ? boolean
+  : Kind extends 'count' ? number
+  : Cardinality extends 'many' ? ExampleCollection<Exclude<Output, undefined>, ExampleScalar<Value>>
+  : Cardinality extends 'optional' ? ExampleScalar<Value> | readonly []
+  : ExampleScalar<Value>
+  : never;
+
+type ExampleParams<Arguments extends readonly AnyArgument[]> = string extends ArgumentName<Arguments[number]>
+  ? Readonly<Record<string, unknown>>
+  : Arguments[number] extends never ? Readonly<Record<string, never>>
+  : Simplify<
+    & {
+      readonly [Argument in Arguments[number] as Argument extends RequiredArgument ? ArgumentName<Argument> : never]: ExampleValue<
+        Argument
+      >;
+    }
+    & {
+      readonly [Argument in Arguments[number] as Argument extends RequiredArgument ? never : ArgumentName<Argument>]?: ExampleValue<
+        Argument
+      >;
+    }
+  >;
+
 export type CommandName<Value extends AnyCommand> = Value extends CommandType<infer Name> ? Name : never;
 
 export type SubcommandsFromTuple<Subcommands extends readonly AnyCommand[]> = Simplify<
@@ -305,6 +336,7 @@ type UniqueArguments<
     infer First extends AnyArgument,
     ...infer Rest extends readonly AnyArgument[],
   ] ? ArgumentName<First> extends infer Name extends string ? string extends Name ? unknown
+      : [Name] extends [never] ? UniqueArguments<Rest, Seen>
       : [Name] extends [Seen] ? DuplicateArgument<Name>
       : UniqueArguments<Rest, Seen | Name>
     : unknown
@@ -407,7 +439,7 @@ export interface CommandOptions<
   /** Adds text after the generated help content. */
   readonly afterHelp?: string;
   /** Adds example invocations to generated help, Markdown, and man pages. */
-  readonly examples?: readonly CommandExample[];
+  readonly examples?: readonly CommandExampleInput<ExampleParams<NoInfer<Arguments>>>[];
   /** Replaces the generated usage line with exact text. */
   readonly overrideUsage?: string;
   /** Replaces all generated help output with exact text. */
@@ -440,6 +472,8 @@ export interface CommandOptions<
   readonly disableHelpFlag?: boolean;
   /** Disables the generated `-V` and `--version` flags. */
   readonly disableVersionFlag?: boolean;
+  /** Hides generated help and version flags and color switches from descendant help text. */
+  readonly hideStandardFlagsInSubcommandHelp?: boolean;
   /** Hides this command from parent help and completion. */
   readonly hide?: boolean;
   /** Requires a target whenever its source is present. */

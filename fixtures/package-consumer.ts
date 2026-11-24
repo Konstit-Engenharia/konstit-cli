@@ -19,6 +19,7 @@ import {
   type CommandConfig,
   type CommandConfigSchema,
   type CommandExample,
+  type CommandExampleInput,
   type CommandMetadata,
   type CommandValidationIssue,
   type ConditionalDefaultMetadata,
@@ -63,8 +64,9 @@ type Equal<Left, Right> = (<Value>() => Value extends Left ? 1 : 2) extends (<Va
 type Expect<Value extends true> = Value;
 
 const deployExample: CommandExample = { command: 'tool --config app.json deploy --region us', description: 'Deploy to the US region.' };
+const deployArgsExample = { args: { region: 'eu' }, description: 'Deploy to the EU region.' } as const satisfies CommandExampleInput;
 const child = command('deploy', {
-  examples: [deployExample],
+  examples: [deployExample, deployArgsExample],
   args: [
     option('region', parsers.enum(['us', 'eu']), { required: true }),
     flag('dryRun'),

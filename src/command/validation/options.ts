@@ -28,6 +28,7 @@ const commandOptionKeys = new Set([
   'disableHelpSubcommand',
   'disableHelpFlag',
   'disableVersionFlag',
+  'hideStandardFlagsInSubcommandHelp',
   'hide',
   'requires',
   'requiresIf',
@@ -66,11 +67,12 @@ const commandBooleanOptionKeys = [
   'disableHelpSubcommand',
   'disableHelpFlag',
   'disableVersionFlag',
+  'hideStandardFlagsInSubcommandHelp',
   'hide',
 ] as const;
 
 const conditionalSetKeys = new Set(['conditions', 'target']);
-const commandExampleKeys = new Set(['command', 'description']);
+const commandExampleKeys = new Set(['command', 'args', 'description']);
 const requiredUnlessKeys = new Set(['alternatives', 'target']);
 const commandGroupKeys = new Set([
   'name',
@@ -236,8 +238,11 @@ export function validateCommandOptions(options: unknown): void {
   if (options.examples !== undefined) {
     for (const example of validateArray(options.examples, 'Command option \'examples\'')) {
       validateClosedObject(example, commandExampleKeys, 'Command example');
-      if (typeof example.command !== 'string' || typeof example.description !== 'string') {
-        throw new TypeError('A command example must contain string command and description fields');
+      const { command, args, description } = example;
+      const hasCommand = typeof command === 'string' && args === undefined;
+      const hasArgs = args !== null && typeof args === 'object' && !Array.isArray(args) && command === undefined;
+      if (typeof description !== 'string' || (!hasCommand && !hasArgs)) {
+        throw new TypeError('A command example requires a string description and exactly one of command (string) or args (object)');
       }
     }
   }

@@ -101,6 +101,23 @@ export interface CommandExample {
   readonly description: string;
 }
 
+/** An explicit command line or structured arguments for the generated command path. */
+export type CommandExampleInput<Params extends object = Readonly<Record<string, unknown>>> =
+  | (CommandExample & { readonly args?: never; })
+  | {
+    /** Example values keyed by the command's declared argument names. */
+    readonly args: Params;
+    readonly command?: never;
+    /** What the example demonstrates. */
+    readonly description: string;
+  };
+
+export type CommandExampleDefinition = CommandExample | {
+  readonly command?: never;
+  readonly args: string;
+  readonly description: string;
+};
+
 /** The normalized command configuration available to completion providers. */
 export interface CommandDefinition {
   /** The canonical command name. */
@@ -122,7 +139,7 @@ export interface CommandDefinition {
   /** Text placed after the generated help content. */
   readonly afterHelp?: string;
   /** Example invocations in display order. */
-  readonly examples?: readonly CommandExample[];
+  readonly examples?: readonly CommandExampleDefinition[];
   /** Text that replaces the generated usage line. */
   readonly overrideUsage?: string;
   /** Text that replaces the generated help output. */
@@ -175,6 +192,8 @@ export interface CommandDefinition {
   readonly disableHelpFlag: boolean;
   /** Whether the generated `-V` and `--version` flags are disabled. */
   readonly disableVersionFlag: boolean;
+  /** Whether generated help and version flags and color switches are hidden in descendant help. */
+  readonly hideStandardFlagsInSubcommandHelp: boolean;
   /** Whether the command is omitted from parent help and completion. */
   readonly hidden: boolean;
 }

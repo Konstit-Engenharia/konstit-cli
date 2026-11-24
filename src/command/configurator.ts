@@ -230,6 +230,13 @@ export class Command<
     return this.with({ disableVersionFlag: disabled });
   }
 
+  /** Hides generated help and version flags and color switches from descendant help text. */
+  hideStandardFlagsInSubcommandHelp(
+    hidden = true,
+  ): Command<Name, Fields, Subcommands, SubcommandRequired, Groups> {
+    return this.with({ hideStandardFlagsInSubcommandHelp: hidden });
+  }
+
   /** Sets the version text printed by `-V` and `--version`. */
   version(version: string): Command<Name, Fields, Subcommands, SubcommandRequired, Groups> {
     return this.with({ version });

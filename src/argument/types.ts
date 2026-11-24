@@ -121,3 +121,11 @@ export type AnyGlobalArgument = GlobalArgument;
 export type ArgumentName<Value> = Value extends ArgumentType<infer Name> ? Name : never;
 /** Extracts the parsed output type of a configured argument. */
 export type ArgumentOutput<Value> = Value extends ArgumentType<string, unknown, infer Output> ? Output : never;
+
+declare const requiredArgumentKey: unique symbol;
+export interface RequiredArgument {
+  readonly [requiredArgumentKey]: true;
+}
+
+export type RequiredArgumentFromOptions<Options> = [Options] extends [{ readonly required: true; }] ? RequiredArgument
+  : unknown;

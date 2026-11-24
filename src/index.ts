@@ -13,7 +13,7 @@ export {
   type ValueCountRange,
 } from './argument/index.js';
 export { command } from './command/index.js';
-export type { CommandExample } from './command/schema.js';
+export type { CommandExample, CommandExampleInput } from './command/schema.js';
 export type {
   CommandGroupOptions,
   CommandHandler,

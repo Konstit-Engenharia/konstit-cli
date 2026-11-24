@@ -195,7 +195,7 @@ export function storeSwitch(
       definition,
       path,
       inheritedArguments,
-      argument.action !== ArgumentAction.HelpShort,
+      { includeLongAbout: argument.action !== ArgumentAction.HelpShort, hideStandardFlags: state.hideStandardFlags },
     ));
   }
   if (argument.action === ArgumentAction.Version) {
@@ -411,7 +411,12 @@ export function validateParsedValues(
     && suppliedArgumentNames(state).next().done === true
     && state.subcommand === undefined
   ) {
-    throw new DisplayRequest(createHelpDisplay(definition, path, inheritedArguments));
+    throw new DisplayRequest(createHelpDisplay(
+      definition,
+      path,
+      inheritedArguments,
+      { hideStandardFlags: state.hideStandardFlags },
+    ));
   }
   if (definition.subcommandRequired && state.subcommand === undefined) {
     throw commandError(

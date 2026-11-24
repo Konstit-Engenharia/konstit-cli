@@ -12,8 +12,10 @@ const color = colorFlag('color');
 
 const clone = command('clone', {
   about: 'Clone a repository',
-  // disableHelpFlag: true,
-  examples: [{ command: 'clone', description: '' }],
+  examples: [
+    { args: { repository: 'https://github.com/oven-sh/bun', directory: '.' }, description: '' },
+    { args: { repository: 'https://github.com/oven-sh/bun', directory: '.', bare: true }, description: '' },
+  ],
   args: [
     positional('repository', parsers.refine(parsers.string, (v) => URL.canParse(v), 'invalid URL'), {
       required: true,
@@ -64,6 +66,7 @@ const commit = command('commit', {
     flag('amend', { describe: 'Replace the last commit' }),
   ],
   handler: ({ message, amend }, { output, style }) => {
+    style('', {});
     output.log(`commit: ${style(message, { color: 'green' })}`);
     if (amend) {
       output.log('amend previous commit');
@@ -85,13 +88,14 @@ const completion = command('completion', {
 
 const cli = command('tiny-git', {
   version: '0.1.0',
-  about: 'A type-safe git-like example',
+  about: 'A type-safe git-like example.',
   args: [color],
   subcommands: [clone, commit, completion],
   inferSubcommands: true,
   subcommandRequired: true,
   defaultToHelp: true,
   disableHelpSubcommand: true,
+  hideStandardFlagsInSubcommandHelp: true,
 });
 
 process.exitCode = await cli.run();

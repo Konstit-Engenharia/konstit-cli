@@ -8,6 +8,7 @@ import {
   Command,
   conditionalDefaultCollectsValues,
 } from './configurator.js';
+import { prepareCommandExamples } from './examples.js';
 import {
   copyCommand,
   getCommandDefinition,
@@ -60,6 +61,7 @@ function emptyCommand<const Name extends string>(
     disableHelpSubcommand: false,
     disableHelpFlag: false,
     disableVersionFlag: false,
+    hideStandardFlagsInSubcommandHelp: false,
     hidden: false,
   }));
 }
@@ -127,11 +129,6 @@ export function command(
   if (options.afterHelp !== undefined) {
     configured = configured.afterHelp(options.afterHelp);
   }
-  if (options.examples !== undefined && options.examples.length > 0) {
-    configured = new Command(copyCommand(getCommandDefinition(configured), {
-      examples: Object.freeze(options.examples.map(({ command, description }) => Object.freeze({ command, description }))),
-    }));
-  }
   if (options.overrideUsage !== undefined) {
     configured = configured.overrideUsage(options.overrideUsage);
   }
@@ -146,6 +143,9 @@ export function command(
   }
   if (options.disableVersionFlag !== undefined) {
     configured = configured.disableVersionFlag(options.disableVersionFlag);
+  }
+  if (options.hideStandardFlagsInSubcommandHelp !== undefined) {
+    configured = configured.hideStandardFlagsInSubcommandHelp(options.hideStandardFlagsInSubcommandHelp);
   }
   if (options.version !== undefined) {
     configured = configured.version(options.version);
@@ -282,6 +282,10 @@ export function command(
         ...rest as never,
       );
     }
+  }
+  if (options.examples !== undefined && options.examples.length > 0) {
+    const definition = getCommandDefinition(configured);
+    configured = new Command(copyCommand(definition, { examples: prepareCommandExamples(definition, options.examples) }));
   }
   if (options.validate !== undefined) {
     configured = new Command(copyCommand(getCommandDefinition(configured), { validate: options.validate }));

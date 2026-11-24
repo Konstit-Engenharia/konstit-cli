@@ -69,10 +69,12 @@ export function renderSubcommandHelp(
   argvOffset: number,
   path: readonly string[],
   inheritedGlobals: readonly GlobalBinding[],
+  parentHidesStandardFlags: boolean,
 ): ParseDisplay {
   let current = definition;
   let currentPath = [...path];
   let inheritedArguments = inheritedGlobals.map(({ argument }) => argument);
+  let hideStandardFlags = parentHidesStandardFlags;
 
   for (const [tokenIndex, token,] of tokens.entries()) {
     const globalsForChild = [
@@ -100,9 +102,10 @@ export function renderSubcommandHelp(
         },
       );
     }
+    hideStandardFlags ||= current.hideStandardFlagsInSubcommandHelp;
     current = child;
     currentPath = [...currentPath, child.name];
     inheritedArguments = globalsForChild;
   }
-  return createHelpDisplay(current, currentPath, inheritedArguments);
+  return createHelpDisplay(current, currentPath, inheritedArguments, { hideStandardFlags });
 }
