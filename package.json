@@ -7,6 +7,8 @@
     "clap",
     "cli",
     "type-safe",
+    "command-line",
+    "declarative",
     "typescript"
   ],
   "license": "MIT",
@@ -67,24 +69,24 @@
     "release": "bun ./scripts/release.ts",
     "test": "bun test --parallel",
     "coverage": "bun test --dots --coverage",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "typecheck": "bun --no-script check",
     "check": "bun run --parallel typecheck coverage build",
-    "format": "dprint fmt",
-    "format:check": "dprint check",
+    "format": "bunx --bun dprint fmt",
+    "format:check": "bunx --bun dprint check",
     "lint": "bun run --parallel typecheck lint:biome lint:oxlint",
     "lint:biome": "bunx @biomejs/biome check",
     "lint:oxlint": "bunx oxlint --type-aware"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.10",
+    "@biomejs/biome": "2.6.9",
     "@types/bun": "latest",
-    "dprint": "0.56.1",
+    "dprint": "0.65.0",
     "mitata": "1.0.34",
-    "oxlint": "1.80.0",
-    "oxlint-tsgolint": "7.0.2001",
+    "oxlint": "1.95.0",
+    "oxlint-tsgolint": "7.0.2008",
     "typescript": "^5.9.0"
   },
   "engines": {
-    "bun": ">=1.4.0"
+    "bun": ">=1.4.5"
   }
 }

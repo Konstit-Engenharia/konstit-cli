@@ -420,7 +420,6 @@ void (() => {
     short: '-',
   });
   count('emoji-short', {
-    // @ts-expect-error astral symbols use two UTF-16 characters
     short: '💥',
   });
   positional('path', parsers.string, {
