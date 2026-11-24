@@ -234,10 +234,10 @@ export async function runConfiguredHandler<Args extends object>(
     stdout: (chunk: string) => writeOutput('stdout', chunk, options.stdout),
     stderr: (chunk: string) => writeOutput('stderr', chunk, options.stderr),
     style: createStyle(colors, lsColors),
-    console: createConsole(options.console, {
-      stdout: resolveOutputColor('stdout', mode, options.color, options.console?.stdout),
-      stderr: resolveOutputColor('stderr', mode, options.color, options.console?.stderr),
-    }),
+    output: createConsole(
+      options.output,
+      resolveOutputColor('stderr', mode, options.color, options.output?.stderr),
+    ),
     global<ArgumentType extends AnyGlobalArgument>(argument: ArgumentType) {
       const argumentDefinition = getArgumentDefinition(argument);
       if (!argumentDefinition.global) {

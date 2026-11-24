@@ -72,7 +72,7 @@ export interface HandlerContext {
   /** Stream-aware CSS and LS_COLORS formatting for handler output. */
   readonly style: Style;
   /** Synchronous line-oriented output through independently configurable sinks. */
-  readonly console: HandlerConsole;
+  readonly output: HandlerConsole;
   /** Gets a global argument declared by the selected command or an ancestor. */
   global<ArgumentType extends AnyGlobalArgument>(
     argument: ArgumentType,

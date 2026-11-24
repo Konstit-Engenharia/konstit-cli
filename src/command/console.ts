@@ -1,4 +1,5 @@
 import { writeSync } from 'node:fs';
+import { format } from 'node:util';
 import { styleText } from '../style.js';
 import type { OutputColor } from './color.js';
 import type { OutputChannel } from './output.js';
@@ -7,9 +8,9 @@ import type { OutputChannel } from './output.js';
 // biome-ignore lint/suspicious/noConfusingVoidType: The union rejects async callbacks while accepting void callbacks and byte counts.
 export type SyncOutputWriter = (chunk: string) => void | number;
 
-/** Synchronous destinations for handler console output. */
+/** Synchronous destinations for `HandlerContext.output`. */
 export interface ConsoleWriters {
-  /** Receives complete lines written by log, info, and success. Defaults to standard output. */
+  /** Receives complete lines written by log, debug, and info. Defaults to standard output. */
   readonly stdout?: SyncOutputWriter;
   /** Receives complete lines written by warn and error. Defaults to standard error. */
   readonly stderr?: SyncOutputWriter;
@@ -17,24 +18,24 @@ export interface ConsoleWriters {
 
 /** Console destinations and filename formatting settings for one execution. */
 export interface ConsoleOptions {
-  /** Synchronous sinks used exclusively by handler console methods. */
-  readonly console?: ConsoleWriters;
+  /** Synchronous sinks for `HandlerContext.output` methods. */
+  readonly output?: ConsoleWriters;
   /** Overrides LS_COLORS. False disables filename styling. Defaults to the environment. */
   readonly lsColors?: string | false;
 }
 
-/** Synchronous line-oriented output. Each call appends a newline and can throw a write error. */
+/** Synchronous line-oriented output. Each call formats its arguments, appends a newline, and can throw a write error. */
 export interface HandlerConsole {
   /** Writes an unstyled line to standard output. */
-  log(message: string): void;
-  /** Writes an informational line to standard output, using cyan when styling is enabled. */
-  info(message: string): void;
-  /** Writes a success line to standard output, using green when styling is enabled. */
-  success(message: string): void;
-  /** Writes a warning line to standard error, using amber when styling is enabled. */
-  warn(message: string): void;
+  log(...data: unknown[]): void;
+  /** Writes an unstyled debug line to standard output. */
+  debug(...data: unknown[]): void;
+  /** Writes an unstyled informational line to standard output. */
+  info(...data: unknown[]): void;
+  /** Writes an unstyled warning line to standard error. */
+  warn(...data: unknown[]): void;
   /** Writes an error line to standard error, using red when styling is enabled. */
-  error(message: string): void;
+  error(...data: unknown[]): void;
 }
 
 function writeConsole(channel: OutputChannel, text: string, writer: SyncOutputWriter | undefined): void {
@@ -56,19 +57,19 @@ function writeConsole(channel: OutputChannel, text: string, writer: SyncOutputWr
 
 export function createConsole(
   writers: ConsoleWriters = {},
-  colors: Readonly<Record<OutputChannel, OutputColor>>,
+  stderrColor: OutputColor,
 ): HandlerConsole {
   const stdout = writers.stdout;
   const stderr = writers.stderr;
-  const line = (message: string, channel: OutputChannel, color: string): void => {
-    const text = styleText(message, { color }, colors[channel]);
-    writeConsole(channel, `${text}\n`, channel === 'stdout' ? stdout : stderr);
-  };
+  const log = (...data: unknown[]): void => writeConsole('stdout', `${format(...data)}\n`, stdout);
   return Object.freeze({
-    log: (message: string) => writeConsole('stdout', `${message}\n`, stdout),
-    info: (message: string) => line(message, 'stdout', '#0891b2'),
-    success: (message: string) => line(message, 'stdout', '#16a34a'),
-    warn: (message: string) => line(message, 'stderr', '#d97706'),
-    error: (message: string) => line(message, 'stderr', '#dc2626'),
+    log,
+    debug: log,
+    info: log,
+    warn: (...data: unknown[]) => writeConsole('stderr', `${format(...data)}\n`, stderr),
+    error: (...data: unknown[]) => {
+      const text = styleText(format(...data), { color: '#dc2626' }, stderrColor);
+      writeConsole('stderr', `${text}\n`, stderr);
+    },
   });
 }

@@ -179,7 +179,7 @@ process.exitCode = await serve.runParsed(result, { parseErrorExitCode: 1 });
 `runParsed()` runs the deepest selected handler or writes the stored help,
 version, or error output. It reuses parsed values and inherited globals without
 parsing or applying environment fallbacks again. Its `RunParsedOptions` accepts
-`stdout`, `stderr`, `console`, `lsColors`, `color`, and `parseErrorExitCode`;
+`stdout`, `stderr`, `output`, `lsColors`, `color`, and `parseErrorExitCode`;
 `color` controls output styling while preserving resolved argument values. Use `run()` for executable
 entry points that must detect shell completion requests; `runParsed()` only
 executes the supplied result.
@@ -200,47 +200,46 @@ code. Deprecation warnings finish in order before a handler runs or a parse
 error is printed. `run()` also waits for dynamic completion output. A writer
 that throws or rejects propagates its error to the awaiting caller.
 
-Handlers also receive immutable `console` and `style` objects:
+Handlers also receive immutable `output` and `style` objects.
 
 ```ts
 const importer = command('import', {
-  handler: async (_args, { console, style, stdout, stderr }) => {
-    console.info('Starting import');
+  handler: async (_args, { output, style, stdout, stderr }) => {
+    output.info('Starting import');
     await stdout(`${style('Imported', { color: 'green', bold: true })}\n`);
     const filename = await style.path('/data/report.csv', {
       label: 'report.csv',
     });
-    console.success(`Processed ${filename}`);
+    output.info('Processed %s', filename);
     await stderr('Additional details\n');
   },
 });
 ```
 
-Console methods write synchronously, return `void`, and append one newline.
-`log`, `info`, and `success` use stdout; `warn` and `error` use stderr. Defaults
-write directly to the standard stream, completing partial writes before
-returning. Write failures throw during the console call. `log` is plain;
-`info`, `success`, `warn`, and `error` use cyan (`#0891b2`), green (`#16a34a`),
-amber (`#d97706`), and red (`#dc2626`) when color is enabled.
+The `output` methods format their arguments with `node:util`'s `format`, write
+synchronously, return `void`, and append one newline. `log`, `debug`, and `info`
+use stdout. `warn` and `error` use stderr. Defaults write directly to the
+standard stream, completing partial writes before returning. Write failures
+throw during the call. `error` uses red (`#dc2626`) when color is enabled.
+The other methods write plain text.
 
-Configure synchronous console sinks independently of awaitable writers:
+Use the runner's `output` option to configure synchronous output sinks.
 
 ```ts
 const messages: string[] = [];
 await importer.run({
   argv: [],
-  console: {
+  output: {
     stdout: (chunk) => messages.push(chunk),
     stderr: (chunk) => messages.push(chunk),
   },
 });
 ```
 
-`SyncOutputWriter` accepts a return value of `void` or `number`; promises are
-rejected by TypeScript. Console methods do not use the runner's `stdout` or
-`stderr` callbacks. Help, version, parse errors, deprecation warnings, and
-completion use those awaitable callbacks. Await a raw write before a subsequent
-console call when their order matters.
+`SyncOutputWriter` accepts a return value of `void` or `number`. The runner's
+separate awaitable `stdout` and `stderr` callbacks handle help, version, parse
+errors, deprecation warnings, and completion. Await a raw write before a
+subsequent `output` call when their order matters.
 
 `style(text, options)` formats a string without writing it. `StyleOptions`
 accepts CSS `color` and `background`, boolean `bold`, `dim`, `italic`,
@@ -252,7 +251,7 @@ otherwise disabled styling returns the input verbatim.
 Color precedence is `NO_COLOR`, an explicit parsed color mode, the runner's
 `color` option, then the destination's TTY status and `TERM`. Injected writers
 default to plain output. Raw styling uses the selected awaitable writer's
-policy; console helpers detect color against their own synchronous sinks.
+policy. `output.error()` detects color against its synchronous stderr sink.
 Forced color uses truecolor; automatic styling uses the destination's color
 depth. `runParsed()` retains explicit color switches from the stored result
 and resolves automatic styling against the execution's destinations.

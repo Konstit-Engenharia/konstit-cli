@@ -111,8 +111,8 @@ void (() => {
   const chunks: string[] = [];
   const stderr: OutputWriter = (text) => Promise.resolve(chunks.push(text));
   const syncWriter: SyncOutputWriter = (text) => chunks.push(text);
-  const console: ConsoleWriters = { stdout: syncWriter, stderr: () => {} };
-  const consoleOptions: ConsoleOptions = { console, lsColors: '*.csv=38;5;114' };
+  const output: ConsoleWriters = { stdout: syncWriter, stderr: () => {} };
+  const consoleOptions: ConsoleOptions = { output, lsColors: '*.csv=38;5;114' };
   const options: RunParsedOptions = { ...consoleOptions, parseErrorExitCode: 1, color: false, stderr };
   const runOptions: RunOptions = { ...options, argv: [] };
   const executed: Promise<number> = cli.runParsed(outcome, options);
@@ -123,18 +123,20 @@ void (() => {
   void cli.runParsed(child.parse(['--region', 'us']));
   // @ts-expect-error runParsed cannot take argv
   void cli.runParsed(outcome, { argv: [] });
-  // @ts-expect-error synchronous console sinks reject promises
-  void cli.run({ console: { stdout: async (_text: string) => {} } });
-  // @ts-expect-error synchronous console sinks reject promised byte counts
-  void cli.runParsed(outcome, { console: { stderr: (text) => Promise.resolve(text.length) } });
+  // @ts-expect-error synchronous output sinks reject promises
+  void cli.run({ output: { stdout: async (_text: string) => {} } });
+  // @ts-expect-error synchronous output sinks reject promised byte counts
+  void cli.runParsed(outcome, { output: { stderr: (text) => Promise.resolve(text.length) } });
 });
 
 void (() => {
   const app = command('styled', {
     handler: async (_args, context) => {
       const style: Style = context.style;
-      const console: HandlerConsole = context.console;
-      type _ConsoleReturnsVoid = Expect<Equal<ReturnType<HandlerConsole['info']>, void>>;
+      const output: HandlerConsole = context.output;
+      type _ConsoleContract = Expect<
+        Equal<HandlerConsole, Record<'log' | 'debug' | 'info' | 'warn' | 'error', (...data: unknown[]) => void>>
+      >;
       type _StyleReturnsString = Expect<Equal<ReturnType<Style>, string>>;
       const options: StyleOptions = { stream: 'stderr', color: '#dc2626', background: 'black', bold: true };
       const stats: FileStat = { mode: 0o100644, nlink: 1 };
@@ -142,14 +144,13 @@ void (() => {
       const pathOptions: PathStyleOptions = { stream: 'stdout', label: 'report.csv' };
       const filename: string = style.file('/data/report.csv', fileOptions);
       const inspected: Promise<string> = style.path('/data/report.csv', pathOptions);
-      console.info(filename);
+      output.info(filename);
       await context.stderr(style(await inspected, options));
       // @ts-expect-error the handler's style binding is immutable
       context.style = style;
-      // @ts-expect-error the handler's console binding is immutable
-      context.console = console;
-      // @ts-expect-error console methods accept one string
-      console.log(42);
+      // @ts-expect-error the handler's output binding is immutable
+      context.output = output;
+      output.log('Count: %d', 42);
     },
   });
   void app.run({ lsColors: false });

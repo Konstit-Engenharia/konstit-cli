@@ -102,7 +102,7 @@ function restoreProperty(
 describe('color flag', () => {
   test('resolves handler styling and synchronous console colors against their own sinks', async () => {
     const native = spyOn(fs, 'writeSync').mockReturnValue(1000);
-    const warnings: string[] = [];
+    const errors: string[] = [];
     try {
       for (const depth of [4, 8, 24]) {
         await withColorEnvironment({
@@ -114,24 +114,21 @@ describe('color flag', () => {
           stderrDepth: depth,
         }, async () => {
           const cli = command('tool', {
-            handler: (_args, { style, console }) => {
+            handler: (_args, { style, output }) => {
               expect(style('out', { color: 'red' })).toBe('out');
               const errorStyle = style('err', { color: 'red', stream: 'stderr' });
               expect(errorStyle).toBe(
                 depth === 24 ? '\x1b[38;2;255;0;0merr\x1b[0m' : depth === 8 ? '\x1b[38;5;196merr\x1b[0m' : '\x1b[91merr\x1b[0m',
               );
-              console.info('message');
-              console.warn('warning');
+              output.info('message');
+              output.error('failure');
             },
           });
-          expect(await cli.run({ argv: [], stdout: () => {}, console: { stderr: (text) => warnings.push(text) } })).toBe(0);
+          expect(await cli.run({ argv: [], stdout: () => {}, output: { stderr: (text) => errors.push(text) } })).toBe(0);
         });
       }
-      expect(warnings).toEqual(['warning\n', 'warning\n', 'warning\n']);
-      expect(native).toHaveBeenCalledTimes(3);
-      for (const call of native.mock.calls) {
-        expect(String(call[1])).toContain('\x1b[');
-      }
+      expect(errors).toEqual(['failure\n', 'failure\n', 'failure\n']);
+      expect(native.mock.calls.map((call) => String(call[1]))).toEqual(['message\n', 'message\n', 'message\n']);
     } finally {
       native.mockRestore();
     }
@@ -143,42 +140,52 @@ describe('color flag', () => {
       const messages: string[] = [];
       const cli = command('tool', {
         args: [colorFlag('color')],
-        handler: ({ color }, { style, console }) => {
+        handler: ({ color }, { style, output }) => {
           styled.push(style(String(color), { color: 'red' }));
-          console.success('done');
+          output.warn('warning');
+          output.error('failure');
         },
       });
-      const options = { stdout: () => {}, console: { stdout: (text: string) => messages.push(text) } };
+      const options = { stdout: () => {}, output: { stderr: (text: string) => messages.push(text) } };
       expect(await cli.runParsed(cli.parse(['--color']), { ...options, color: false })).toBe(0);
       expect(await cli.runParsed(cli.parse(['--no-color']), { ...options, color: true })).toBe(0);
       expect(await cli.runParsed(cli.tryParse([], { config: { values: { color: true } } }), { ...options, color: false })).toBe(0);
       expect(await cli.runParsed(cli.parse([]), options)).toBe(0);
       expect(styled).toEqual(['\x1b[38;2;255;0;0mtrue\x1b[0m', 'false', '\x1b[38;2;255;0;0mtrue\x1b[0m', 'true']);
-      expect(messages).toEqual(['\x1b[38;2;22;163;74mdone\x1b[0m\n', 'done\n', '\x1b[38;2;22;163;74mdone\x1b[0m\n', 'done\n']);
+      expect(messages).toEqual([
+        'warning\n',
+        '\x1b[38;2;220;38;38mfailure\x1b[0m\n',
+        'warning\n',
+        'failure\n',
+        'warning\n',
+        '\x1b[38;2;220;38;38mfailure\x1b[0m\n',
+        'warning\n',
+        'failure\n',
+      ]);
     });
   });
 
   test('honors NO_COLOR for all output even without a color flag', async () => {
     await withColorEnvironment({ noColor: '', term: 'xterm', stdoutTTY: true, stderrTTY: true }, async () => {
-      const output: string[] = [];
+      const messages: string[] = [];
       const cli = command('tool', {
-        handler: (_args, { style, console }) => {
+        handler: (_args, { style, output }) => {
           expect(style('value', { color: 'red', bold: true })).toBe('value');
           expect(style.file('file.csv')).toBe('file.csv');
-          console.error('message');
+          output.error('message');
         },
       });
       const options = {
         color: true,
         lsColors: '*.csv=31',
-        stdout: (text: string) => output.push(text),
-        stderr: (text: string) => output.push(text),
-        console: { stderr: (text: string) => output.push(text) },
+        stdout: (text: string) => messages.push(text),
+        stderr: (text: string) => messages.push(text),
+        output: { stderr: (text: string) => messages.push(text) },
       };
       expect(await cli.run({ ...options, argv: [] })).toBe(0);
       expect(await cli.run({ ...options, argv: ['--help'] })).toBe(0);
       expect(await cli.run({ ...options, argv: ['--unknown'] })).toBe(2);
-      expect(output.some((text) => text.includes('\x1b['))).toBe(false);
+      expect(messages.some((text) => text.includes('\x1b['))).toBe(false);
     });
   });
 
