@@ -149,7 +149,7 @@ try {
       await stdout(style('done', { bold: true }));
       await stdout(style.link('https://example.com/docs', { label: 'Docs' }));
       assert.equal(style.file('report.csv', { label: 'report' }), '\x1b[32mreport\x1b[0m');
-      await stderr(await style.path(resolve(root, 'README.md'), { stream: 'stderr', label: 'README' }));
+      await stderr(style.path(resolve(root, 'README.md'), { stream: 'stderr', label: 'README' }));
     },
   });
   assert.equal(

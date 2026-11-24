@@ -182,12 +182,12 @@ void (() => {
       const fileOptions: FileStyleOptions = { stats, targetStats: null, label: 'report.csv' };
       const pathOptions: PathStyleOptions = { stream: 'stdout', label: 'report.csv' };
       const filename: string = style.file('/data/report.csv', fileOptions);
-      const inspected: Promise<string> = style.path('/data/report.csv', pathOptions);
+      const inspected: string = style.path('/data/report.csv', pathOptions);
       const docs: string = style.link(new URL('https://example.com/docs'), linkOptions);
       output.info(filename);
       await context.stdout(docs);
       await context.stdout(await new Response(context.stdin).text());
-      await context.stderr(style(await inspected, options));
+      await context.stderr(style(inspected, options));
       // @ts-expect-error the handler's style binding is immutable
       context.style = style;
       // @ts-expect-error the handler's output binding is immutable

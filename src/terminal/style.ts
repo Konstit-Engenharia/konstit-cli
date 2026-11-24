@@ -1,9 +1,9 @@
 /* oxlint-disable no-control-regex -- Terminal formatting validates control characters in escape sequences. */
-import { constants } from 'node:fs';
 import {
-  lstat,
-  stat,
-} from 'node:fs/promises';
+  constants,
+  lstatSync,
+  statSync,
+} from 'node:fs';
 import { wrapAnsi } from './ansi.js';
 import type {
   AnsiColorFormat,
@@ -76,8 +76,8 @@ export interface Style {
   link(url: string | URL, options?: LinkStyleOptions): string;
   /** Formats a filename using supplied metadata without filesystem access. */
   file(path: string, options?: FileStyleOptions): string;
-  /** Inspects a path asynchronously when filename styling is enabled. */
-  path(path: string, options?: PathStyleOptions): Promise<string>;
+  /** Inspects a path synchronously when filename styling is enabled. */
+  path(path: string, options?: PathStyleOptions): string;
 }
 
 function cssColor(input: string, format: AnsiColorFormat, background: boolean): string {
@@ -122,9 +122,9 @@ type PathInspection =
   | { readonly kind: 'present'; readonly stats: FileStat; }
   | { readonly kind: 'missing'; };
 
-async function inspectPath(path: string, follow: boolean): Promise<PathInspection> {
+function inspectPath(path: string, follow: boolean): PathInspection {
   try {
-    return { kind: 'present', stats: await (follow ? stat(path) : lstat(path)) };
+    return { kind: 'present', stats: follow ? statSync(path) : lstatSync(path) };
   } catch (error) {
     if (
       typeof error === 'object' && error !== null && 'code' in error
@@ -169,7 +169,7 @@ export function createStyle(colors: Readonly<Record<OutputChannel, OutputColor>>
       : wrapAnsi(label, `\x1b[${sequence}m`);
   };
 
-  const path = async (path: string, options: PathStyleOptions = {}): Promise<string> => {
+  const path = (path: string, options: PathStyleOptions = {}): string => {
     if (!colors[options.stream ?? 'stdout'].enabled) {
       return options.label ?? path;
     }
@@ -177,11 +177,11 @@ export function createStyle(colors: Readonly<Record<OutputChannel, OutputColor>>
     if (!rules.active) {
       return options.label ?? path;
     }
-    const inspection = await inspectPath(path, false);
+    const inspection = inspectPath(path, false);
     const targetInspection: PathInspection | undefined = inspection.kind === 'present'
         && (inspection.stats.mode & constants.S_IFMT) === constants.S_IFLNK
         && rules.inspectSymlinks
-      ? await inspectPath(path, true)
+      ? inspectPath(path, true)
       : undefined;
     return file(path, {
       ...options,

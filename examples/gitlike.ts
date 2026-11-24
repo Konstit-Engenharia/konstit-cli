@@ -40,7 +40,7 @@ const clone = command('clone', {
       describe: 'Set configuration before fetching',
     }),
   ],
-  handler: async ({
+  handler: ({
     repository,
     directory,
     bare,
@@ -56,7 +56,7 @@ const clone = command('clone', {
       : style.link(repositoryUrl, { label: repositoryText });
     output.log(`clone ${repositoryLabel}`);
     if (directory !== undefined) {
-      output.log(`directory: ${await style.path(directory)}`);
+      output.log(`directory: ${style.path(directory)}`);
     }
     if (bare) {
       output.log('bare repository');

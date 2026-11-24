@@ -68,7 +68,7 @@ test('rejects invalid link targets and raw terminal control characters', () => {
 void (() => {
   const typed: Style = style;
   const file: string = typed.file('file.csv', { stats: { mode: 0o100644, nlink: 1 } });
-  const path: Promise<string> = typed.path('file.csv');
+  const path: string = typed.path('file.csv');
   // @ts-expect-error stream names are a closed union
   typed('text', { stream: 'log' });
   // @ts-expect-error styles are supplied through the options object

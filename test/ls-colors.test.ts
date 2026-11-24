@@ -6,6 +6,7 @@ import {
   spyOn,
   test,
 } from 'bun:test';
+import * as syncFs from 'node:fs';
 import * as fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -155,7 +156,7 @@ test('skips malformed and unsupported rules without discarding valid entries', (
     .toContain('\x1b[0m\x1b[1m after');
 });
 
-test('inspects real paths, links, directories, executable files, and missing paths', async () => {
+test('inspects real paths, links, directories, executable files, and missing paths', () => {
   const style = createStyle(colors, 'fi=37:di=34:ln=target:or=31:mi=35:ex=32:*.csv=36');
   for (
     const [name, sequence,] of [
@@ -169,35 +170,37 @@ test('inspects real paths, links, directories, executable files, and missing pat
       ['data.csv/child', '35'],
     ]
   ) {
-    expect(await style.path(join(temporary, name as string), { label: 'name' })).toBe(wrap(sequence as string));
+    expect(style.path(join(temporary, name as string), { label: 'name' })).toBe(wrap(sequence as string));
   }
-  expect(await style.path(join(temporary, 'dir.csv'))).toBe(wrap('34', join(temporary, 'dir.csv')));
+  expect(style.path(join(temporary, 'dir.csv'))).toBe(wrap('34', join(temporary, 'dir.csv')));
 });
 
-test('avoids unnecessary filesystem calls and propagates lookup failures', async () => {
-  const lstat = spyOn(fs, 'lstat');
-  const stat = spyOn(fs, 'stat');
+test('avoids unnecessary filesystem calls and propagates lookup failures', () => {
+  const lstat = spyOn(syncFs, 'lstatSync');
+  const stat = spyOn(syncFs, 'statSync');
   try {
     const disabled = createStyle({ stdout: { ...colors.stdout, enabled: false }, stderr: colors.stderr }, 'di=34');
     expect(disabled.file('file', { label: 'label' })).toBe('label');
-    expect(await disabled.path('missing', { label: 'label' })).toBe('label');
+    expect(disabled.path('missing', { label: 'label' })).toBe('label');
     for (const setting of [undefined, false, '', 'broken', 'fi=0:di=00', 'ln=target'] as const) {
-      expect(await createStyle(colors, setting).path('missing')).toBe('missing');
+      expect(createStyle(colors, setting).path('missing')).toBe('missing');
     }
     expect(lstat).not.toHaveBeenCalled();
     expect(stat).not.toHaveBeenCalled();
     const link = join(temporary, 'link.csv');
-    expect(await createStyle(colors, 'ln=36:or=0').path(link)).toBe(wrap('36', link));
+    expect(createStyle(colors, 'ln=36:or=0').path(link)).toBe(wrap('36', link));
     expect(stat).not.toHaveBeenCalled();
-    expect(await createStyle(colors, 'ln=36:or=31').path(link)).toBe(wrap('36', link));
+    expect(createStyle(colors, 'ln=36:or=31').path(link)).toBe(wrap('36', link));
     expect(stat).toHaveBeenCalledTimes(1);
     const failure = Object.assign(new Error('denied'), { code: 'EACCES' });
-    lstat.mockRejectedValueOnce(failure);
-    // oxlint-disable-next-line typescript/await-thenable -- Bun async matchers must be awaited.
-    await expect(createStyle(colors, 'fi=31').path('file')).rejects.toBe(failure);
-    stat.mockRejectedValueOnce(failure);
-    // oxlint-disable-next-line typescript/await-thenable -- Bun async matchers must be awaited.
-    await expect(createStyle(colors, 'ln=target:fi=31').path(link)).rejects.toBe(failure);
+    lstat.mockImplementationOnce(() => {
+      throw failure;
+    });
+    expect(() => createStyle(colors, 'fi=31').path('file')).toThrow(failure);
+    stat.mockImplementationOnce(() => {
+      throw failure;
+    });
+    expect(() => createStyle(colors, 'ln=target:fi=31').path(link)).toThrow(failure);
   } finally {
     lstat.mockRestore();
     stat.mockRestore();
@@ -207,7 +210,7 @@ test('avoids unnecessary filesystem calls and propagates lookup failures', async
 const ls = Bun.which('gls') ?? Bun.which('ls');
 const gnuLs = ls !== null && Bun.spawnSync([ls, '--version']).stdout.toString().includes('GNU coreutils') ? ls : undefined;
 
-test.skipIf(gnuLs === undefined)('matches GNU ls for supported type, suffix, and symlink rules', async () => {
+test.skipIf(gnuLs === undefined)('matches GNU ls for supported type, suffix, and symlink rules', () => {
   const cleared = ['no', 'fi', 'di', 'ln', 'pi', 'so', 'bd', 'cd', 'or', 'mi', 'ex', 'su', 'sg', 'st', 'ow', 'tw', 'mh', 'ca', 'do']
     .map((name) => `${name}=0`).join(':');
   for (
@@ -229,7 +232,7 @@ test.skipIf(gnuLs === undefined)('matches GNU ls for supported type, suffix, and
       });
       expect(process.exitCode).toBe(0);
       const expected = process.stdout.toString();
-      const actual = await style.path(path);
+      const actual = style.path(path);
       // biome-ignore lint/suspicious/noControlCharactersInRegex: Compare GNU and library SGR sequences.
       const prefix = (text: string) => [...text.slice(0, text.indexOf(path)).matchAll(/\x1b\[([\d;]*)m/g)].at(-1)?.[1];
       const normalized = (sequence: string | undefined) => sequence === '0' || sequence === '00' || sequence === '' ? undefined : sequence;

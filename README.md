@@ -250,7 +250,7 @@ const importer = command('import', {
   handler: async (_args, { output, style, stdout, stderr }) => {
     output.info('Starting import');
     await stdout(`${style('Imported', { color: 'green', bold: true })}\n`);
-    const filename = await style.path('/data/report.csv', {
+    const filename = style.path('/data/report.csv', {
       label: 'report.csv',
     });
     output.info('Processed %s', filename);
@@ -311,9 +311,10 @@ await stdout(`${docs}\n`);
 ```
 
 `style.file(path, options?)` formats filenames synchronously without filesystem
-access. `style.path(path, options?)` returns `Promise<string>` and inspects the
-path with async `lstat()`, following symlink targets when needed. Both support
-`stream` and a display `label`. Matching always uses the input path's basename.
+access. `style.path(path, options?)` returns a `string` and inspects the path
+with `lstatSync()`, following symlink targets with `statSync()` when needed.
+Both support `stream` and a display `label`. Matching always uses the input
+path's basename.
 `file()` also accepts numeric `FileStat` metadata (`mode`, optional `nlink`),
 including Node `Stats`, through `stats` and `targetStats`. Omitted `stats` uses
 regular-file suffix rules; `stats: null` means a missing path.
@@ -323,8 +324,8 @@ Pass `lsColors` to either runner to override `LS_COLORS`, for example
 `lsColors: 'di=01;34:ln=target:*.csv=38;5;114'`. The setting is snapshotted per
 execution and parsed on first use. `false`, empty, or unset settings produce
 plain filenames. Disabled styling or absent active rules avoid filesystem
-access. Missing paths and broken links receive their corresponding styles;
-other filesystem errors reject `path()`.
+access. Missing paths and broken links receive their corresponding styles.
+Other filesystem errors throw during `path()`.
 
 Supported rules include common GNU file types, setuid/setgid, executables,
 multiple hard links, sticky/world-writable directories, suffixes, and
