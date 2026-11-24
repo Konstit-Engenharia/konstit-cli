@@ -229,8 +229,13 @@ export async function runConfiguredHandler<Args extends object>(
     stdout: resolveOutputColor('stdout', mode, options.color, options.stdout),
     stderr: resolveOutputColor('stderr', mode, options.color, options.stderr),
   };
+  let stdin = options.stdin;
   const context: HandlerContext = Object.freeze({
     commandPath: Object.freeze([...selected.path]),
+    get stdin(): ReadableStream<Uint8Array> {
+      stdin ??= Bun.stdin.stream();
+      return stdin;
+    },
     stdout: (chunk: string) => writeOutput('stdout', chunk, options.stdout),
     stderr: (chunk: string) => writeOutput('stderr', chunk, options.stderr),
     style: createStyle(colors, lsColors),

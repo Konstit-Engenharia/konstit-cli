@@ -128,9 +128,10 @@ try {
   const messages: string[] = [];
   const styled = cli.command('styled', {
     args: [cli.colorFlag('color')],
-    handler: async (_args, { output, style, stdout, stderr }) => {
+    handler: async (_args, { output, style, stdin, stdout, stderr }) => {
       assert.equal(Object.isFrozen(style), true);
       assert.equal(Object.isFrozen(output), true);
+      assert.equal(await new Response(stdin).text(), 'package input');
       assert.equal(output.info('ready'), undefined);
       output.error('failure');
       assert.deepEqual(messages, ['ready\n', '\x1b[38;2;220;38;38mfailure\x1b[0m\n']);
@@ -144,6 +145,7 @@ try {
     await styled.runParsed(styled.parse(['--color']), {
       color: false,
       lsColors: '*.csv=32:*.md=34',
+      stdin: new Blob(['package input']).stream(),
       output: {
         stdout: (chunk) => messages.push(chunk),
         stderr: (chunk) => messages.push(chunk),

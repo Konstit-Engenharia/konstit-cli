@@ -2,6 +2,7 @@ import {
   describe,
   expect,
   mock,
+  spyOn,
   test,
 } from 'bun:test';
 import {
@@ -274,6 +275,62 @@ describe('reusable parse results', () => {
   });
 });
 
+describe('handler stdin', () => {
+  test('passes separate input streams to concurrent run and runParsed invocations', async () => {
+    const received = new Set<ReadableStream<Uint8Array>>();
+    const cli = command('tool', {
+      subcommands: [command('read', {
+        handler: async (_args, { stdin, stdout }) => {
+          received.add(stdin);
+          await stdout(await new Response(stdin).text());
+        },
+      })],
+      subcommandRequired: true,
+    });
+    const argv = ['read'];
+    const parsed = cli.parse(argv);
+    const first = new Blob(['first\n']).stream();
+    const second = new Blob(['second\n']).stream();
+    const firstOutput = mock((_chunk: string) => {});
+    const secondOutput = mock((_chunk: string) => {});
+
+    expect(
+      await Promise.all([
+        cli.run({ argv, stdin: first, stdout: firstOutput }),
+        cli.runParsed(parsed, { stdin: second, stdout: secondOutput }),
+      ]),
+    ).toEqual([0, 0]);
+    expect(received.has(first)).toBe(true);
+    expect(received.has(second)).toBe(true);
+    expect(firstOutput.mock.calls).toEqual([['first\n']]);
+    expect(secondOutput.mock.calls).toEqual([['second\n']]);
+  });
+
+  test('opens process stdin lazily and reuses the stream within a handler', async () => {
+    const input = new Blob(['default input']).stream();
+    const openStdin = spyOn(Bun.stdin, 'stream').mockReturnValue(input);
+    try {
+      const cli = command('tool', {
+        args: [flag('read')],
+        handler: async ({ read }, context) => {
+          if (read) {
+            expect(context.stdin).toBe(input);
+            await context.stdout(await new Response(context.stdin).text());
+          }
+        },
+      });
+      const stdout = mock((_chunk: string) => {});
+      expect(await cli.run({ argv: [], stdout })).toBe(0);
+      expect(openStdin).not.toHaveBeenCalled();
+      expect(await cli.run({ argv: ['--read'], stdout })).toBe(0);
+      expect(openStdin).toHaveBeenCalledTimes(1);
+      expect(stdout.mock.calls).toEqual([['default input']]);
+    } finally {
+      openStdin.mockRestore();
+    }
+  });
+});
+
 test('completion stays ahead of normal validation and handler dispatch', async () => {
   const source = new URL('../src/index.ts', import.meta.url).href;
   const script = `
@@ -315,4 +372,6 @@ void (() => {
   void cli.runParsed(cli.parse(['--value', '1']), { argv: [] });
   // @ts-expect-error parse error exit codes must be numeric
   void cli.run({ parseErrorExitCode: '1' });
+  // @ts-expect-error stdin streams must supply bytes
+  void cli.run({ stdin: new ReadableStream<string>() });
 });

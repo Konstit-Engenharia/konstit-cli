@@ -66,6 +66,8 @@ export type HandlerResult = void | number;
 export interface HandlerContext {
   /** The selected command path, from the root command to the handler. */
   readonly commandPath: readonly string[];
+  /** The input byte stream for this invocation. Defaults to process stdin. */
+  readonly stdin: ReadableStream<Uint8Array>;
   /** Writes a raw chunk to the configured standard output. */
   readonly stdout: (chunk: string) => Promise<void>;
   /** Writes a raw chunk to the configured standard error. */
@@ -1463,10 +1465,12 @@ function terminalCommand(configured: InternalTerminalCommand): HandledCommand {
   return terminal as unknown as HandledCommand;
 }
 
-/** Output and exit-code options for executing an existing parse result. */
+/** I/O and exit-code options for executing an existing parse result. */
 export interface RunParsedOptions extends ConsoleOptions {
   /** Receives deprecation warnings instead of writing them to stderr. */
   readonly onWarning?: (warning: DeprecationWarning) => void;
+  /** Supplies a byte stream to the selected handler. Defaults to process stdin. */
+  readonly stdin?: ReadableStream<Uint8Array>;
   /** Receives handler output, help, and version text. run() also writes completion output here. */
   readonly stdout?: OutputWriter;
   /** Receives handler error output, parse errors, and deprecation warnings. */

@@ -181,13 +181,27 @@ process.exitCode = await serve.runParsed(result, { parseErrorExitCode: 1 });
 `runParsed()` runs the deepest selected handler or writes the stored help,
 version, or error output. It reuses parsed values and inherited globals without
 parsing or applying environment fallbacks again. Its `RunParsedOptions` accepts
-`stdout`, `stderr`, `output`, `lsColors`, `color`, and `parseErrorExitCode`;
+`stdin`, `stdout`, `stderr`, `output`, `lsColors`, `color`, and `parseErrorExitCode`;
 `color` controls output styling while preserving resolved argument values. Use `run()` for executable
 entry points that must detect shell completion requests; `runParsed()` only
 executes the supplied result.
 
 Each command path that can be selected by `run()` needs a handler. Set
 `subcommandRequired: true` when only subcommands are runnable.
+
+Handlers can read `context.stdin` as a `ReadableStream<Uint8Array>`. It uses
+process stdin by default. Pass a byte stream in `stdin` to either `run()` or
+`runParsed()` to supply input for that invocation.
+
+```ts
+const echo = command('echo', {
+  handler: async (_args, { stdin, stdout }) => {
+    await stdout(await new Response(stdin).text());
+  },
+});
+
+await echo.run({ argv: [], stdin: new Blob(['hello\n']).stream() });
+```
 
 Handlers can `await context.stdout(chunk)` and `await context.stderr(chunk)`.
 Both methods return `Promise<void>` and write the exact string, including

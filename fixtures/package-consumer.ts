@@ -139,7 +139,8 @@ void (() => {
   const syncWriter: SyncOutputWriter = (text) => chunks.push(text);
   const output: ConsoleWriters = { stdout: syncWriter, stderr: () => {} };
   const consoleOptions: ConsoleOptions = { output, lsColors: '*.csv=38;5;114' };
-  const options: RunParsedOptions = { ...consoleOptions, parseErrorExitCode: 1, color: false, stderr };
+  const stdin: ReadableStream<Uint8Array> = new Blob(['input']).stream();
+  const options: RunParsedOptions = { ...consoleOptions, parseErrorExitCode: 1, color: false, stdin, stderr };
   const runOptions: RunOptions = { ...options, argv: [] };
   const executed: Promise<number> = cli.runParsed(outcome, options);
   const attempted: Promise<number> = cli.runParsed(cli.tryParse([]), options);
@@ -177,6 +178,7 @@ void (() => {
       const docs: string = style.link(new URL('https://example.com/docs'), linkOptions);
       output.info(filename);
       await context.stdout(docs);
+      await context.stdout(await new Response(context.stdin).text());
       await context.stderr(style(await inspected, options));
       // @ts-expect-error the handler's style binding is immutable
       context.style = style;
