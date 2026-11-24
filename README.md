@@ -648,9 +648,16 @@ parsers.enum(['dev', 'prod']);
 parsers.regex(/^[a-z][a-z0-9-]*$/);
 parsers.range(1, 10);
 parsers.range(1, 65_535, { integer: true });
+parsers.path({ kind: 'file', mustExist: true });
 parsers.json(isMyConfig);
 parsers.custom('PORT', parsePort);
 ```
+
+`parsers.path({ kind, mustExist })` returns the supplied path as a string and
+provides a matching `file` or `directory` shell completion hint. An existing
+path must match `kind`, with symlinks checked against their targets.
+`mustExist` defaults to `false`, so missing paths are accepted for output
+destinations. Set it to `true` to require an existing file or directory.
 
 Enum entries may include aliases, descriptions, and visibility settings:
 

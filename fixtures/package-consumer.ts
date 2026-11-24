@@ -29,6 +29,7 @@ import {
   type LinkStyleOptions,
   type OutputWriter,
   type ParseOutcome,
+  type PathParserOptions,
   type PathStyleOptions,
   type RunOptions,
   type RunParsedOptions,
@@ -94,6 +95,8 @@ type Expected = {
 type _InferContract = Expect<Equal<Actual, Expected>>;
 
 const parser: ValueParser<number> = parsers.custom('PORT', Number);
+const pathParserOptions: PathParserOptions = { kind: 'file', mustExist: true };
+const pathParser: ValueParser<string> = parsers.path(pathParserOptions);
 const outcome: ParseOutcome<Actual> = cli.parse([
   '--config',
   'tool.json',
@@ -244,6 +247,7 @@ void (() => {
 
 void [
   parser,
+  pathParser,
   outcome,
   provider,
   script,

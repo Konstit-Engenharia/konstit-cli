@@ -24,6 +24,7 @@ assert.equal(typeof cli.flag, 'function');
 assert.equal('global' in cli, false);
 assert.equal(typeof cli.parsers, 'object');
 assert.equal(cli.parsers.regex(/^valid$/).parse('valid'), 'valid');
+assert.equal(cli.parsers.path({ kind: 'directory', mustExist: true }).parse(root), root);
 assert.equal(cli.parsers.duration.parse('500'), 500);
 assert.equal(cli.parsers.duration.parse('1.5s'), 1_500);
 assert.equal(cli.parsers.byteSize.parse('1KiB'), 1_024);

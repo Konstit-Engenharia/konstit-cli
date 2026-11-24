@@ -1,3 +1,5 @@
+import { statSync } from 'node:fs';
+
 /** A canonical enum value with optional accepted aliases and documentation metadata. */
 export interface EnumValue<Value extends string = string> {
   /** The canonical value returned by the parser. */
@@ -62,6 +64,14 @@ type EnumCanonicalValues<Definitions extends readonly EnumDefinition[]> = EnumCa
 export interface RangeParserOptions {
   /** Accepts only base-10 safe integers, like parsers.integer. Defaults to false. */
   readonly integer?: boolean;
+}
+
+/** Settings accepted by parsers.path(). */
+export interface PathParserOptions {
+  /** The required kind of an existing path and the shell completion hint. */
+  readonly kind: CompletionValueHint;
+  /** Requires the path to exist at parse time. Defaults to false. */
+  readonly mustExist?: boolean;
 }
 
 /** A key and value separated by the first equals sign in an argument. */
@@ -587,6 +597,34 @@ export const parsers = Object.freeze({
       throw new Error('expected a valid URL');
     }
   }),
+
+  /** Parses a file or directory path as supplied and provides a matching completion hint. */
+  path(options: PathParserOptions): ValueParser<string> {
+    if (options === null || typeof options !== 'object' || Array.isArray(options)) {
+      throw new TypeError('Path parser options must be an object');
+    }
+    const { kind, mustExist = false } = options;
+    if (kind !== 'file' && kind !== 'directory') {
+      throw new TypeError('Path parser option \'kind\' must be \'file\' or \'directory\'');
+    }
+    if (typeof mustExist !== 'boolean') {
+      throw new TypeError('Path parser option \'mustExist\' must be a boolean');
+    }
+    return createValueParser(kind === 'file' ? 'FILE' : 'DIRECTORY', (input) => {
+      if (input === '' || input.includes('\0')) {
+        throw new Error('expected a non-empty path without null bytes');
+      }
+      const stats = statSync(input, { throwIfNoEntry: false });
+      if (stats === undefined) {
+        if (mustExist) {
+          throw new Error(`expected an existing ${kind}`);
+        }
+      } else if (!(kind === 'file' ? stats.isFile() : stats.isDirectory())) {
+        throw new Error(`expected a ${kind}`);
+      }
+      return input;
+    }, { completionHint: kind });
+  },
 
   /** Parses a date accepted by the JavaScript Date constructor. */
   date: createValueParser('DATE', (input) => {

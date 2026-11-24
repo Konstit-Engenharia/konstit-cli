@@ -50,6 +50,7 @@ test('keeps the parser namespace explicit', () => {
     'json',
     'keyValue',
     'map',
+    'path',
     'range',
     'refine',
     'regex',

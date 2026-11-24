@@ -69,6 +69,7 @@ export {
   type EnumValue,
   type KeyValuePair,
   parsers,
+  type PathParserOptions,
   type RangeParserOptions,
   type ValueParser,
   type ValueParserOptions,
