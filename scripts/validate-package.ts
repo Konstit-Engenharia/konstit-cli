@@ -99,6 +99,7 @@ const documented = cli.command('documented', {
     aliases: ['listen'],
     deprecatedAliases: { listen: 'Use --port.' },
     default: 3000,
+    sensitive: true,
   })],
   handler: () => 0,
 });
@@ -110,6 +111,8 @@ if (fromConfig.type !== 'value') {
 assert.equal(fromConfig.value.port, 8080);
 assert.equal(cli.getValueSource(fromConfig.value, 'port'), 'config');
 assert.equal(cli.describeCommand(documented).arguments[0]?.name, 'port');
+assert.equal(cli.describeCommand(documented).arguments[0]?.defaultValue, undefined);
+assert.ok(!documented.renderHelp().includes('3000'));
 assert.match(cli.renderMarkdown(documented), /documented/);
 assert.match(cli.renderManPage(documented), /\.TH/);
 assert.equal(cli.getWarnings(documented.parse(['--listen', '9000'])).length, 1);

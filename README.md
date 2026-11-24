@@ -517,10 +517,23 @@ const color = option(
 );
 ```
 
-All argument kinds accept `describe`, `env`, `hide`, and `deprecated`. For value arguments
+All argument kinds accept `describe`, `env`, `hide`, `sensitive`, and `deprecated`. For value arguments
 and counters, `env` parses the variable content. For flags, `env` tests only
 whether the variable exists; an empty value counts as present. Named arguments
 also accept `global`, `short`, `long`, `aliases`, and `deprecatedAliases`.
+
+Set `sensitive: true` for values such as tokens or passwords. Parser failures
+identify the argument and hide the raw value and parser error details. Help,
+Markdown, man pages, and `describeCommand()` omit sensitive defaults and
+parser value listings. Handlers receive the parsed values as usual.
+
+```ts
+const token = option('token', parsers.string, {
+  env: 'API_TOKEN',
+  sensitive: true,
+  valueName: 'TOKEN',
+});
+```
 
 ```ts
 const ci = flag('ci', { env: 'CI' });

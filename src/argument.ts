@@ -112,6 +112,8 @@ export interface ArgumentDefinition {
   readonly global: boolean;
   /** Whether to omit the argument from help and completion. */
   readonly hidden: boolean;
+  /** Whether to redact values from diagnostics and omit defaults from documentation. */
+  readonly sensitive: boolean;
   /** The environment variable used as a fallback. */
   readonly env?: string;
   /** The argument's explicit file or directory completion hint. */
@@ -136,6 +138,8 @@ export interface ArgumentOptions {
   readonly env?: string;
   /** Hides the argument from help and completion while keeping it parseable. */
   readonly hide?: boolean;
+  /** Redacts values and parser error details and omits defaults from help and metadata. */
+  readonly sensitive?: boolean;
 }
 
 /** Settings shared by named argument factories. */
@@ -513,6 +517,7 @@ function baseDefinition(
     trailingVarArg: false,
     global: false,
     hidden: false,
+    sensitive: false,
   });
 }
 
@@ -535,6 +540,9 @@ function applyArgumentOptions(
   }
   if (options.hide !== undefined) {
     configured = copyDefinition(configured, { hidden: options.hide });
+  }
+  if (options.sensitive !== undefined) {
+    configured = copyDefinition(configured, { sensitive: options.sensitive });
   }
   return configured;
 }
@@ -698,6 +706,7 @@ function validateArgumentOptionKeys(
     'describe',
     'env',
     'hide',
+    'sensitive',
     ...(kind === 'positional' ? [] : ['global', 'short', 'long', 'aliases', 'deprecatedAliases']),
     ...(kind === 'option' || kind === 'positional'
       ? [
@@ -750,6 +759,7 @@ function validateArgumentOptionKeys(
   for (
     const key of [
       'hide',
+      'sensitive',
       'global',
       'required',
       'repeatable',

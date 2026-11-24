@@ -73,7 +73,7 @@ const child = command('deploy', {
 });
 const cli = command('tool', {
   args: [
-    option('config', parsers.string, { required: true }),
+    option('config', parsers.string, { required: true, sensitive: true }),
     option('define', parsers.keyValue),
     positional('files', parsers.string, { trailingVarArg: true }),
     colorFlag('color'),

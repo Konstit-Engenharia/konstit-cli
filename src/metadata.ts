@@ -112,6 +112,8 @@ export interface ArgumentMetadata {
   readonly global: boolean;
   /** Whether the argument is omitted from help and completion. */
   readonly hidden: boolean;
+  /** Marks an argument whose defaults and parser value metadata are private. */
+  readonly sensitive?: true;
   /** The environment variable used as a fallback. */
   readonly env?: string;
   /** The argument's explicit file or directory completion hint. */
@@ -394,16 +396,16 @@ function describeDefinition(
 
 function describeArgument(argument: ArgumentDefinition, includeHidden: boolean): ArgumentMetadata {
   const hasDefaultValue = argument.presence === 'default';
-  const defaultValue = hasDefaultValue
+  const defaultValue = hasDefaultValue && !argument.sensitive
     ? toMetadataValue(argument.defaultValue)
     : undefined;
-  const defaultValues = argument.defaultValues === undefined
+  const defaultValues = argument.sensitive || argument.defaultValues === undefined
     ? undefined
     : toMetadataValue(argument.defaultValues) as readonly MetadataValue[] | undefined;
-  const defaultMissingValue = argument.hasDefaultMissingValue
+  const defaultMissingValue = argument.hasDefaultMissingValue && !argument.sensitive
     ? toMetadataValue(argument.defaultMissingValue)
     : undefined;
-  const parser = argument.parser === undefined ? undefined : describeParser(argument.parser, includeHidden);
+  const parser = argument.sensitive || argument.parser === undefined ? undefined : describeParser(argument.parser, includeHidden);
   return Object.freeze({
     name: argument.name,
     kind: argument.kind,
@@ -437,6 +439,7 @@ function describeArgument(argument: ArgumentDefinition, includeHidden: boolean):
     trailingVarArg: argument.trailingVarArg,
     global: argument.global,
     hidden: argument.hidden,
+    ...(argument.sensitive ? { sensitive: true as const } : {}),
     ...(argument.env === undefined ? {} : { env: argument.env }),
     ...(argument.completionHint === undefined ? {} : { completionHint: argument.completionHint }),
     hasDynamicCompletion: argument.completion !== undefined,
@@ -500,13 +503,14 @@ function describeRelations(
   | 'groups'
 > {
   const isVisible = (name: string): boolean => includeHidden || visibleArguments.has(name);
+  const sensitive = new Set(definition.arguments.filter((argument) => argument.sensitive).map(({ name }) => name));
   const requirements = definition.requirements
     .filter(({ source, target }) => isVisible(source) && isVisible(target))
     .map(({ source, target }) => Object.freeze({ source, target }));
   const defaultIf = definition.defaultIf
-    .filter(({ source, target }) => isVisible(source) && isVisible(target))
+    .filter(({ source, target }) => isVisible(source) && isVisible(target) && !sensitive.has(target))
     .map(({ source, target, hasEquals, equals, value }) => {
-      const safeEquals = hasEquals ? toMetadataValue(equals) : undefined;
+      const safeEquals = hasEquals && !sensitive.has(source) ? toMetadataValue(equals) : undefined;
       const safeValue = toMetadataValue(value);
       return Object.freeze({
         source,
@@ -516,12 +520,16 @@ function describeRelations(
         ...(safeValue === undefined ? {} : { value: safeValue }),
       });
     });
-  function describeExpectedValues(rules: CommandDefinition['conditionalRequirements']): readonly ConditionalRequirementMetadata[] {
+  function describeExpectedValues(
+    rules: CommandDefinition['conditionalRequirements'],
+    valueArgument: 'source' | 'target',
+  ): readonly ConditionalRequirementMetadata[] {
     return Object.freeze(
       rules
         .filter(({ source, target }) => isVisible(source) && isVisible(target))
-        .map(({ source, target, expected }) => {
-          const safeExpected = toMetadataValue(expected);
+        .map((rule) => {
+          const { source, target, expected } = rule;
+          const safeExpected = sensitive.has(rule[valueArgument]) ? undefined : toMetadataValue(expected);
           return Object.freeze({
             source,
             target,
@@ -539,7 +547,7 @@ function describeRelations(
         target,
         conditions: Object.freeze(
           conditions.map(({ source, expected }) => {
-            const safeExpected = toMetadataValue(expected);
+            const safeExpected = sensitive.has(source) ? undefined : toMetadataValue(expected);
             return Object.freeze({
               source,
               ...(safeExpected === undefined ? {} : { expected: safeExpected }),
@@ -589,8 +597,8 @@ function describeRelations(
   return {
     requirements: Object.freeze(requirements),
     defaultIf: Object.freeze(defaultIf),
-    conditionalRequirements: describeExpectedValues(definition.conditionalRequirements),
-    requiresValue: describeExpectedValues(definition.requiresValue),
+    conditionalRequirements: describeExpectedValues(definition.conditionalRequirements, 'source'),
+    requiresValue: describeExpectedValues(definition.requiresValue, 'target'),
     conditionalSetRequirements: Object.freeze(conditionalSetRequirements),
     requiredUnless: Object.freeze(requiredUnless),
     requiredUnlessAll: Object.freeze(requiredUnlessAll),
@@ -1077,7 +1085,7 @@ function argumentDescription(argument: ArgumentMetadata): string {
   if (argument.env !== undefined) {
     details.push(`env: ${argument.env}`);
   }
-  if (argument.hasDefaultValue) {
+  if (argument.hasDefaultValue && !argument.sensitive) {
     const value = argument.defaultValues ?? argument.defaultValue;
     details.push(
       value === undefined
@@ -1085,7 +1093,7 @@ function argumentDescription(argument: ArgumentMetadata): string {
         : `default: ${formatPlainValue(value)}`,
     );
   }
-  if (argument.hasDefaultMissingValue) {
+  if (argument.hasDefaultMissingValue && !argument.sensitive) {
     details.push(
       argument.defaultMissingValue === undefined
         ? 'missing-value default: unavailable'

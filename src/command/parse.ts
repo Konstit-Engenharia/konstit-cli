@@ -292,7 +292,14 @@ function parseDefinition(
           ),
         });
       }
-      const child = resolveSubcommand(definition, token, path, inheritedGlobals, argvOffset + index);
+      const child = resolveSubcommand(
+        definition,
+        token,
+        path,
+        inheritedGlobals,
+        argvOffset + index,
+        positionalArgument?.sensitive === true,
+      );
       if (child !== undefined) {
         const childPath = [...path, child.name];
         collectDeprecation(
@@ -906,6 +913,7 @@ function resolveSubcommand(
   path: readonly string[],
   inheritedGlobals: readonly GlobalBinding[],
   tokenIndex: number,
+  redactToken: boolean,
 ): CommandDefinition | undefined {
   return resolveSubcommandWithArguments(
     definition,
@@ -913,6 +921,7 @@ function resolveSubcommand(
     path,
     inheritedGlobals.map(({ argument }) => argument),
     tokenIndex,
+    redactToken,
   );
 }
 
@@ -922,6 +931,7 @@ function resolveSubcommandWithArguments(
   path: readonly string[],
   inheritedArguments: readonly ArgumentDefinition[],
   tokenIndex: number,
+  redactToken = false,
 ): CommandDefinition | undefined {
   const match = matchSubcommand(definition, token);
   if (match.kind === 'exact' || match.kind === 'unique') {
@@ -930,7 +940,7 @@ function resolveSubcommandWithArguments(
   if (match.kind === 'ambiguous') {
     throw commandError(
       ErrorKind.InvalidSubcommand,
-      `subcommand '${token}' is ambiguous: ${match.commands.map(({ name }) => name).join(', ')}`,
+      `subcommand '${redactToken ? '[redacted]' : token}' is ambiguous: ${match.commands.map(({ name }) => name).join(', ')}`,
       definition,
       path,
       inheritedArguments,
@@ -1348,6 +1358,7 @@ function consumeOptionValues(
             path,
             inheritedArguments,
             argvOffset + nextIndex,
+            argument.sensitive,
           ) !== undefined
       )
     ) {
@@ -1410,7 +1421,7 @@ function storePositionalValue(
   storeRawValues(
     argument,
     values,
-    raw,
+    argument.sensitive ? displayArgument(argument) : raw,
     definition,
     path,
     state,
@@ -1658,12 +1669,11 @@ function parseWith(
     }
     return parsed;
   } catch (cause) {
-    const detail = cause instanceof Error ? cause.message : String(cause);
     throw commandError(
       ErrorKind.InvalidValue,
-      redactRaw
+      redactRaw || argument.sensitive
         ? `invalid value for '${display}'`
-        : `invalid value '${raw}' for '${display}': ${detail}`,
+        : `invalid value '${raw}' for '${display}': ${cause instanceof Error ? cause.message : String(cause)}`,
       definition,
       path,
       inheritedArguments,

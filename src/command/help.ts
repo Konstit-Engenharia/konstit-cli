@@ -277,7 +277,7 @@ export function renderHelp(
 }
 
 function valueLabel(argument: ArgumentDefinition): string {
-  return argument.valueName ?? argument.parser?.label ?? 'VALUE';
+  return argument.valueName ?? (argument.sensitive ? undefined : argument.parser?.label) ?? 'VALUE';
 }
 
 function renderValueCount(
@@ -312,7 +312,8 @@ function annotateHelp(argument: ArgumentDefinition): string {
   if (argument.env !== undefined) {
     annotations.push(`[env: ${argument.env}]`);
   }
-  for (const choice of argument.parser?.choices ?? []) {
+  const parser = argument.sensitive ? undefined : argument.parser;
+  for (const choice of parser?.choices ?? []) {
     if (choice.hide === true) {
       continue;
     }
@@ -327,11 +328,12 @@ function annotateHelp(argument: ArgumentDefinition): string {
       annotations.push(`[${sanitizeDiagnostic(choice.value)}: ${details.join('; ')}]`);
     }
   }
-  if (argument.parser?.ignoreCase) {
+  if (parser?.ignoreCase) {
     annotations.push('[case-insensitive values]');
   }
   if (
-    argument.presence === 'default'
+    !argument.sensitive
+    && argument.presence === 'default'
     && argument.kind !== 'flag'
     && argument.kind !== 'count'
   ) {

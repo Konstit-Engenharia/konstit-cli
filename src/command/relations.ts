@@ -126,6 +126,12 @@ function matchesRelationValue(actual: unknown, expected: unknown): boolean {
     : Object.is(actual, expected);
 }
 
+function displayRelationValue(definition: CommandDefinition, name: string, expected: unknown): string {
+  return definition.arguments.some((argument) => argument.name === name && argument.sensitive)
+    ? '[redacted]'
+    : String(expected);
+}
+
 export function validateRelations(
   definition: CommandDefinition,
   path: readonly string[],
@@ -151,7 +157,9 @@ export function validateRelations(
     ) {
       throw commandError(
         ErrorKind.MissingDependency,
-        `argument '${displayName(definition, source)}' requires '${displayName(definition, target)}' with value '${String(expected)}'`,
+        `argument '${displayName(definition, source)}' requires '${displayName(definition, target)}' with value '${
+          displayRelationValue(definition, target, expected)
+        }'`,
         definition,
         path,
         inheritedArguments,
@@ -167,7 +175,7 @@ export function validateRelations(
       throw commandError(
         ErrorKind.MissingDependency,
         `argument '${displayName(definition, source)}' requires '${displayName(definition, target)}' when its value is '${
-          String(expected)
+          displayRelationValue(definition, source, expected)
         }'`,
         definition,
         path,
@@ -187,7 +195,7 @@ export function validateRelations(
     if (matched && !state.provided.has(requirement.target)) {
       const joiner = requirement.match === 'any' ? ' or ' : ' and ';
       const conditions = requirement.conditions
-        .map(({ source, expected }) => `'${displayName(definition, source)}=${String(expected)}'`)
+        .map(({ source, expected }) => `'${displayName(definition, source)}=${displayRelationValue(definition, source, expected)}'`)
         .join(joiner);
       throw commandError(
         ErrorKind.MissingDependency,
