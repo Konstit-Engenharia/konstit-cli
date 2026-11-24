@@ -5,6 +5,8 @@ import {
 import {
   command,
   CommandFailure,
+  option,
+  parsers,
 } from '../src';
 import { invoke } from '../src/testing';
 
@@ -65,6 +67,23 @@ test('invoke supplies stdin while capturing the handler output', async () => {
     stderr: '',
     writes: [{ stream: 'stdout', chunk: 'first\nsecond\n' }],
   });
+});
+
+test('invoke supplies configuration only to the current invocation', async () => {
+  const cli = command('serve', {
+    args: [option('port', parsers.integer, { default: 3000 })],
+    handler: ({ port }, { output }) => output.log(port),
+  });
+  const config = { values: { port: '8080' } };
+
+  expect(await invoke(cli, [], { config })).toEqual({
+    exitCode: 0,
+    stdout: '8080\n',
+    stderr: '',
+    writes: [{ stream: 'stdout', chunk: '8080\n' }],
+  });
+  expect((await invoke(cli, ['--port', '9000'], { config })).stdout).toBe('9000\n');
+  expect((await invoke(cli, [])).stdout).toBe('3000\n');
 });
 
 test('invoke captures a handler failure alongside earlier output', async () => {

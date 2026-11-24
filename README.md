@@ -361,6 +361,15 @@ const result = await invoke(echo, [], {
 });
 ```
 
+Pass `config` in the same options object to supply a `CommandConfig` for one
+invocation. The runner applies its usual configuration precedence.
+
+```ts
+const result = await invoke(serve, [], {
+  config: { values: { port: '8080' } },
+});
+```
+
 `stdout` and `stderr` contain the concatenated text for each stream. Each item
 in `writes` has a `stream` and a `chunk`, preserving the order and boundaries of
 individual writes across both streams. Unexpected handler exceptions reject
