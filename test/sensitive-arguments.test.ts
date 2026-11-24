@@ -52,7 +52,7 @@ test('redacts raw option and positional values while keeping argument names and 
     kind: ErrorKind.InvalidValue,
     argumentName: 'pin',
     tokenIndex: 0,
-    message: 'invalid value for \'<pin>\'',
+    message: 'invalid value for <PIN>',
   });
 
   const rejected = await invoke(cli, ['run', `--key=${secret}`]);

@@ -7,6 +7,7 @@ import {
 import { sanitizeDiagnostic } from './diagnostics.js';
 import { groupHelpArguments } from './sections.js';
 import {
+  positionalValueName,
   renderEqualsValueCount,
   renderUsage,
   renderValueCount,
@@ -152,6 +153,9 @@ function renderHelpDocument(
     if (subcommands.length > 0 && !definition.disableHelpSubcommand) {
       commandEntries.push(['  help', 'Print help for a subcommand']);
     }
+    if (!definition.disableVersionFlag && subcommands.some(({ disableHelpFlag }) => !disableHelpFlag)) {
+      commandEntries.push(['  <command> --help', 'Print help text for command.']);
+    }
     pushAligned(lines, commandEntries, 'Commands');
   }
 
@@ -195,8 +199,7 @@ function helpArgumentEntries(
 ): Array<readonly [string, string]> {
   return argumentsToRender.map((argument) => {
     if (argument.kind === 'positional') {
-      const name = argument.valueName ?? argument.name.toUpperCase();
-      const label = renderPositionalCount(argument, name);
+      const label = renderPositionalCount(argument, positionalValueName(argument));
       return [`  ${label}`, annotateHelp(argument)] as const;
     }
     const names = [
@@ -236,10 +239,12 @@ function annotateHelp(argument: ArgumentDefinition): string {
     annotations.push(`[env: ${argument.env}]`);
   }
   const parser = argument.sensitive ? undefined : argument.parser;
-  for (const choice of parser?.choices ?? []) {
-    if (choice.hide === true) {
-      continue;
-    }
+  const choices = parser?.choices?.filter(({ hide }) => hide !== true) ?? [];
+  if (choices.length > 0 && (argument.kind === 'positional' || argument.valueName !== undefined)) {
+    const values = choices.map(({ value }) => sanitizeDiagnostic(value)).join(', ');
+    annotations.push(`[possible values: ${values}]`);
+  }
+  for (const choice of choices) {
     const details: string[] = [];
     if (choice.describe !== undefined) {
       details.push(sanitizeDiagnostic(choice.describe));

@@ -18,6 +18,7 @@ import {
 } from '../environment.js';
 import type { CommandDefinition } from '../schema.js';
 import {
+  environmentPolicy,
   hasCommandLineInput,
   recordSuppliedArgument,
   suppliedArgument,
@@ -142,7 +143,6 @@ function configArgumentValue(
     definition,
     path,
     state,
-    true,
     'config',
     undefined,
     undefined,
@@ -236,8 +236,10 @@ export function applyEnvironmentFallbacks(
         : argument.action === ArgumentAction.SetTrue;
       if (argument.color) {
         state.session.colorMode = 'never';
+        state.argumentStates.set(argument.name, environmentPolicy);
+      } else {
+        recordSuppliedArgument(state, argument.name, 'env');
       }
-      recordSuppliedArgument(state, argument.name, 'env');
       continue;
     }
     const display = `env:${argument.env}`;
@@ -249,7 +251,7 @@ export function applyEnvironmentFallbacks(
         definition,
         path,
         parsers.integer,
-        true,
+        'env',
         undefined,
         inheritedArguments,
       );
@@ -291,7 +293,6 @@ export function applyEnvironmentFallbacks(
       definition,
       path,
       state,
-      true,
       'env',
       undefined,
       undefined,

@@ -22,6 +22,7 @@ import {
   type AnsiColorFormat,
 } from '../terminal/color.js';
 import { createConsole } from '../terminal/console.js';
+import { DEFAULT_LS_COLORS } from '../terminal/ls-colors.js';
 import {
   writeOutput,
   type OutputChannel,
@@ -212,7 +213,7 @@ export async function runConfiguredHandler<Args extends object>(
   result: ParseResult<Args>,
   options: RunOptions,
 ): Promise<number> {
-  const lsColors = options.lsColors ?? readEnv(options.env ?? Bun.env, 'LS_COLORS');
+  const lsColors = options.lsColors ?? readEnv(options.env ?? Bun.env, 'LS_COLORS') ?? DEFAULT_LS_COLORS;
   if (
     options.parseErrorExitCode !== undefined
     && (!Number.isSafeInteger(options.parseErrorExitCode)

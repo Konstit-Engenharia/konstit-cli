@@ -4,7 +4,10 @@ import {
   test,
 } from 'bun:test';
 import {
+  command,
+  option,
   parsers,
+  positional,
   type ValueParser,
 } from '../src';
 import type {
@@ -35,6 +38,28 @@ const enumOptions: EnumParserOptions = { ignoreCase: true };
 void [descriptor, enumOptions];
 
 describe('enum value parsers', () => {
+  test('lists visible choices in help when the value label uses a name', () => {
+    const parser = parsers.enum([
+      'fast',
+      { value: 'slow', aliases: ['s'], describe: 'Slow mode' },
+      { value: 'legacy', hide: true },
+    ], { ignoreCase: true });
+    const cli = command('tool', {
+      args: [
+        positional('mode', parser, { required: true }),
+        option('fallback', parser, { valueName: 'MODE' }),
+        option('preferred', parser),
+      ],
+    });
+
+    const help = cli.renderHelp();
+    expect(help).toContain('Usage: tool [OPTIONS] <MODE>');
+    expect(help).toContain('  <MODE>  [possible values: fast, slow] [slow: Slow mode; aliases: s] [case-insensitive values]');
+    expect(help).toMatch(/--fallback <MODE> +\[possible values: fast, slow\]/);
+    expect(help).toMatch(/--preferred <fast\|slow> +\[slow: /);
+    expect(help).not.toContain('legacy');
+  });
+
   test('accepts descriptors, aliases, and case-insensitive canonical values', () => {
     const parser = parsers.enum(
       [

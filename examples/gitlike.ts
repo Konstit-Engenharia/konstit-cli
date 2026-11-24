@@ -2,31 +2,25 @@ import {
   colorFlag,
   command,
   completionShells,
-  count,
   flag,
   option,
   parsers,
   positional,
 } from '../src';
 
-const verbose = count('verbose', {
-  global: true,
-  short: 'v',
-  describe: 'Increase verbosity',
-});
-
 const color = colorFlag('color');
 
 const clone = command('clone', {
   about: 'Clone a repository',
-  visibleAliases: ['copy'],
-  aliases: ['cp'],
+  // disableHelpFlag: true,
+  examples: [{ command: 'clone', description: '' }],
   args: [
-    positional('repository', parsers.string, {
+    positional('repository', parsers.refine(parsers.string, (v) => URL.canParse(v), 'invalid URL'), {
       required: true,
       describe: 'Repository URL',
     }),
     positional('directory', parsers.path({ kind: 'directory', mustExist: true }), {
+      required: true,
       valueHint: 'directory',
       describe: 'Target directory',
     }),
@@ -47,25 +41,15 @@ const clone = command('clone', {
     config,
   }, context) => {
     const { output, style } = context;
-    const verbosity = context.global(verbose);
-    const colorEnabled = context.global(color);
-    const repositoryUrl = URL.parse(repository);
     const repositoryText = style(repository, { color: 'cyan' });
-    const repositoryLabel = repositoryUrl === null
-      ? repositoryText
-      : style.link(repositoryUrl, { label: repositoryText });
+    const repositoryLabel = style.link(repository, { label: repositoryText });
     output.log(`clone ${repositoryLabel}`);
-    if (directory !== undefined) {
-      output.log(`directory: ${style.path(directory)}`);
-    }
+    output.log(`directory: ${style.path(directory)}`);
     if (bare) {
       output.log('bare repository');
     }
     for (const setting of config) {
       output.log(`config: ${setting}`);
-    }
-    if (verbosity > 0) {
-      output.log(`verbosity: ${verbosity}; color: ${colorEnabled}`);
     }
   },
 });
@@ -76,7 +60,6 @@ const commit = command('commit', {
     option('message', parsers.string, {
       short: 'm',
       required: true,
-      valueName: 'MESSAGE',
     }),
     flag('amend', { describe: 'Replace the last commit' }),
   ],
@@ -103,14 +86,12 @@ const completion = command('completion', {
 const cli = command('tiny-git', {
   version: '0.1.0',
   about: 'A type-safe git-like example',
-  args: [verbose, color],
+  args: [color],
   subcommands: [clone, commit, completion],
   inferSubcommands: true,
   subcommandRequired: true,
   defaultToHelp: true,
+  disableHelpSubcommand: true,
 });
 
-process.exitCode = await cli.run({
-  color: true,
-  lsColors: Bun.env.LS_COLORS ?? 'di=01;34',
-});
+process.exitCode = await cli.run();

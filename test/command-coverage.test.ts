@@ -5,6 +5,7 @@ import {
   test,
 } from 'bun:test';
 import {
+  colorFlag,
   command,
   count,
   DisplayKind,
@@ -161,14 +162,19 @@ describe('command coverage', () => {
     expect(parse(cli, ['--verbose']).verbose).toBe(true);
 
     const nested = command('repo', {
+      args: [colorFlag('color')],
       subcommands: [command('status')],
       subcommandRequired: true,
       defaultToHelp: true,
     });
-    expect(nested.tryParse([])).toMatchObject({
+    expect(nested.tryParse([], { env: { NO_COLOR: '1' } })).toMatchObject({
       ok: true,
       type: 'display',
       kind: DisplayKind.Help,
+    });
+    expect(nested.tryParse(['--no-color'], { env: { NO_COLOR: '1' } })).toMatchObject({
+      ok: false,
+      error: { kind: ErrorKind.MissingSubcommand },
     });
     expect(parse(nested, ['status'])).toMatchObject({
       subcommand: { name: 'status' },

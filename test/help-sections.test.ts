@@ -108,6 +108,20 @@ test('accepts custom headings on inherited globals', () => {
   expect(cli.renderHelp()).toContain('Options:\n  -h, --help  Print help\n');
 });
 
+test('lists subcommand help in Commands when disableVersionFlag is off', () => {
+  const options = {
+    disableHelpSubcommand: true,
+    subcommands: [command('run')],
+  };
+  const commands = 'Commands:\n  run\n  <command> --help  Print help text for command.\n';
+
+  expect(command('tool', options).renderHelp()).toContain(commands);
+  expect(command('tool', { ...options, disableVersionFlag: false }).renderHelp()).toContain(commands);
+  expect(command('tool', { ...options, disableVersionFlag: true }).renderHelp()).not.toContain('<command> --help');
+  expect(command('tool', { subcommands: [command('run', { disableHelpFlag: true })] }).renderHelp())
+    .not.toContain('<command> --help');
+});
+
 test('rejects empty or multiline custom headings', () => {
   expect(() => option('output', parsers.string, { helpHeading: '' })).toThrow(
     'helpHeading\' cannot be empty',

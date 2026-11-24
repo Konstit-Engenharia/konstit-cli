@@ -4,7 +4,10 @@ import {
 } from '../../argument/index.js';
 import { commandError } from '../../help/diagnostics.js';
 import { createHelpDisplay } from '../../help/render.js';
-import { displayArgument } from '../../help/usage.js';
+import {
+  displayArgument,
+  positionalValueName,
+} from '../../help/usage.js';
 import {
   DisplayKind,
   ErrorKind,
@@ -62,11 +65,10 @@ export function storePositionalValue(
   storeRawValues(
     argument,
     values,
-    argument.sensitive ? displayArgument(argument) : raw,
+    argument.name,
     definition,
     path,
     state,
-    false,
     'cli',
     values.map(() => tokenIndex),
     tokenIndex,
@@ -81,7 +83,6 @@ export function storeRawValues(
   definition: CommandDefinition,
   path: readonly string[],
   state: ParseState,
-  redactRaw = false,
   source: InputSource = 'cli',
   tokenIndices?: readonly number[],
   tokenIndex?: number,
@@ -98,7 +99,7 @@ export function storeRawValues(
         definition,
         path,
         argument.parser,
-        redactRaw,
+        source,
         tokenIndices?.[index],
         inheritedArguments,
       )
@@ -257,7 +258,7 @@ export function parseWith(
   definition: CommandDefinition,
   path: readonly string[],
   overrideParser = argument.parser,
-  redactRaw = false,
+  source: InputSource = 'cli',
   tokenIndex?: number,
   inheritedArguments: readonly ArgumentDefinition[] = [],
 ): unknown {
@@ -271,11 +272,14 @@ export function parseWith(
     }
     return parsed;
   } catch (cause) {
+    const label = source === 'cli' && argument.kind === 'positional'
+      ? `<${positionalValueName(argument)}>`
+      : `'${display}'`;
     throw commandError(
       ErrorKind.InvalidValue,
-      redactRaw || argument.sensitive
-        ? `invalid value for '${display}'`
-        : `invalid value '${raw}' for '${display}': ${cause instanceof Error ? cause.message : String(cause)}`,
+      source !== 'cli' || argument.sensitive
+        ? `invalid value for ${label}`
+        : `invalid value '${raw}' for ${label}: ${cause instanceof Error ? cause.message : String(cause)}`,
       definition,
       path,
       inheritedArguments,

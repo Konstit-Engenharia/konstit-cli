@@ -36,6 +36,9 @@ export interface LsColors {
   readonly inspectSymlinks: boolean;
 }
 
+export const DEFAULT_LS_COLORS =
+  'rs=0:lc=\x1b[:rc=m:cl=\x1b[K:ex=01;32:sg=30;43:su=37;41:di=01;34:st=37;44:ow=34;42:tw=30;42:ln=01;36:bd=01;33:cd=01;33:do=01;35:pi=33:so=01;35:';
+
 const indicatorNames = new Set(['no', 'fi', 'di', 'ln', 'pi', 'so', 'bd', 'cd', 'or', 'mi', 'ex', 'su', 'sg', 'st', 'ow', 'tw', 'mh']);
 const escapes: Readonly<Record<string, string>> = {
   'a': '\x07',

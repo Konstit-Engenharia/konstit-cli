@@ -24,6 +24,10 @@ export function displayName(definition: CommandDefinition, name: string): string
   return argument === undefined ? name : displayArgument(argument);
 }
 
+export function positionalValueName(argument: ArgumentDefinition): string {
+  return argument.valueName ?? argument.name.toUpperCase();
+}
+
 export function renderUsageText(
   definition: CommandDefinition,
   path: readonly string[],
@@ -53,10 +57,7 @@ export function renderUsageText(
   });
   const positionalUsage = definition.arguments
     .filter(({ kind, hidden }) => kind === 'positional' && !hidden)
-    .map((argument) => {
-      const name = argument.valueName ?? argument.name.toUpperCase();
-      return renderPositionalCount(argument, name);
-    });
+    .map((argument) => renderPositionalCount(argument, positionalValueName(argument)));
   return [
     path.join(' '),
     ...(options ? ['[OPTIONS]'] : []),

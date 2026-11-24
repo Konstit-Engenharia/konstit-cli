@@ -490,6 +490,27 @@ describe('validation and errors', () => {
     }
   });
 
+  test.each(
+    [
+      { options: { required: true }, label: '<COUNT>' },
+      { options: { required: true, valueName: 'TOTAL' }, label: '<TOTAL>' },
+    ] as const,
+  )('uses $label in invalid positional value errors', ({ options, label }) => {
+    const cli = command('tool', {
+      args: [positional('count', parsers.integer, options)],
+    });
+
+    expect(cli.tryParse(['many'])).toMatchObject({
+      type: 'error',
+      error: {
+        kind: ErrorKind.InvalidValue,
+        argumentName: 'count',
+        tokenIndex: 0,
+        message: `invalid value 'many' for ${label}: expected an integer`,
+      },
+    });
+  });
+
   test('rejects undefined values returned by value parsers', () => {
     const cli = command('defined', {
       args: [

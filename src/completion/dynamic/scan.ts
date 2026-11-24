@@ -148,10 +148,13 @@ function applyEnvironmentValue(
   visibleRawValues: ScanState['rawValues'] | undefined,
 ): void {
   if (argument.kind === 'flag') {
-    target.values[argument.name] = argument.color
-      ? false
-      : argument.action === ArgumentAction.SetTrue;
-    recordSuppliedArgument(target, argument.name, 'env');
+    if (argument.color) {
+      target.values[argument.name] = false;
+      target.argumentStates.set(argument.name, environmentPolicy);
+    } else {
+      target.values[argument.name] = argument.action === ArgumentAction.SetTrue;
+      recordSuppliedArgument(target, argument.name, 'env');
+    }
     return;
   }
   if (argument.kind === 'count') {
