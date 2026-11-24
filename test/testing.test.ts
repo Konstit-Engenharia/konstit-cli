@@ -47,3 +47,19 @@ test('invoke captures help and parse failures in separate invocations', async ()
   expect(failure.stderr).toContain('--unknown');
   expect(failure.writes).toEqual([{ stream: 'stderr', chunk: failure.stderr }]);
 });
+
+test('invoke supplies stdin while capturing the handler output', async () => {
+  const stdin = new Blob(['first\nsecond\n']).stream();
+  const cli = command('echo', {
+    handler: async (_args, context) => {
+      expect(context.stdin).toBe(stdin);
+      await context.stdout(await new Response(context.stdin).text());
+    },
+  });
+  expect(await invoke(cli, [], { stdin })).toEqual({
+    exitCode: 0,
+    stdout: 'first\nsecond\n',
+    stderr: '',
+    writes: [{ stream: 'stdout', chunk: 'first\nsecond\n' }],
+  });
+});

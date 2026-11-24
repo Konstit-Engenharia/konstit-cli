@@ -53,6 +53,7 @@ import {
 } from '@konstit/cli/completion';
 import {
   invoke,
+  type InvokeOptions,
   type InvokeResult,
 } from '@konstit/cli/testing';
 
@@ -145,7 +146,8 @@ void (() => {
   const executed: Promise<number> = cli.runParsed(outcome, options);
   const attempted: Promise<number> = cli.runParsed(cli.tryParse([]), options);
   const run: Promise<number> = cli.run(runOptions);
-  const invocation: Promise<InvokeResult> = invoke(cli, ['--config', 'tool.json', 'deploy', '--region', 'us']);
+  const invokeOptions: InvokeOptions = { stdin };
+  const invocation: Promise<InvokeResult> = invoke(cli, ['--config', 'tool.json', 'deploy', '--region', 'us'], invokeOptions);
   const configSchema: CommandConfigSchema = generateConfigSchema(cli);
   const loadedConfig: Promise<CommandConfig> = loadConfig('tool.json');
   void [executed, attempted, run, invocation, configSchema, loadedConfig];

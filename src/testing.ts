@@ -1,4 +1,7 @@
-import type { HandledCommand } from './command.js';
+import type {
+  HandledCommand,
+  RunOptions,
+} from './command.js';
 import type { OutputChannel } from './command/output.js';
 
 /** One captured write to a standard stream. */
@@ -21,8 +24,15 @@ export interface InvokeResult {
   readonly writes: readonly InvokeWrite[];
 }
 
-/** Runs a command in process with both runner and handler output captured. */
-export async function invoke(cli: HandledCommand, argv: readonly string[]): Promise<InvokeResult> {
+/** Input options for an in-process command invocation. */
+export type InvokeOptions = Pick<RunOptions, 'stdin'>;
+
+/** Runs a command in process with optional input and captures runner and handler output. */
+export async function invoke(
+  cli: HandledCommand,
+  argv: readonly string[],
+  { stdin }: InvokeOptions = {},
+): Promise<InvokeResult> {
   const chunks: Record<OutputChannel, string[]> = { stdout: [], stderr: [] };
   const writes: InvokeWrite[] = [];
   const capture = (stream: OutputChannel) => (chunk: string): void => {
@@ -31,6 +41,12 @@ export async function invoke(cli: HandledCommand, argv: readonly string[]): Prom
   };
   const stdout = capture('stdout');
   const stderr = capture('stderr');
-  const exitCode = await cli.run({ argv, stdout, stderr, output: { stdout, stderr } });
+  const exitCode = await cli.run({
+    argv,
+    ...(stdin === undefined ? {} : { stdin }),
+    stdout,
+    stderr,
+    output: { stdout, stderr },
+  });
   return { exitCode, stdout: chunks.stdout.join(''), stderr: chunks.stderr.join(''), writes: writes.slice() };
 }

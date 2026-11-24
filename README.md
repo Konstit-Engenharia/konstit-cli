@@ -339,6 +339,15 @@ import { invoke } from '@konstit/cli/testing';
 const { exitCode, stdout, stderr, writes } = await invoke(cli, ['--help']);
 ```
 
+Pass a byte stream in the optional third argument to supply input to
+`context.stdin`.
+
+```ts
+const result = await invoke(echo, [], {
+  stdin: new Blob(['hello\n']).stream(),
+});
+```
+
 `stdout` and `stderr` contain the concatenated text for each stream. Each item
 in `writes` has a `stream` and a `chunk`, preserving the order and boundaries of
 individual writes across both streams. Unexpected handler exceptions reject
