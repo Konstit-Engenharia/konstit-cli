@@ -47,6 +47,24 @@ test('validates CSS colors even for disabled output and supports every output de
   expect(style('css', { color: 'oklch(65% 0.2 30)' })).toContain('\x1b[38;2;');
 });
 
+test('formats terminal links and uses plain text for disabled streams', () => {
+  const url = 'https://example.com/docs';
+  expect(style.link(url)).toBe(`\x1b]8;;${url}\x1b\\${url}\x1b]8;;\x1b\\`);
+  expect(style.link(new URL('https://example.com/café'), { label: 'Café' })).toBe(
+    '\x1b]8;;https://example.com/caf%C3%A9\x1b\\Café\x1b]8;;\x1b\\',
+  );
+  expect(style.link('custom:some path', { label: 'Open' })).toBe('\x1b]8;;custom:some%20path\x1b\\Open\x1b]8;;\x1b\\');
+  expect(style.link(url, { stream: 'stderr' })).toBe(url);
+  expect(style.link(url, { label: 'Docs', stream: 'stderr' })).toBe('Docs');
+  expect(style.link(url, { label: '' })).toBe('');
+});
+
+test('rejects invalid link targets and raw terminal control characters', () => {
+  expect(() => style.link('/docs')).toThrow(TypeError);
+  expect(() => style.link('https://example.com/\x1b\\')).toThrow('Link URL contains control characters');
+  expect(() => style.link('https://example.com/\x9c', { stream: 'stderr' })).toThrow('Link URL contains control characters');
+});
+
 void (() => {
   const typed: Style = style;
   const file: string = typed.file('file.csv', { stats: { mode: 0o100644, nlink: 1 } });

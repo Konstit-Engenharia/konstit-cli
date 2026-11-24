@@ -110,6 +110,7 @@ try {
       output.error('failure');
       assert.deepEqual(messages, ['ready\n', '\x1b[38;2;220;38;38mfailure\x1b[0m\n']);
       await stdout(style('done', { bold: true }));
+      await stdout(style.link('https://example.com/docs', { label: 'Docs' }));
       assert.equal(style.file('report.csv', { label: 'report' }), '\x1b[32mreport\x1b[0m');
       await stderr(await style.path(resolve(root, 'README.md'), { stream: 'stderr', label: 'README' }));
     },
@@ -131,6 +132,7 @@ try {
     'ready\n',
     '\x1b[38;2;220;38;38mfailure\x1b[0m\n',
     '\x1b[1mdone\x1b[0m',
+    '\x1b]8;;https://example.com/docs\x1b\\Docs\x1b]8;;\x1b\\',
     '\x1b[34mREADME\x1b[0m',
   ]);
 } finally {

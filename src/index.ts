@@ -73,5 +73,5 @@ export {
   type ValueParser,
   type ValueParserOptions,
 } from './parser.js';
-export type { FileStat, FileStyleOptions, PathStyleOptions, Style, StyleOptions } from './style.js';
+export type { FileStat, FileStyleOptions, LinkStyleOptions, PathStyleOptions, Style, StyleOptions } from './style.js';
 export { getValueSource, type ValueSource } from './value-source.js';

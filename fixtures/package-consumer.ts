@@ -26,6 +26,7 @@ import {
   type HandlerConsole,
   type Infer,
   type KeyValuePair,
+  type LinkStyleOptions,
   type OutputWriter,
   type ParseOutcome,
   type PathStyleOptions,
@@ -139,12 +140,15 @@ void (() => {
       >;
       type _StyleReturnsString = Expect<Equal<ReturnType<Style>, string>>;
       const options: StyleOptions = { stream: 'stderr', color: '#dc2626', background: 'black', bold: true };
+      const linkOptions: LinkStyleOptions = { stream: 'stdout', label: 'Documentation' };
       const stats: FileStat = { mode: 0o100644, nlink: 1 };
       const fileOptions: FileStyleOptions = { stats, targetStats: null, label: 'report.csv' };
       const pathOptions: PathStyleOptions = { stream: 'stdout', label: 'report.csv' };
       const filename: string = style.file('/data/report.csv', fileOptions);
       const inspected: Promise<string> = style.path('/data/report.csv', pathOptions);
+      const docs: string = style.link(new URL('https://example.com/docs'), linkOptions);
       output.info(filename);
+      await context.stdout(docs);
       await context.stderr(style(await inspected, options));
       // @ts-expect-error the handler's style binding is immutable
       context.style = style;

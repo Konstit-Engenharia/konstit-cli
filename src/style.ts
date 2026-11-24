@@ -1,4 +1,4 @@
-/* oxlint-disable no-control-regex -- ANSI SGR sequences contain control characters. */
+/* oxlint-disable no-control-regex -- Terminal formatting validates control characters in escape sequences. */
 import { constants } from 'node:fs';
 import {
   lstat,
@@ -36,6 +36,14 @@ export interface StyleOptions {
   readonly inverse?: boolean;
 }
 
+/** Display options for a terminal hyperlink. */
+export interface LinkStyleOptions {
+  /** The output stream whose styling settings apply. Defaults to stdout. */
+  readonly stream?: 'stdout' | 'stderr';
+  /** The visible text. Defaults to the URL. */
+  readonly label?: string;
+}
+
 /** The numeric filesystem metadata used by LS_COLORS classification. */
 export interface FileStat {
   /** The file type and permission bits from stat or lstat. */
@@ -64,6 +72,8 @@ export interface FileStyleOptions extends PathStyleOptions {
 export interface Style {
   /** Applies CSS colors and text attributes when styling is enabled for the selected stream. */
   (text: string, options: StyleOptions): string;
+  /** Formats an absolute URL as a terminal hyperlink. Returns the visible text when styling is disabled. */
+  link(url: string | URL, options?: LinkStyleOptions): string;
   /** Formats a filename using supplied metadata without filesystem access. */
   file(path: string, options?: FileStyleOptions): string;
   /** Inspects a path asynchronously when filename styling is enabled. */
@@ -126,6 +136,20 @@ export function createStyle(colors: Readonly<Record<OutputChannel, OutputColor>>
   let rules: LsColors | undefined;
   const getRules = (): LsColors => rules ??= parseLsColors(lsColors || '');
 
+  const link = (url: string | URL, options: LinkStyleOptions = {}): string => {
+    const address = typeof url === 'string' ? url : url.href;
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: Control characters can terminate an OSC sequence.
+    if (/[\x00-\x1f\x7f-\x9f]/u.test(address)) {
+      throw new TypeError('Link URL contains control characters');
+    }
+    // OSC 8 carries a URI encoded as printable ASCII.
+    const target = new URL(address).href.replace(/[^!-~]/gu, encodeURIComponent);
+    const label = options.label ?? address;
+    return colors[options.stream ?? 'stdout'].enabled && label !== ''
+      ? `\x1b]8;;${target}\x1b\\${label}\x1b]8;;\x1b\\`
+      : label;
+  };
+
   const file = (path: string, options: FileStyleOptions = {}): string => {
     const label = options.label ?? path;
     if (!colors[options.stream ?? 'stdout'].enabled || !getRules().active) {
@@ -150,6 +174,6 @@ export function createStyle(colors: Readonly<Record<OutputChannel, OutputColor>>
 
   return Object.freeze(Object.assign(
     (text: string, options: StyleOptions): string => styleText(text, options, colors[options.stream ?? 'stdout']),
-    { file, path },
+    { link, file, path },
   ));
 }

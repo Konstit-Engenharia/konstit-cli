@@ -256,6 +256,17 @@ Forced color uses truecolor; automatic styling uses the destination's color
 depth. `runParsed()` retains explicit color switches from the stored result
 and resolves automatic styling against the execution's destinations.
 
+`style.link(url, options?)` formats an absolute URL as a clickable link in
+terminals that support OSC 8. Pass a URL string or a `URL` object. The visible
+text defaults to the URL. Set `label` to show different text and `stream` to
+use stderr's styling settings. When styling is disabled, `link()` returns
+the visible text directly.
+
+```ts
+const docs = style.link('https://example.com/docs', { label: 'Documentation' });
+await stdout(`${docs}\n`);
+```
+
 `style.file(path, options?)` formats filenames synchronously without filesystem
 access. `style.path(path, options?)` returns `Promise<string>` and inspects the
 path with async `lstat()`, following symlink targets when needed. Both support
