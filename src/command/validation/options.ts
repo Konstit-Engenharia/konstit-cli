@@ -241,8 +241,11 @@ export function validateCommandOptions(options: unknown): void {
       const { command, args, description } = example;
       const hasCommand = typeof command === 'string' && args === undefined;
       const hasArgs = args !== null && typeof args === 'object' && !Array.isArray(args) && command === undefined;
-      if (typeof description !== 'string' || (!hasCommand && !hasArgs)) {
-        throw new TypeError('A command example requires a string description and exactly one of command (string) or args (object)');
+      if (!hasCommand && !hasArgs) {
+        throw new TypeError('A command example requires exactly one of command (string) or args (object)');
+      }
+      if (description !== undefined && typeof description !== 'string') {
+        throw new TypeError('A command example description must be a string');
       }
     }
   }

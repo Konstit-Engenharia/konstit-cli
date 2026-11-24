@@ -64,7 +64,10 @@ function appendMarkdownCommand(
   if (command.examples !== undefined) {
     lines.push('', markdownHeading(headingLevel, 'Examples'));
     for (const { command: invocation, description } of command.examples) {
-      lines.push('', markdownText(description), '', ...invocation.split(/\r\n?|\n/).map((line) => `    ${line}`));
+      if (description !== '') {
+        lines.push('', markdownText(description));
+      }
+      lines.push('', ...invocation.split(/\r\n?|\n/).map((line) => `    ${line}`));
     }
   }
   if (command.overrideHelp !== undefined) {

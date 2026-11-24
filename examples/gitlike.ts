@@ -13,8 +13,8 @@ const color = colorFlag('color');
 const clone = command('clone', {
   about: 'Clone a repository',
   examples: [
-    { args: { repository: 'https://github.com/oven-sh/bun', directory: '.' }, description: '' },
-    { args: { repository: 'https://github.com/oven-sh/bun', directory: '.', bare: true }, description: '' },
+    { args: { repository: 'https://github.com/oven-sh/bun', directory: '.' } },
+    { args: { repository: 'https://github.com/oven-sh/bun', directory: '.', bare: true } },
   ],
   args: [
     positional('repository', parsers.refine(parsers.string, (v) => URL.canParse(v), 'invalid URL'), {

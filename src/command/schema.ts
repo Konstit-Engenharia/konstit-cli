@@ -103,14 +103,18 @@ export interface CommandExample {
 
 /** An explicit command line or structured arguments for the generated command path. */
 export type CommandExampleInput<Params extends object = Readonly<Record<string, unknown>>> =
-  | (CommandExample & { readonly args?: never; })
-  | {
-    /** Example values keyed by the command's declared argument names. */
-    readonly args: Params;
-    readonly command?: never;
+  & {
     /** What the example demonstrates. */
-    readonly description: string;
-  };
+    readonly description?: string;
+  }
+  & (
+    | { readonly command: string; readonly args?: never; }
+    | {
+      /** Example values keyed by the command's declared argument names. */
+      readonly args: Params;
+      readonly command?: never;
+    }
+  );
 
 export type CommandExampleDefinition = CommandExample | {
   readonly command?: never;

@@ -1146,8 +1146,8 @@ served by `run()` uses that invocation's `config` and `env`.
 
 Set `examples` on a command or subcommand to include an Examples section in
 `--help`, Markdown, and man pages. Examples appear in declaration order.
-Terminal help adds a `$` prompt before each command. Use an empty description
-for a compact list of invocations.
+Terminal help adds a `$` prompt before each command. Omit `description` for
+a compact list of invocations.
 
 Use an `args` object keyed by the command's declared argument names. Required
 arguments must be present. Use arrays for arguments that collect multiple

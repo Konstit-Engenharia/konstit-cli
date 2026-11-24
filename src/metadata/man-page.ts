@@ -72,9 +72,11 @@ function appendManCommand(
   if (command.examples !== undefined) {
     lines.push('.SH EXAMPLES');
     for (const { command: invocation, description } of command.examples) {
+      lines.push('.PP');
+      if (description !== '') {
+        lines.push(roffText(description.replace(/\r\n?/g, '\n')));
+      }
       lines.push(
-        '.PP',
-        roffText(description.replace(/\r\n?/g, '\n')),
         '.RS',
         '.nf',
         roffText(invocation.replace(/\r\n?/g, '\n')),

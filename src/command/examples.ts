@@ -217,7 +217,7 @@ export function prepareCommandExamples(
   examples: readonly CommandExampleInput[],
 ): readonly CommandExampleDefinition[] {
   return Object.freeze(
-    examples.map(({ command, args, description }) =>
+    examples.map(({ command, args, description = '' }) =>
       Object.freeze(command === undefined ? { args: compileExampleArgs(definition, args), description } : { command, description })
     ),
   );

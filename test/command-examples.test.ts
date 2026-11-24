@@ -238,10 +238,24 @@ test.each([
   ).toThrow(error);
 });
 
+test('renders examples without descriptions', () => {
+  const cli = command('tool', {
+    args: [flag('debug')],
+    examples: [{ args: { debug: true } }, { command: 'tool' }],
+  });
+  expect(cli.renderHelp()).toEndWith('Examples:\n  $ tool --debug\n  $ tool\n');
+  expect(describeCommand(cli).examples).toEqual([
+    { command: 'tool --debug', description: '' },
+    { command: 'tool', description: '' },
+  ]);
+  expect(renderMarkdown(cli)).toContain('## Examples\n\n    tool --debug\n\n    tool\n');
+  expect(renderManPage(cli)).toContain('.SH EXAMPLES\n.PP\n.RS\n.nf\ntool \\-\\-debug\n.fi\n.RE\n.PP\n.RS\n.nf\ntool\n');
+});
+
 test('validates example records and omits empty example sections', () => {
   expect(() => command('tool', { examples: {} as never })).toThrow('must be an array');
   expect(() => command('tool', { examples: [null as never] })).toThrow('must be an object');
-  expect(() => command('tool', { examples: [{ command: 'tool' } as never] })).toThrow('requires a string description');
+  expect(() => command('tool', { examples: [{ command: 'tool', description: 1 } as never] })).toThrow('description must be a string');
   expect(() => command('tool', { examples: [{ description: '' } as never] })).toThrow('exactly one of command');
   expect(() => command('tool', { examples: [{ command: 'tool', args: {}, description: '' } as never] }))
     .toThrow('exactly one of command');
