@@ -8,6 +8,7 @@ import * as mainApi from '../src/index';
 test('keeps the runtime package exports explicit', () => {
   expect(Object.keys(mainApi).sort()).toEqual([
     'CliError',
+    'CommandFailure',
     'DisplayKind',
     'ErrorKind',
     'colorFlag',

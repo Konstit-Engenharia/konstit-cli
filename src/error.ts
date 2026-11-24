@@ -99,6 +99,28 @@ export class CliError extends Error {
   }
 }
 
+/** An expected handler failure that the runner reports to standard error. */
+export class CommandFailure extends Error {
+  /** The fixed error name. */
+  override readonly name = 'CommandFailure';
+  /** The exit status to return from the runner. */
+  readonly exitCode: number;
+
+  /**
+   * Creates a handler failure with an exit code from 1 to 255.
+   * @param message The message to write to standard error.
+   * @param exitCode The exit status to report. Defaults to 1.
+   * @throws {RangeError} If the exit code is not an integer from 1 to 255.
+   */
+  constructor(message: string, exitCode = 1) {
+    super(message);
+    if (!Number.isSafeInteger(exitCode) || exitCode < 1 || exitCode > 255) {
+      throw new RangeError('A command failure exit code must be an integer from 1 to 255');
+    }
+    this.exitCode = exitCode;
+  }
+}
+
 /** Machine-readable categories for display results. */
 export const DisplayKind = Object.freeze(
   {

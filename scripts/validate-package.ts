@@ -81,6 +81,17 @@ assert.deepEqual(await testing.invoke(configured, ['--help']), {
   stderr: '',
   writes: [{ stream: 'stdout', chunk: help }],
 });
+const failing = cli.command('fail', {
+  handler: () => {
+    throw new cli.CommandFailure('Package handler failed.', 4);
+  },
+});
+assert.deepEqual(await testing.invoke(failing, []), {
+  exitCode: 4,
+  stdout: '',
+  stderr: 'Package handler failed.\n',
+  writes: [{ stream: 'stderr', chunk: 'Package handler failed.\n' }],
+});
 const parsed = configured.parse(['-vv']);
 assert.equal(parsed.type, 'value');
 if (parsed.type !== 'value') {

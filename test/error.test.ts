@@ -5,6 +5,7 @@ import {
 } from 'bun:test';
 import {
   CliError,
+  CommandFailure,
   ErrorKind,
 } from '../src/error.js';
 import {
@@ -14,6 +15,18 @@ import {
   parsers,
   positional,
 } from '../src/index.js';
+
+test('CommandFailure accepts a message and a nonzero exit code', () => {
+  const failure = new CommandFailure('expected failure');
+  expect(failure).toBeInstanceOf(Error);
+  expect(failure.name).toBe('CommandFailure');
+  expect(failure.message).toBe('expected failure');
+  expect(failure.exitCode).toBe(1);
+  expect(new CommandFailure('expected failure', 255).exitCode).toBe(255);
+  for (const exitCode of [0, -1, 256, 1.5, Number.NaN, Number.POSITIVE_INFINITY]) {
+    expect(() => new CommandFailure('expected failure', exitCode)).toThrow(RangeError);
+  }
+});
 
 describe('structured CLI errors', () => {
   test('rejects exit codes outside the supported integer range', () => {

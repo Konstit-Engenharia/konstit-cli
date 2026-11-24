@@ -11,6 +11,7 @@ import type {
 } from '../command.js';
 import { getWarnings } from '../deprecation.js';
 import {
+  CommandFailure,
   DisplayKind,
   type CliError,
   type ParseDisplay,
@@ -259,8 +260,16 @@ export async function runConfiguredHandler<Args extends object>(
       return binding.value as ArgumentOutput<ArgumentType>;
     },
   });
-  const exitCode = await selected.definition.handler(selected.args as never, context);
-  return normalizeHandlerExitCode(exitCode);
+  try {
+    return normalizeHandlerExitCode(await selected.definition.handler(selected.args as never, context));
+  } catch (error) {
+    if (!(error instanceof CommandFailure)) {
+      throw error;
+    }
+    const { message, exitCode } = error;
+    await writeMessage('stderr', message.endsWith('\n') ? message : `${message}\n`, options);
+    return exitCode;
+  }
 }
 
 async function writeWarnings(result: object, options: RunOptions): Promise<void> {

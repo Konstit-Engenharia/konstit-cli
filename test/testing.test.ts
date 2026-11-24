@@ -2,7 +2,10 @@ import {
   expect,
   test,
 } from 'bun:test';
-import { command } from '../src';
+import {
+  command,
+  CommandFailure,
+} from '../src';
 import { invoke } from '../src/testing';
 
 test('invoke captures synchronous and awaited writes in order and returns the handler exit code', async () => {
@@ -61,5 +64,23 @@ test('invoke supplies stdin while capturing the handler output', async () => {
     stdout: 'first\nsecond\n',
     stderr: '',
     writes: [{ stream: 'stdout', chunk: 'first\nsecond\n' }],
+  });
+});
+
+test('invoke captures a handler failure alongside earlier output', async () => {
+  const cli = command('tool', {
+    handler: (_args, { output }) => {
+      output.log('Starting');
+      throw new CommandFailure('Could not finish.', 9);
+    },
+  });
+  expect(await invoke(cli, [])).toEqual({
+    exitCode: 9,
+    stdout: 'Starting\n',
+    stderr: 'Could not finish.\n',
+    writes: [
+      { stream: 'stdout', chunk: 'Starting\n' },
+      { stream: 'stderr', chunk: 'Could not finish.\n' },
+    ],
   });
 });

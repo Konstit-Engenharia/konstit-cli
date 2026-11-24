@@ -9,6 +9,7 @@ import {
   CliError,
   colorFlag,
   command,
+  CommandFailure,
   ErrorKind,
   flag,
   option,
@@ -93,7 +94,7 @@ describe('runner exit codes', () => {
     },
   );
 
-  test('does not remap exceptions thrown by handlers, including CliError', async () => {
+  test('propagates a CliError thrown by a handler', async () => {
     const failure = new CliError(ErrorKind.InvalidValue, 'handler failure', 'handler failure\n');
     const stderr = mock(() => {});
     const cli = command('tool', {
@@ -107,6 +108,30 @@ describe('runner exit codes', () => {
     // oxlint-disable-next-line typescript/await-thenable -- Bun async matchers must be awaited.
     await expect(cli.runParsed(cli.parse([]), options)).rejects.toBe(failure);
     expect(stderr).not.toHaveBeenCalled();
+  });
+
+  test('awaits stderr for an async CommandFailure and returns its exit code', async () => {
+    const cli = command('tool', {
+      handler: async () => {
+        await Promise.resolve();
+        throw new CommandFailure('Input unavailable.\n', 7);
+      },
+    });
+    const messages: string[] = [];
+    const syncStderr = mock((_chunk: string) => {});
+    const parsed = cli.parse([]);
+    expect(
+      await cli.runParsed(parsed, {
+        parseErrorExitCode: 3,
+        output: { stderr: syncStderr },
+        stderr: async (message) => {
+          await Bun.sleep(1);
+          messages.push(message);
+        },
+      }),
+    ).toBe(7);
+    expect(messages).toEqual(['Input unavailable.\n']);
+    expect(syncStderr).not.toHaveBeenCalled();
   });
 });
 

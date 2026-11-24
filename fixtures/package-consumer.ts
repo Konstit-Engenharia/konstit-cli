@@ -2,6 +2,7 @@ import {
   CliError,
   colorFlag,
   command,
+  CommandFailure,
   completionShells,
   count,
   describeCommand,
@@ -80,6 +81,9 @@ const child = command('deploy', {
     }
   },
   handler: async ({ region }, { stdout }) => {
+    if (region === 'eu') {
+      throw new CommandFailure('Deployment is unavailable.', 4);
+    }
     const written: Promise<void> = stdout(region);
     await written;
   },

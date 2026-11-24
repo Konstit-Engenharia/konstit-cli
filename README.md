@@ -216,6 +216,19 @@ code. Deprecation warnings finish in order before a handler runs or a parse
 error is printed. `run()` also waits for dynamic completion output. A writer
 that throws or rejects propagates its error to the awaiting caller.
 
+Throw `CommandFailure` from a handler to report an expected execution failure.
+`run()` and `runParsed()` write its message to the configured `stderr` sink,
+add a newline when needed, and return its exit code. `invoke()` captures the
+message in `stderr` and `writes`. The exit code defaults to `1` and must be an
+integer from `1` to `255`.
+
+```ts
+import { CommandFailure } from '@konstit/cli';
+
+// Inside a handler.
+throw new CommandFailure('Input file is missing.', 3);
+```
+
 Handlers also receive immutable `output` and `style` objects.
 
 ```ts

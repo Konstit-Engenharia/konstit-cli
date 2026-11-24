@@ -38,6 +38,7 @@ export { type DeprecationWarning, getWarnings } from './deprecation.js';
 export {
   CliError,
   type CliErrorDetails,
+  CommandFailure,
   DisplayKind,
   ErrorKind,
   type ParseDisplay,
