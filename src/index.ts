@@ -31,6 +31,7 @@ export {
 export type { ConsoleOptions, ConsoleWriters, HandlerConsole, SyncOutputWriter } from './command/console.js';
 export type { OutputWriter } from './command/output.js';
 export { type CompletionShell, completionShells, isCompletionShell } from './completion-shell.js';
+export { type CommandConfigSchema, generateConfigSchema, loadConfig } from './config.js';
 export { type DeprecationWarning, getWarnings } from './deprecation.js';
 export {
   CliError,

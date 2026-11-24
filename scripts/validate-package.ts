@@ -57,6 +57,11 @@ const configured = cli.command('validate', {
   defaultToHelp: true,
 });
 assert.equal(Object.isFrozen(configured), true);
+assert.deepEqual(cli.generateConfigSchema(configured).properties.values.properties.verbose, {
+  type: 'integer',
+  minimum: 0,
+  maximum: Number.MAX_SAFE_INTEGER,
+});
 assert.equal('arg' in configured, false);
 assert.equal('required' in cli.option('value'), false);
 const bash = completion.generateCompletion(configured, 'bash');
@@ -185,6 +190,9 @@ assert.doesNotMatch(defaults.renderHelp(), /legacy/);
 
 const consumerDirectory = await mkdtemp(resolve(root, '.node-next-consumer-'));
 try {
+  const configFile = resolve(consumerDirectory, 'tool.json');
+  await writeFile(configFile, '{"values":{"verbose":2}}');
+  assert.deepEqual(await cli.loadConfig(configFile), { values: { verbose: 2 } });
   await writeFile(
     resolve(consumerDirectory, 'consumer.ts'),
     [

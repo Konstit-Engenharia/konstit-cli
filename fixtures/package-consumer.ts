@@ -6,14 +6,17 @@ import {
   count,
   describeCommand,
   flag,
+  generateConfigSchema,
   getValueSource,
   getWarnings,
+  loadConfig,
   option,
   parsers,
   positional,
   renderManPage,
   renderMarkdown,
   type CommandConfig,
+  type CommandConfigSchema,
   type CommandExample,
   type CommandMetadata,
   type ConditionalDefaultMetadata,
@@ -130,7 +133,9 @@ void (() => {
   const attempted: Promise<number> = cli.runParsed(cli.tryParse([]), options);
   const run: Promise<number> = cli.run(runOptions);
   const invocation: Promise<InvokeResult> = invoke(cli, ['--config', 'tool.json', 'deploy', '--region', 'us']);
-  void [executed, attempted, run, invocation];
+  const configSchema: CommandConfigSchema = generateConfigSchema(cli);
+  const loadedConfig: Promise<CommandConfig> = loadConfig('tool.json');
+  void [executed, attempted, run, invocation, configSchema, loadedConfig];
   // @ts-expect-error a child parse result cannot replace the root result
   void cli.runParsed(child.parse(['--region', 'us']));
   // @ts-expect-error runParsed cannot take argv

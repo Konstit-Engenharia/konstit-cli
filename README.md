@@ -345,6 +345,29 @@ const result = cli.parse([], {
 });
 ```
 
+Use `loadConfig(path)` to read a UTF-8 JSON file and pass its config to the
+runner. The helper accepts a path string or file `URL` and reports read,
+JSON syntax, and config structure errors with the file name.
+
+```ts
+import {
+  generateConfigSchema,
+  loadConfig,
+} from '@konstit/cli';
+
+const config = await loadConfig('./tool.json');
+const exitCode = await cli.run({ config });
+
+const schema = generateConfigSchema(cli);
+await Bun.write('./tool.schema.json', `${JSON.stringify(schema, null, 2)}\n`);
+```
+
+`generateConfigSchema(cli)` returns a draft 2020-12 JSON Schema for the
+command tree. It lists canonical config keys, inherited global arguments, and
+the raw JSON value types each key accepts. Use it with an editor or validator
+for config files. The runner checks parsed values, arity, and relations when it
+uses the config.
+
 Configuration keys use canonical argument and subcommand names. Each
 `config.values` entry must be a string, a readonly string array, a boolean, or
 a nonnegative safe integer. Value options and positionals accept strings or
