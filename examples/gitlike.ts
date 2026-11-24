@@ -30,7 +30,7 @@ const clone = command('clone', {
     flag('bare', {
       describe: 'Create a bare repository',
     }),
-    option('config', parsers.string, {
+    option('config', parsers.keyValue, {
       short: 'c',
       repeatable: true,
       valueName: 'KEY=VALUE',
@@ -51,8 +51,8 @@ const clone = command('clone', {
     if (bare) {
       output.log('bare repository');
     }
-    for (const setting of config) {
-      output.log(`config: ${setting}`);
+    for (const pair of config.values()) {
+      output.log(`config: ${pair.key}=${pair.value}`);
     }
   },
 });
