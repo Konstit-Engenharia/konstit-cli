@@ -9,6 +9,7 @@ import {
   suppliedArgumentNames,
   type ArgumentValues,
 } from './argument-state.js';
+import { handlerColorEnabled } from './color.js';
 import {
   commandError,
   displayName,
@@ -17,6 +18,7 @@ import type { CommandDefinition } from './schema.js';
 
 export interface RelationState extends ArgumentValues {
   readonly session?: {
+    readonly defaultColor?: boolean;
     colorMode?: 'auto' | 'always' | 'never';
   };
 }
@@ -108,8 +110,18 @@ export function applyOverrides(
       continue;
     }
     restoreArgumentDefault(state, argument);
-    if (argument.color && Bun.env.NO_COLOR !== undefined) {
-      state.argumentStates.set(target, environmentPolicy);
+    if (argument.color) {
+      // Clearing a color switch restores the automatic policy used by an absent flag.
+      const colorDisabled = Bun.env.NO_COLOR !== undefined;
+      state.values[target] = colorDisabled
+        ? false
+        : state.session?.defaultColor ?? handlerColorEnabled();
+      if (state.session !== undefined) {
+        state.session.colorMode = colorDisabled ? 'never' : 'auto';
+      }
+      if (colorDisabled) {
+        state.argumentStates.set(target, environmentPolicy);
+      }
     }
   }
 }

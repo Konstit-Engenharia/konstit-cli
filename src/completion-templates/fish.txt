@@ -105,22 +105,34 @@ function {{NAME}} --argument-names target
         if test "$scan_state" = command; and test $consume_as_positional -eq 0
             set -l option_word "$word"
             set -l attached
+            set -l attached_present 0
             if string match -qr '^--[^=]+=' -- "$word"
                 set -l parts (string split -m 1 = -- "$word")
                 set option_word $parts[1]
                 set attached $parts[2]
+                set attached_present 1
             end
             set -l new_option
+            set -l known_cluster_option 0
             if string match -qr '^-[^-]' -- "$word"
                 set -l cluster (string sub -s 2 -- "$word")
                 set -l characters (string split '' -- "$cluster")
                 for short_index in (seq (count $characters))
                     set option_word -$characters[$short_index]
                     set attached (string join '' -- $characters[(math $short_index + 1)..-1])
-                    string match -qr '^=' -- "$attached"; and set attached (string sub -s 2 -- "$attached")
+                    set attached_present 0
+                    if test -n "$attached"
+                        set attached_present 1
+                        string match -qr '^=' -- "$attached"; and set attached (string sub -s 2 -- "$attached")
+                    end
+                    set known_cluster_option 0
                     switch "$context:$option_word"
 {{OPTION_SPEC_CASES}}
                     end
+                    switch "$context:$option_word"
+{{KNOWN_OPTION_CASES}}
+                    end
+                    test $known_cluster_option -eq 0; and break
                     test -n "$new_option"; and break
                 end
             else
@@ -133,7 +145,7 @@ function {{NAME}} --argument-names target
                 set pending_terminator ({{NAME}}_decode "$pending_terminator_hex")
                 set pending_consumed 0
                 set pending_raw_count 0
-                if test -n "$attached"
+                if test $attached_present -eq 1
                     set -l value_count 1
                     if test -n "$pending_delimiter"
                         set value_count (count (string split -- "$pending_delimiter" "$attached"))
@@ -141,7 +153,7 @@ function {{NAME}} --argument-names target
                     set pending_consumed $value_count
                     set pending_raw_count 1
                 end
-                if test $pending_require_equals -eq 1; and test -z "$attached"
+                if test $pending_require_equals -eq 1; and test $attached_present -eq 0
                     continue
                 end
                 if test $pending_max -ge 0; and test $pending_consumed -ge $pending_max

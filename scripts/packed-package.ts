@@ -18,8 +18,23 @@ export interface PackedPackage {
 }
 
 /** Builds a real publish tarball and installs it with Bun for consumer checks. */
-export async function createPackedPackage(root: string): Promise<PackedPackage> {
-  const temporaryDirectory = await mkdtemp(join(tmpdir(), 'konstit-cli-package-'));
+export async function createPackedPackage(root: string, temporaryRoot = tmpdir()): Promise<PackedPackage> {
+  const temporaryDirectory = await mkdtemp(join(temporaryRoot, 'konstit-cli-package-'));
+  const cleanup = () => rm(temporaryDirectory, { recursive: true, force: true });
+  try {
+    const directory = await packAndInstall(root, temporaryDirectory);
+    return { directory, cleanup };
+  } catch (error) {
+    try {
+      await cleanup();
+    } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], 'Package preparation and cleanup both failed');
+    }
+    throw error;
+  }
+}
+
+async function packAndInstall(root: string, temporaryDirectory: string): Promise<string> {
   const pack = Bun.spawnSync(
     [
       process.execPath,
@@ -73,8 +88,5 @@ export async function createPackedPackage(root: string): Promise<PackedPackage> 
     assert.equal(await Bun.file(resolve(directory, declaration)).exists(), true, `The package archive does not contain ${declaration}`);
   }
 
-  return {
-    directory,
-    cleanup: () => rm(temporaryDirectory, { recursive: true, force: true }),
-  };
+  return directory;
 }

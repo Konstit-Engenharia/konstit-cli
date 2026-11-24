@@ -565,6 +565,27 @@ printf 'AFTER_TERMINATOR:%s\n' "\${COMPREPLY[*]}"
       })],
     })],
   });
+  const staticStateCli = command('argv-state', {
+    args: [
+      option('check', parsers.string, {
+        short: 'c',
+        aliases: ['verify'],
+        numArgs: 0,
+      }),
+      flag('verbose', { short: 'v' }),
+      option('target', parsers.enum(['web', 'server']), {
+        short: 't',
+        numArgs: { min: 0, max: 1 },
+      }),
+      option('hidden', parsers.string, {
+        short: 'x',
+        aliases: ['concealed'],
+        hide: true,
+      }),
+      positional('first', parsers.enum(['start'])),
+      positional('second', parsers.enum(['next'])),
+    ],
+  });
 
   for (const shell of completionShells) {
     const executable = shell === 'powershell' ? 'pwsh' : shell;
@@ -586,6 +607,44 @@ printf 'AFTER_TERMINATOR:%s\n' "\${COMPREPLY[*]}"
       expect(result.exitCode).toBe(0);
       expect(result.stdout.trim().split(/\r?\n/).sort()).toEqual(['payload', 'run', 'tail']);
     });
+
+    shellTest(`${shell} keeps zero-arity and hidden options out of value transitions`, () => {
+      const script = generateCompletion(staticStateCli, shell);
+      for (const optionWords of [['--check'], ['--check='], ['--target='], ['-t=']]) {
+        const result = completeStaticShell(shell, script, [...optionWords, 'start']);
+        expect(result.stderr).toBe('');
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout.trim()).toBe('next');
+      }
+      const hiddenAlias = completeStaticShell(shell, script, ['--concealed', 'start']);
+      expect(hiddenAlias.stderr).toBe('');
+      expect(hiddenAlias.exitCode).toBe(0);
+      expect(hiddenAlias.stdout.trim()).toBe('start');
+    }, { timeout: 20_000 });
+
+    shellTest(`${shell} stops a short cluster at an unknown member`, () => {
+      const result = completeStaticShell(
+        shell,
+        generateCompletion(staticStateCli, shell),
+        ['-zt', 'start'],
+      );
+      expect(result.stderr).toBe('');
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout.trim()).toBe('next');
+    }, { timeout: 20_000 });
+
+    shellTest(`${shell} stops current short-cluster value lookup at an unknown member`, () => {
+      const result = completeStaticShell(
+        shell,
+        generateCompletion(staticStateCli, shell),
+        [],
+        '-ztw',
+      );
+      expect(result.stderr).toBe('');
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).not.toContain('-ztweb');
+      expect(result.stdout).not.toContain('-ztserver');
+    }, { timeout: 20_000 });
   }
 
   test('Fish and PowerShell use their native registration interfaces', () => {
@@ -635,51 +694,66 @@ printf 'AFTER_TERMINATOR:%s\n' "\${COMPREPLY[*]}"
   }
 });
 
-function completeStaticShell(shell: CompletionShell, script: string, prefix: readonly string[]) {
-  const words = ['argv-state', ...prefix];
+function completeStaticShell(
+  shell: CompletionShell,
+  script: string,
+  prefix: readonly string[],
+  current = '',
+) {
+  const hasCurrentWord = current.length > 0;
+  const words = ['argv-state', ...prefix, ...(hasCurrentWord ? [current] : [])];
   switch (shell) {
-    case 'bash':
+    case 'bash': {
+      const compWords = hasCurrentWord ? 'COMP_WORDS=("$@")' : 'COMP_WORDS=("$@" "")';
+      const compCword = hasCurrentWord ? 'COMP_CWORD=$(($# - 1))' : 'COMP_CWORD=$#';
       return runShell(
         ['bash', '--noprofile', '--norc', '-s', '--', ...words],
         [
           script,
-          'COMP_WORDS=("$@" "")',
-          'COMP_CWORD=$#',
+          compWords,
+          compCword,
           '_bun_clap_argv_state',
           `printf "%s\\n" "\${COMPREPLY[@]}"`,
         ].join('\n'),
       );
-    case 'zsh':
+    }
+    case 'zsh': {
+      const zshWords = hasCurrentWord ? 'words=("$@")' : 'words=("$@" "")';
+      const zshCurrent = hasCurrentWord ? 'CURRENT=$#' : 'CURRENT=$(($# + 1))';
       return runShell(
         ['zsh', '-f', '-s', '--', ...words],
         [
           'compdef() { :; }',
           'compadd() { while (( $# )) && [[ "$1" != -- ]]; do shift; done; shift; print -rl -- "$@"; }',
           script,
-          'words=("$@" "")',
-          'CURRENT=$(($# + 1))',
+          zshWords,
+          zshCurrent,
           '_bun_clap_argv_state',
         ].join('\n'),
       );
+    }
     case 'fish': {
       const commandText = [
         script,
-        'complete --do-complete (string join " " -- $argv)" "',
+        `complete --do-complete (string join " " -- $argv)${hasCurrentWord ? '' : '" "'}`,
       ].join('\n');
       return runShell(['fish', '--no-config', '-c', commandText, '--', ...words], '');
     }
     case 'powershell': {
       const input = words.join(' ').replaceAll('\'', '\'\'');
+      const line = hasCurrentWord ? input : `${input} `;
+      const currentValue = current.replaceAll('\'', '\'\'');
+      const completerCurrent = hasCurrentWord ? `'${currentValue}'` : '""';
       const commandText = [
         'function Register-ArgumentCompleter {',
         '  param([switch]$Native, [string]$CommandName, [scriptblock]$ScriptBlock)',
         '  $script:completer = $ScriptBlock',
         '}',
         script,
-        `$line = '${input} '`,
+        `$line = '${line}'`,
         '$tokens = $null; $errors = $null',
         '$ast = [System.Management.Automation.Language.Parser]::ParseInput($line, [ref]$tokens, [ref]$errors)',
-        '& $script:completer "" $ast.EndBlock.Statements[0].PipelineElements[0] $line.Length | Select-Object -ExpandProperty CompletionText',
+        `& $script:completer ${completerCurrent} $ast.EndBlock.Statements[0].PipelineElements[0] $line.Length | Select-Object -ExpandProperty CompletionText`,
       ].join('\n');
       return runShell(['pwsh', '-NoProfile', '-NonInteractive', '-Command', commandText], '');
     }

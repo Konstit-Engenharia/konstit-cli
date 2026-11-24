@@ -23,7 +23,11 @@ import {
   type AnsiColorFormat,
 } from './color.js';
 import { createConsole } from './console.js';
-import { sanitizeDiagnostic } from './help.js';
+import {
+  helpDisplayMetadata,
+  sanitizeDiagnostic,
+  type HelpDisplayMetadata,
+} from './help.js';
 import {
   writeOutput,
   type OutputChannel,
@@ -120,45 +124,31 @@ function helpPalette(format: AnsiColorFormat): {
   };
 }
 
-function hasHelpOverride(
-  definition: CommandDefinition,
+function styleHelp(
   output: string,
-): boolean {
-  return definition.overrideHelp === output
-    || definition.subcommands.some((child) => hasHelpOverride(child, output));
-}
-
-function styleHelp(output: string, format: AnsiColorFormat): string {
+  format: AnsiColorFormat,
+  metadata?: HelpDisplayMetadata,
+): string {
   const palette = helpPalette(format);
-  let entrySection = false;
-  return output.split('\n').map((line) => {
-    if (/^(Arguments|Commands|Options|Examples):$/.test(line)) {
-      entrySection = true;
-      return `${palette.heading}${line}${palette.reset}`;
+  const lines = metadata?.lines ?? output.split('\n').map((text) => ({ text, role: undefined }));
+  const styled = lines.map(({ text, role }) => {
+    if (role?.kind === 'heading') {
+      return `${palette.heading}${text}${palette.reset}`;
     }
-    if (line === '') {
-      entrySection = false;
-      return line;
+    if (role?.kind === 'usage' || (metadata === undefined && text.startsWith('Usage: '))) {
+      return `${palette.heading}Usage:${palette.reset} ${palette.strong}${text.slice(7)}${palette.reset}`;
     }
-    if (line.startsWith('Usage: ')) {
-      return `${palette.heading}Usage:${palette.reset} ${palette.strong}${line.slice(7)}${palette.reset}`;
+    if (role?.kind === 'author' || (metadata === undefined && text.startsWith('Author: '))) {
+      return `${palette.heading}Author:${palette.reset} ${text.slice(8)}`;
     }
-    if (line.startsWith('Author: ')) {
-      return `${palette.heading}Author:${palette.reset} ${line.slice(8)}`;
+    if (role?.kind !== 'entry') {
+      return text;
     }
-    if (entrySection && line.startsWith('  ')) {
-      const content = line.slice(2);
-      const described = /^(.*?\S)( {2,})(\S.*)$/.exec(content);
-      if (described !== null) {
-        const label = described[1] ?? '';
-        const spacing = described[2] ?? '';
-        const description = described[3] ?? '';
-        return `  ${palette.label}${label}${palette.reset}${spacing}${description}`;
-      }
-      return `  ${palette.label}${content}${palette.reset}`;
-    }
-    return line;
+    return `${text.slice(0, role.labelStart)}${palette.label}${text.slice(role.labelStart, role.labelEnd)}${palette.reset}${
+      text.slice(role.labelEnd)
+    }`;
   }).join('\n');
+  return metadata === undefined ? styled : `${styled}\n`;
 }
 
 function styleParseFailure(output: string, format: AnsiColorFormat): string {
@@ -168,15 +158,17 @@ function styleParseFailure(output: string, format: AnsiColorFormat): string {
 }
 
 async function writeDisplay(
-  definition: CommandDefinition,
   display: ParseDisplay,
   options: RunOptions,
 ): Promise<number> {
   const decision = resolveOutputColor('stdout', outputColorModes.get(display), options.color, options.stdout);
+  const metadata = display.kind === DisplayKind.Help
+    ? helpDisplayMetadata.get(display)
+    : undefined;
   const output = display.kind === DisplayKind.Help
       && decision.enabled
-      && !hasHelpOverride(definition, display.output)
-    ? styleHelp(display.output, decision.format)
+      && metadata !== undefined
+    ? styleHelp(display.output, decision.format, metadata)
     : display.output;
   await writeMessage('stdout', output, options);
   return 0;
@@ -211,7 +203,7 @@ export async function runConfiguredHandler<Args extends object>(
     return writeParseFailure(result.error, options);
   }
   if (result.type === 'display') {
-    return writeDisplay(definition, result, options);
+    return writeDisplay(result, options);
   }
 
   const selected = selectDeepestCommand(

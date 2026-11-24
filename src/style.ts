@@ -118,15 +118,19 @@ export function styleText(text: string, options: StyleOptions, output: OutputCol
   return output.enabled ? wrapAnsi(text, opening) : text;
 }
 
-async function inspectPath(path: string, follow: boolean): Promise<FileStat | null> {
+type PathInspection =
+  | { readonly kind: 'present'; readonly stats: FileStat; }
+  | { readonly kind: 'missing'; };
+
+async function inspectPath(path: string, follow: boolean): Promise<PathInspection> {
   try {
-    return await (follow ? stat(path) : lstat(path));
+    return { kind: 'present', stats: await (follow ? stat(path) : lstat(path)) };
   } catch (error) {
     if (
       typeof error === 'object' && error !== null && 'code' in error
       && (error.code === 'ENOENT' || error.code === 'ENOTDIR' || (follow && error.code === 'ELOOP'))
     ) {
-      return null;
+      return { kind: 'missing' };
     }
     throw error;
   }
@@ -152,24 +156,40 @@ export function createStyle(colors: Readonly<Record<OutputChannel, OutputColor>>
 
   const file = (path: string, options: FileStyleOptions = {}): string => {
     const label = options.label ?? path;
-    if (!colors[options.stream ?? 'stdout'].enabled || !getRules().active) {
+    if (!colors[options.stream ?? 'stdout'].enabled) {
       return label;
     }
-    const sequence = fileSequence(path, options, getRules());
+    const rules = getRules();
+    if (!rules.active) {
+      return label;
+    }
+    const sequence = fileSequence(path, options, rules);
     return sequence === undefined || sequence === '' || sequence === '0' || sequence === '00'
       ? label
       : wrapAnsi(label, `\x1b[${sequence}m`);
   };
 
   const path = async (path: string, options: PathStyleOptions = {}): Promise<string> => {
-    if (!colors[options.stream ?? 'stdout'].enabled || !getRules().active) {
+    if (!colors[options.stream ?? 'stdout'].enabled) {
       return options.label ?? path;
     }
-    const stats = await inspectPath(path, false);
-    const target = stats !== null && (stats.mode & constants.S_IFMT) === constants.S_IFLNK && getRules().inspectSymlinks
-      ? { targetStats: await inspectPath(path, true) }
-      : {};
-    return file(path, { ...options, stats, ...target });
+    const rules = getRules();
+    if (!rules.active) {
+      return options.label ?? path;
+    }
+    const inspection = await inspectPath(path, false);
+    const targetInspection: PathInspection | undefined = inspection.kind === 'present'
+        && (inspection.stats.mode & constants.S_IFMT) === constants.S_IFLNK
+        && rules.inspectSymlinks
+      ? await inspectPath(path, true)
+      : undefined;
+    return file(path, {
+      ...options,
+      stats: inspection.kind === 'present' ? inspection.stats : null,
+      ...(targetInspection === undefined
+        ? {}
+        : { targetStats: targetInspection.kind === 'present' ? targetInspection.stats : null }),
+    });
   };
 
   return Object.freeze(Object.assign(

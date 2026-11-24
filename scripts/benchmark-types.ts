@@ -43,8 +43,9 @@ const compilers = [
 ] as const;
 
 const packed = await createPackedPackage(root);
-const consumerDirectory = await mkdtemp(join(tmpdir(), 'konstit-cli-type-benchmark-'));
+let consumerDirectory: string | undefined;
 try {
+  consumerDirectory = await mkdtemp(join(tmpdir(), 'konstit-cli-type-benchmark-'));
   await installPackedPackage(packed.directory, consumerDirectory);
   const results: BenchmarkResult[] = [];
   for (const compiler of compilers) {
@@ -102,7 +103,7 @@ try {
 } finally {
   await Promise.all([
     packed.cleanup(),
-    rm(consumerDirectory, { recursive: true, force: true }),
+    consumerDirectory === undefined ? undefined : rm(consumerDirectory, { recursive: true, force: true }),
   ]);
 }
 

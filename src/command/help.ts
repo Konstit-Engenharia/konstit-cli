@@ -1,8 +1,10 @@
 import type { ArgumentDefinition } from '../argument.js';
 import {
   CliError,
+  DisplayKind,
   type CliErrorDetails,
   type ErrorKind,
+  type ParseDisplay,
 } from '../error.js';
 import { argumentLongNames } from './recognition.js';
 import type { CommandDefinition } from './schema.js';
@@ -169,47 +171,107 @@ export function renderUsage(
   return `Usage: ${renderUsageText(definition, path, inheritedArguments)}`;
 }
 
+/** The headings emitted by the generated help renderer. */
+export type GeneratedHelpSection = 'Arguments' | 'Commands' | 'Options' | 'Examples';
+
+export type HelpLineRole =
+  | { readonly kind: 'plain'; }
+  | { readonly kind: 'usage'; }
+  | { readonly kind: 'author'; }
+  | { readonly kind: 'heading'; readonly section: GeneratedHelpSection; }
+  | { readonly kind: 'entry'; readonly section: GeneratedHelpSection; readonly labelStart: number; readonly labelEnd: number; };
+
+export interface HelpDisplayMetadata {
+  readonly lines: readonly HelpLine[];
+}
+
+export interface HelpLine {
+  readonly text: string;
+  readonly role: HelpLineRole;
+}
+
+/** Metadata for generated help displays, keyed by the display object itself. */
+export const helpDisplayMetadata = new WeakMap<object, HelpDisplayMetadata>();
+
 export function renderHelp(
   definition: CommandDefinition,
   path: readonly string[],
   inheritedArguments: readonly ArgumentDefinition[] = [],
   includeLongAbout = true,
 ): string {
+  return renderHelpDocument(definition, path, inheritedArguments, includeLongAbout).output;
+}
+
+export function createHelpDisplay(
+  definition: CommandDefinition,
+  path: readonly string[],
+  inheritedArguments: readonly ArgumentDefinition[] = [],
+  includeLongAbout = true,
+): ParseDisplay {
+  const document = renderHelpDocument(definition, path, inheritedArguments, includeLongAbout);
+  const display: ParseDisplay = {
+    ok: true,
+    type: 'display',
+    kind: DisplayKind.Help,
+    output: document.output,
+  };
+  if (document.metadata !== undefined) {
+    helpDisplayMetadata.set(display, document.metadata);
+  }
+  return display;
+}
+
+interface RenderedHelpDocument {
+  readonly output: string;
+  readonly metadata?: HelpDisplayMetadata;
+}
+
+function renderHelpDocument(
+  definition: CommandDefinition,
+  path: readonly string[],
+  inheritedArguments: readonly ArgumentDefinition[],
+  includeLongAbout: boolean,
+): RenderedHelpDocument {
   if (definition.overrideHelp !== undefined) {
-    return definition.overrideHelp;
+    return { output: definition.overrideHelp };
   }
 
-  const lines: string[] = [];
+  const lines: HelpLine[] = [];
   if (definition.beforeHelp !== undefined) {
-    lines.push(definition.beforeHelp);
+    appendText(lines, definition.beforeHelp, { kind: 'plain' });
   }
   if (definition.about !== undefined) {
-    lines.push(definition.about, '');
+    appendText(lines, definition.about, { kind: 'plain' });
+    appendLine(lines, '', { kind: 'plain' });
   }
   if (definition.author !== undefined) {
-    lines.push(`Author: ${definition.author}`, '');
+    appendFirstLineRole(lines, `Author: ${definition.author}`, { kind: 'author' });
+    appendLine(lines, '', { kind: 'plain' });
   }
   if (definition.deprecated !== undefined) {
-    lines.push(`[deprecated: ${sanitizeDiagnostic(definition.deprecated)}]`, '');
+    appendText(lines, `[deprecated: ${sanitizeDiagnostic(definition.deprecated)}]`, { kind: 'plain' });
+    appendLine(lines, '', { kind: 'plain' });
   }
-  lines.push(renderUsage(definition, path, inheritedArguments));
+  appendFirstLineRole(lines, renderUsage(definition, path, inheritedArguments), { kind: 'usage' });
 
   const positionals = definition.arguments.filter(
     (argument) => argument.kind === 'positional' && !argument.hidden,
   );
   if (positionals.length > 0) {
-    lines.push('', 'Arguments:');
+    appendLine(lines, '', { kind: 'plain' });
+    appendLine(lines, 'Arguments:', { kind: 'heading', section: 'Arguments' });
     const entries: Array<readonly [string, string]> = positionals.map((argument) => {
       const name = argument.valueName ?? argument.name.toUpperCase();
       const label = renderPositionalCount(argument, name);
       return [`  ${label}`, annotateHelp(argument)] as const;
     });
-    pushAligned(lines, entries);
+    pushAligned(lines, entries, 'Arguments');
   }
 
   const subcommands = definition.subcommands.filter(({ hidden }) => !hidden);
   if (subcommands.length > 0) {
-    lines.push('', 'Commands:');
+    appendLine(lines, '', { kind: 'plain' });
+    appendLine(lines, 'Commands:', { kind: 'heading', section: 'Commands' });
     const commandEntries: Array<readonly [string, string]> = subcommands.map((child) => {
       const aliases = child.aliases
         .filter(({ visible }) => visible)
@@ -228,7 +290,7 @@ export function renderHelp(
     if (subcommands.length > 0 && !definition.disableHelpSubcommand) {
       commandEntries.push(['  help', 'Print help for a subcommand']);
     }
-    pushAligned(lines, commandEntries);
+    pushAligned(lines, commandEntries, 'Commands');
   }
 
   const options = [...definition.arguments, ...inheritedArguments].filter(
@@ -254,26 +316,35 @@ export function renderHelp(
     entries.push(['  -V, --version', 'Print version']);
   }
   if (entries.length > 0) {
-    lines.push('', 'Options:');
-    pushAligned(lines, entries);
+    appendLine(lines, '', { kind: 'plain' });
+    appendLine(lines, 'Options:', { kind: 'heading', section: 'Options' });
+    pushAligned(lines, entries, 'Options');
   }
   if (includeLongAbout && definition.longAbout !== undefined) {
-    lines.push('', definition.longAbout);
+    appendLine(lines, '', { kind: 'plain' });
+    appendText(lines, definition.longAbout, { kind: 'plain' });
   }
   if (definition.examples !== undefined) {
-    lines.push('', 'Examples:');
+    appendLine(lines, '', { kind: 'plain' });
+    appendLine(lines, 'Examples:', { kind: 'heading', section: 'Examples' });
     for (const { command, description } of definition.examples) {
-      lines.push(
-        '',
-        ...description.split(/\r\n?|\n/).map((line) => `  ${sanitizeDiagnostic(line)}`),
-        ...command.split(/\r\n?|\n/).map((line) => `    ${sanitizeDiagnostic(line)}`),
-      );
+      appendLine(lines, '', { kind: 'plain' });
+      for (const line of description.split(/\r\n?|\n/)) {
+        appendEntry(lines, 'Examples', '  ', sanitizeDiagnostic(line));
+      }
+      for (const line of command.split(/\r\n?|\n/)) {
+        appendEntry(lines, 'Examples', '    ', sanitizeDiagnostic(line));
+      }
     }
   }
   if (definition.afterHelp !== undefined) {
-    lines.push('', definition.afterHelp);
+    appendLine(lines, '', { kind: 'plain' });
+    appendText(lines, definition.afterHelp, { kind: 'plain' });
   }
-  return `${lines.join('\n')}\n`;
+  return {
+    output: `${lines.map(({ text }) => text).join('\n')}\n`,
+    metadata: { lines },
+  };
 }
 
 function valueLabel(argument: ArgumentDefinition): string {
@@ -342,10 +413,47 @@ function annotateHelp(argument: ArgumentDefinition): string {
   return annotations.join(' ');
 }
 
-function pushAligned(lines: string[], entries: readonly (readonly [string, string])[]): void {
+function appendLine(lines: HelpLine[], text: string, role: HelpLineRole): void {
+  lines.push({ text, role });
+}
+
+function appendEntry(
+  lines: HelpLine[],
+  section: GeneratedHelpSection,
+  indentation: string,
+  label: string,
+  suffix = '',
+): void {
+  appendLine(lines, `${indentation}${label}${suffix}`, {
+    kind: 'entry',
+    section,
+    labelStart: indentation.length,
+    labelEnd: indentation.length + label.length,
+  });
+}
+
+function appendText(lines: HelpLine[], text: string, role: HelpLineRole): void {
+  for (const line of text.split('\n')) {
+    appendLine(lines, line, role);
+  }
+}
+
+function appendFirstLineRole(lines: HelpLine[], text: string, role: HelpLineRole): void {
+  const [first, ...rest] = text.split('\n');
+  appendLine(lines, first ?? '', role);
+  for (const line of rest) {
+    appendLine(lines, line, { kind: 'plain' });
+  }
+}
+
+function pushAligned(
+  lines: HelpLine[],
+  entries: readonly (readonly [string, string])[],
+  section: GeneratedHelpSection,
+): void {
   const width = Math.max(0, ...entries.map(([label,]) => Bun.stringWidth(label)));
   for (const [label, description,] of entries) {
     const padding = ' '.repeat(width - Bun.stringWidth(label));
-    lines.push(description === '' ? label : `${label}${padding}  ${description}`);
+    appendEntry(lines, section, '  ', label.slice(2), description === '' ? '' : `${padding}  ${description}`);
   }
 }

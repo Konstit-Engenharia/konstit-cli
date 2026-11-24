@@ -134,14 +134,18 @@ interface CompletionEnabledArgument extends ArgumentDefinition {
   readonly completion?: DynamicCompletionProvider;
 }
 
-interface ScanState extends ArgumentValues {
-  command: CommandDefinition;
-  commandPath: string[];
-  inheritedGlobals: ArgumentDefinition[];
-  readonly owners: Map<string, CommandDefinition>;
-  readonly scopes: Map<CommandDefinition, RelationState>;
+interface ActiveCommandScope {
+  readonly command: CommandDefinition;
+  readonly commandPath: readonly string[];
+  readonly inheritedGlobals: readonly ArgumentDefinition[];
   positionalIndex: number;
   argvState: ArgvState;
+}
+
+interface ScanState extends ArgumentValues {
+  active: ActiveCommandScope;
+  readonly owners: Map<string, CommandDefinition>;
+  readonly scopes: Map<CommandDefinition, RelationState>;
   readonly rawValues: Record<string, string[]>;
 }
 
@@ -168,6 +172,7 @@ export async function resolveDynamicCompletion(
   const filter = options.filter ?? true;
   const state = createScanState(getCommandDefinition(configuredCommand));
   scanWords(state, input.slice(0, cursor));
+  resolvePendingWordBoundary(state, currentWord);
   finalizeRelations(state);
 
   const target = findValueTarget(state, currentWord);
@@ -182,10 +187,10 @@ export async function resolveDynamicCompletion(
   }
 
   const candidates: DynamicCompletionCandidate[] = [];
-  if (state.argvState.kind !== 'literal' && (currentWord.length === 0 || currentWord.startsWith('-'))) {
+  if (state.active.argvState.kind !== 'literal' && (currentWord.length === 0 || currentWord.startsWith('-'))) {
     candidates.push(...namedCandidates(state));
   }
-  if (state.argvState.kind !== 'literal' && !currentWord.startsWith('-')) {
+  if (state.active.argvState.kind !== 'literal' && !currentWord.startsWith('-')) {
     candidates.push(...subcommandCandidates(state));
     const positional = currentPositional(state);
     if (positional !== undefined) {
@@ -199,7 +204,7 @@ export async function resolveDynamicCompletion(
       candidates.push(...positionalResult.candidates);
       return freezeResult({
         candidates: filterAndDedupe(candidates, currentWord, filter),
-        commandPath: state.commandPath,
+        commandPath: state.active.commandPath,
         current: currentWord,
         argument: positional,
         ...(positionalResult.valueHint === undefined
@@ -211,7 +216,7 @@ export async function resolveDynamicCompletion(
 
   return freezeResult({
     candidates: filterAndDedupe(candidates, currentWord, filter),
-    commandPath: state.commandPath,
+    commandPath: state.active.commandPath,
     current: currentWord,
   });
 }
@@ -245,13 +250,15 @@ function validateCursor(cursor: number, argvLength: number): void {
 
 function createScanState(root: CommandDefinition): ScanState {
   const state: ScanState = {
-    command: root,
-    commandPath: [root.name],
-    inheritedGlobals: [],
+    active: {
+      command: root,
+      commandPath: [root.name],
+      inheritedGlobals: [],
+      positionalIndex: 0,
+      argvState: commandWords,
+    },
     owners: new Map(),
     scopes: new Map(),
-    positionalIndex: 0,
-    argvState: commandWords,
     values: {},
     argumentStates: new Map(),
     rawValues: {},
@@ -264,7 +271,8 @@ function createScanState(root: CommandDefinition): ScanState {
 }
 
 function finalizeRelations(state: ScanState): void {
-  for (const [definition, scope,] of state.scopes) {
+  finalizeScope(state.active.command, state, state);
+  for (const [definition, scope,] of [...state.scopes].reverse()) {
     // Globals can be supplied after a child is selected. Resolve the parent's
     // rules using those final values and its saved, unshadowed local values.
     for (const { name, global } of definition.arguments) {
@@ -272,16 +280,71 @@ function finalizeRelations(state: ScanState): void {
         copyArgument(state, scope, name);
       }
     }
-    applyConditionalDefaults(definition, scope);
-    applyOverrides(definition, scope);
+    finalizeScope(definition, scope, state);
     for (const { name } of definition.arguments) {
       if (state.owners.get(name) === definition) {
         copyArgument(scope, state, name);
       }
     }
   }
-  applyConditionalDefaults(state.command, state);
-  applyOverrides(state.command, state);
+}
+
+function finalizeScope(definition: CommandDefinition, target: ArgumentValues, state: ScanState): void {
+  const overriddenTargets = new Set(
+    definition.overrides
+      .filter(({ source }) => hasCommandLineInput(target, source))
+      .map(({ target: name }) => name),
+  );
+  for (const argument of definition.arguments) {
+    if (
+      argument.env === undefined
+      || hasCommandLineInput(target, argument.name)
+      || overriddenTargets.has(argument.name)
+    ) {
+      continue;
+    }
+    const raw = Bun.env[argument.env];
+    if (raw !== undefined) {
+      const visibleRawValues = state.owners.get(argument.name) === definition ? state.rawValues : undefined;
+      applyEnvironmentValue(argument, raw, target, visibleRawValues);
+    }
+  }
+  applyConditionalDefaults(definition, target);
+  applyOverrides(definition, target);
+}
+
+function applyEnvironmentValue(
+  argument: ArgumentDefinition,
+  raw: string,
+  target: ArgumentValues,
+  visibleRawValues: ScanState['rawValues'] | undefined,
+): void {
+  if (argument.kind === 'flag') {
+    target.values[argument.name] = argument.color
+      ? false
+      : argument.action === ArgumentAction.SetTrue;
+    recordSuppliedArgument(target, argument.name, 'env');
+    return;
+  }
+  if (argument.kind === 'count') {
+    const count = Number(raw);
+    if (Number.isSafeInteger(count) && count >= 0) {
+      target.values[argument.name] = count;
+      recordSuppliedArgument(target, argument.name, 'env');
+    }
+    return;
+  }
+
+  const values = splitValue(argument, raw);
+  target.argumentStates.set(argument.name, { kind: 'unparsed', input: 'env' });
+  if (visibleRawValues !== undefined) {
+    visibleRawValues[argument.name] = [...values];
+  }
+  target.values[argument.name] = collectsValues(argument) ? [] : undefined;
+  const parsed = parseCompletionValues(argument, values);
+  if (parsed.length > 0) {
+    storeCompletedValues(argument, parsed, target, 'env');
+  }
 }
 
 function copyArgument(from: ArgumentValues, to: ArgumentValues, name: string): void {
@@ -309,52 +372,24 @@ function initializeArguments(
     } else {
       restoreArgumentDefault(state, argument);
     }
-
-    const environmentValue = argument.env === undefined
-      ? undefined
-      : Bun.env[argument.env];
-    if (environmentValue !== undefined) {
-      if (argument.kind === 'flag') {
-        state.values[argument.name] = argument.color
-          ? false
-          : argument.action === ArgumentAction.SetTrue;
-        recordSuppliedArgument(state, argument.name, 'env');
-      } else if (argument.kind === 'count') {
-        const count = Number(environmentValue);
-        if (Number.isSafeInteger(count) && count >= 0) {
-          state.values[argument.name] = count;
-          recordSuppliedArgument(state, argument.name, 'env');
-        }
-      } else {
-        storeArgumentValues(
-          argument,
-          splitValue(argument, environmentValue),
-          state,
-          'env',
-        );
-      }
-    }
   }
 }
 
 function scanWords(state: ScanState, words: readonly string[]): void {
-  const isSubcommand = (word: string): boolean => resolveSubcommand(state.command, word) !== undefined;
+  const isSubcommand = (word: string): boolean => resolveSubcommand(state.active.command, word) !== undefined;
   for (const word of words) {
     if (word === undefined) {
       break;
     }
 
-    let argvState = state.argvState;
+    let argvState = state.active.argvState;
     if (argvState.kind === 'option-values') {
       const action = recognizeOptionValue(argvState, word, isSubcommand);
       if (action === 'take-value') {
         consumePending(state, argvState, word);
         continue;
       }
-      if (argvState.consumed === 0) {
-        storeDefaultMissing(argvState.argument, state);
-      }
-      state.argvState = commandWords;
+      finishPendingOption(state, argvState);
       argvState = commandWords;
       if (action === 'take-terminator') {
         continue;
@@ -364,7 +399,7 @@ function scanWords(state: ScanState, words: readonly string[]): void {
     const consumeAsPositional = argvState.kind === 'command' && acceptsOptionLookingPositional(state, word);
     const kind = recognizeWord(argvState, word, consumeAsPositional);
     if (kind === 'end-options') {
-      state.argvState = literalWords;
+      state.active.argvState = literalWords;
       continue;
     }
     if (kind === 'long-option') {
@@ -377,7 +412,7 @@ function scanWords(state: ScanState, words: readonly string[]): void {
     }
 
     if (kind === 'command-word') {
-      const child = resolveSubcommand(state.command, word);
+      const child = resolveSubcommand(state.active.command, word);
       if (child !== undefined) {
         enterSubcommand(state, child);
         continue;
@@ -387,7 +422,7 @@ function scanWords(state: ScanState, words: readonly string[]): void {
     const positional = currentPositional(state);
     if (positional !== undefined) {
       if (word === positional.valueTerminator) {
-        state.positionalIndex += 1;
+        state.active.positionalIndex += 1;
       } else {
         const count = storeArgumentValues(positional, splitValue(positional, word), state);
         if (
@@ -395,18 +430,46 @@ function scanWords(state: ScanState, words: readonly string[]): void {
           && positional.maxValues !== null
           && count >= positional.maxValues
         ) {
-          state.positionalIndex += 1;
+          state.active.positionalIndex += 1;
         }
         if (positional.trailingVarArg) {
-          state.argvState = literalWords;
+          state.active.argvState = literalWords;
         }
       }
     }
   }
 }
 
+/**
+ * Resolves the pending option state at the boundary before the cursor word.
+ * The cursor word has not been scanned, so a new option must first finish a
+ * zero-value pending option just as scanWords would for the next token.
+ */
+function resolvePendingWordBoundary(state: ScanState, currentWord: string): void {
+  const pending = state.active.argvState;
+  if (pending.kind !== 'option-values') {
+    return;
+  }
+  const action = recognizeOptionValue(
+    pending,
+    currentWord,
+    (word) => resolveSubcommand(state.active.command, word) !== undefined,
+  );
+  if (action === 'take-value') {
+    return;
+  }
+  finishPendingOption(state, pending);
+}
+
+function finishPendingOption(state: ScanState, pending: OptionValueState): void {
+  if (pending.consumed === 0) {
+    storeDefaultMissing(pending.argument, state);
+  }
+  state.active.argvState = commandWords;
+}
+
 function activeArguments(state: ScanState): readonly ArgumentDefinition[] {
-  return [...state.command.arguments, ...state.inheritedGlobals];
+  return [...state.active.command.arguments, ...state.active.inheritedGlobals];
 }
 
 function activeNamedArgument(
@@ -493,7 +556,7 @@ function setPending(
 ): void {
   const optionState: OptionValueState = { kind: 'option-values', argument, consumed };
   if (optionAcceptsMoreValues(optionState)) {
-    state.argvState = optionState;
+    state.active.argvState = optionState;
   } else if (consumed === 0) {
     storeDefaultMissing(argument, state);
   }
@@ -506,7 +569,7 @@ function storeDefaultMissing(
   if (!argument.hasDefaultMissingValue && argument.minValues > 0) {
     return;
   }
-  beginArgumentInput(argument, state, 'cli', true);
+  beginArgumentInput(argument, state, true);
   storeCompletedValues(argument, argument.hasDefaultMissingValue ? [argument.defaultMissingValue] : [], state, 'cli');
 }
 
@@ -516,10 +579,10 @@ function consumePending(
   word: string,
 ): void {
   const values = splitValue(pending.argument, word);
-  storeArgumentValues(pending.argument, values, state, 'cli', pending.consumed === 0);
+  storeArgumentValues(pending.argument, values, state, pending.consumed === 0);
   pending.consumed += values.length;
   if (!optionAcceptsMoreValues(pending)) {
-    state.argvState = commandWords;
+    state.active.argvState = commandWords;
   }
 }
 
@@ -543,10 +606,10 @@ function hasDeclaredOption(state: ScanState, token: string): boolean {
     const equalsIndex = token.indexOf('=');
     const name = token.slice(2, equalsIndex < 0 ? undefined : equalsIndex);
     return activeNamedArgument(state, name) !== undefined
-      || (!state.command.disableHelpFlag && token === '--help')
+      || (!state.active.command.disableHelpFlag && token === '--help')
       || (
-        !state.command.disableVersionFlag
-        && state.command.version !== undefined
+        !state.active.command.disableVersionFlag
+        && state.active.command.version !== undefined
         && token === '--version'
       );
   }
@@ -554,10 +617,10 @@ function hasDeclaredOption(state: ScanState, token: string): boolean {
   return short !== undefined
     && (
       activeShortArgument(state, short) !== undefined
-      || (!state.command.disableHelpFlag && token === '-h')
+      || (!state.active.command.disableHelpFlag && token === '-h')
       || (
-        !state.command.disableVersionFlag
-        && state.command.version !== undefined
+        !state.active.command.disableVersionFlag
+        && state.active.command.version !== undefined
         && token === '-V'
       )
     );
@@ -574,14 +637,21 @@ function storeArgumentValues(
   argument: ArgumentDefinition,
   rawValues: readonly string[],
   state: ScanState,
-  input: 'cli' | 'env' = 'cli',
   occurrenceStart = true,
 ): number {
-  beginArgumentInput(argument, state, input, occurrenceStart);
+  beginArgumentInput(argument, state, occurrenceStart);
   const storedRaw = state.rawValues[argument.name] ?? [];
   storedRaw.push(...rawValues);
   state.rawValues[argument.name] = storedRaw;
 
+  const parsed = parseCompletionValues(argument, rawValues);
+  if (parsed.length > 0) {
+    storeCompletedValues(argument, parsed, state, 'cli');
+  }
+  return storedRaw.length;
+}
+
+function parseCompletionValues(argument: ArgumentDefinition, rawValues: readonly string[]): unknown[] {
   const parsed: unknown[] = [];
   for (const raw of rawValues) {
     try {
@@ -590,20 +660,16 @@ function storeArgumentValues(
       // Completion must continue when a partial value cannot be parsed yet.
     }
   }
-  if (parsed.length > 0) {
-    storeCompletedValues(argument, parsed, state, input);
-  }
-  return storedRaw.length;
+  return parsed;
 }
 
 function beginArgumentInput(
   argument: ArgumentDefinition,
   state: ScanState,
-  input: 'cli' | 'env',
   occurrenceStart: boolean,
 ): void {
-  if (input === 'env' || !hasCommandLineInput(state, argument.name) || (occurrenceStart && shouldOverrideSelf(argument, state))) {
-    state.argumentStates.set(argument.name, { kind: 'unparsed', input });
+  if (!hasCommandLineInput(state, argument.name) || (occurrenceStart && shouldOverrideSelf(argument, state))) {
+    state.argumentStates.set(argument.name, { kind: 'unparsed', input: 'cli' });
     state.rawValues[argument.name] = [];
     state.values[argument.name] = collectsValues(argument) ? [] : undefined;
   }
@@ -612,7 +678,7 @@ function beginArgumentInput(
 function storeCompletedValues(
   argument: ArgumentDefinition,
   parsed: readonly unknown[],
-  state: ScanState,
+  state: ArgumentValues,
   input: 'cli' | 'env',
 ): void {
   if (parsed.length > 0) {
@@ -673,21 +739,18 @@ function resolveSubcommand(
 }
 
 function enterSubcommand(state: ScanState, child: CommandDefinition): void {
-  const parent = state.command;
-  state.scopes.set(parent, {
+  const parent = state.active;
+  state.scopes.set(parent.command, {
     values: { ...state.values },
     argumentStates: new Map(state.argumentStates),
   });
-  state.inheritedGlobals = [
-    ...state.inheritedGlobals,
-    ...parent.arguments.filter(({ global }) => global),
-  ];
-  for (const argument of parent.arguments.filter(({ global }) => global)) {
-    state.owners.set(argument.name, parent);
-  }
-  state.command = child;
-  state.commandPath.push(child.name);
-  state.positionalIndex = 0;
+  state.active = {
+    command: child,
+    commandPath: [...parent.commandPath, child.name],
+    inheritedGlobals: [...parent.inheritedGlobals, ...parent.command.arguments.filter(({ global }) => global)],
+    positionalIndex: 0,
+    argvState: commandWords,
+  };
   for (const argument of child.arguments) {
     state.owners.set(argument.name, child);
   }
@@ -695,21 +758,18 @@ function enterSubcommand(state: ScanState, child: CommandDefinition): void {
 }
 
 function currentPositional(state: ScanState): ArgumentDefinition | undefined {
-  return state.command.arguments.filter(
+  return state.active.command.arguments.filter(
     ({ kind }) => kind === 'positional',
-  )[state.positionalIndex];
+  )[state.active.positionalIndex];
 }
 
 function findValueTarget(
   state: ScanState,
   currentWord: string,
 ): ValueTarget | undefined {
-  const argvState = state.argvState;
+  const argvState = state.active.argvState;
   if (argvState.kind === 'option-values') {
-    const action = recognizeOptionValue(argvState, currentWord, (word) => resolveSubcommand(state.command, word) !== undefined);
-    if (action === 'take-value') {
-      return valueTarget(argvState.argument, currentWord, '');
-    }
+    return valueTarget(argvState.argument, currentWord, '');
   }
   if (argvState.kind === 'literal') {
     return currentPositionalTarget(state, currentWord);
@@ -792,8 +852,8 @@ async function completeArgument(
     argv,
     cursor,
     current: target.current,
-    commandPath: Object.freeze([...state.commandPath]),
-    command: state.command,
+    commandPath: Object.freeze([...state.active.commandPath]),
+    command: state.active.command,
     argument: target.argument,
     values: freezeValues(state.values),
     rawValues: freezeRawValues(state.rawValues),
@@ -818,7 +878,7 @@ async function completeArgument(
       filter,
       provider === undefined && target.argument.parser?.ignoreCase === true,
     ),
-    commandPath: state.commandPath,
+    commandPath: state.active.commandPath,
     current: target.current,
     argument: target.argument,
     ...(hint === undefined ? {} : { valueHint: hint }),
@@ -938,11 +998,11 @@ function namedCandidates(state: ScanState): readonly DynamicCompletionCandidate[
         ...(argument.help === undefined ? {} : { description: argument.help }),
       }))
     );
-  if (!state.command.disableHelpFlag) {
+  if (!state.active.command.disableHelpFlag) {
     candidates.push({ value: '-h', description: 'Print help' });
     candidates.push({ value: '--help', description: 'Print help' });
   }
-  if (state.command.version !== undefined && !state.command.disableVersionFlag) {
+  if (state.active.command.version !== undefined && !state.active.command.disableVersionFlag) {
     candidates.push({ value: '-V', description: 'Print version' });
     candidates.push({ value: '--version', description: 'Print version' });
   }
@@ -952,7 +1012,7 @@ function namedCandidates(state: ScanState): readonly DynamicCompletionCandidate[
 function subcommandCandidates(
   state: ScanState,
 ): readonly DynamicCompletionCandidate[] {
-  return state.command.subcommands
+  return state.active.command.subcommands
     .filter(({ hidden }) => !hidden)
     .flatMap((child) =>
       [

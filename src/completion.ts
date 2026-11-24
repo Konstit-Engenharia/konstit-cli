@@ -296,7 +296,7 @@ function parserCompletionValues(
 function valueCompletions(node: CompletionNode): readonly ValueCompletion[] {
   const definitions: ValueCompletion[] = [];
   for (const argument of visibleArguments(node)) {
-    if (argument.kind !== 'option') {
+    if (argument.kind !== 'option' || argument.maxValues === 0) {
       continue;
     }
     const tokens = optionTokens(argument);
@@ -327,7 +327,7 @@ function parsePositionals(node: CompletionNode): readonly ArgumentDefinition[] {
 
 function valueOptionTokens(node: CompletionNode): readonly string[] {
   return visibleArguments(node)
-    .filter(({ kind }) => kind === 'option')
+    .filter(({ kind, maxValues }) => kind === 'option' && maxValues !== 0)
     .flatMap(optionTokens);
 }
 
@@ -781,7 +781,7 @@ function generateFish(
       if (argument.long !== undefined) {
         baseParts.push(`-l ${fishQuote(argument.long)}`);
       }
-      if (argument.kind === 'option') {
+      if (argument.kind === 'option' && argument.maxValues !== 0) {
         baseParts.push('-r');
       }
       if (argument.help !== undefined) {
@@ -798,7 +798,7 @@ function generateFish(
           commandPrefix,
           `-n ${condition}`,
           `-l ${fishQuote(alias)}`,
-          ...(argument.kind === 'option' ? ['-r'] : []),
+          ...(argument.kind === 'option' && argument.maxValues !== 0 ? ['-r'] : []),
           ...(argument.help === undefined ? [] : [`-d ${fishQuote(argument.help)}`]),
         ];
         registrations.push(...appendFishValueCompletion(aliasParts, argument));
@@ -910,6 +910,13 @@ function generateFish(
           '                    set declared_option 1',
         ];
       }).join('\n'),
+      KNOWN_OPTION_CASES: nodes.flatMap((node) => {
+        const tokens = declaredOptionTokens(node);
+        return tokens.length === 0 ? [] : [
+          `                case ${tokens.map((token) => fishQuote(`${node.id}:${token}`)).join(' ')}`,
+          '                    set known_cluster_option 1',
+        ];
+      }).join('\n'),
       BUILTIN_OPTION_CASES: nodes.flatMap((node) => {
         const tokens = builtinOptionTokens(node);
         return tokens.length === 0 ? [] : [
@@ -926,7 +933,7 @@ function appendFishValueCompletion(
   parts: string[],
   argument: ArgumentDefinition,
 ): readonly string[] {
-  if (argument.kind !== 'option') {
+  if (argument.kind !== 'option' || argument.maxValues === 0) {
     return [parts.join(' ')];
   }
   const completion = completionForArguments([argument]);

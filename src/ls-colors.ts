@@ -10,9 +10,23 @@ interface SuffixRule {
   readonly suffix: string;
   readonly folded: string;
   readonly sequence: string;
-  caseSensitive: boolean;
-  shadowed: boolean;
+  readonly caseSensitive: boolean;
+  /** Retained for compatibility with the parsed rule shape; resolved rules are never shadowed. */
+  readonly shadowed: false;
 }
+
+interface ParsedSuffixRule {
+  readonly suffix: string;
+  readonly folded: string;
+  readonly sequence: string;
+}
+
+type SuffixResolution = 'case-insensitive' | 'case-sensitive' | 'shadowed';
+
+type FileStatState =
+  | { readonly kind: 'unknown'; }
+  | { readonly kind: 'missing'; }
+  | { readonly kind: 'present'; readonly value: FileStat; };
 
 export interface LsColors {
   readonly indicators: ReadonlyMap<string, string>;
@@ -79,35 +93,52 @@ function isColored(sequence: string | undefined): boolean {
   return sequence !== undefined && sequence !== '' && sequence !== '0' && sequence !== '00';
 }
 
-function prioritizeSuffixes(suffixes: SuffixRule[]): readonly SuffixRule[] {
-  suffixes.reverse();
-  for (const [index, current,] of suffixes.entries()) {
-    if (current.shadowed) {
+function fileStatState(stats: FileStat | null | undefined): FileStatState {
+  if (stats === undefined) {
+    return { kind: 'unknown' };
+  }
+  if (stats === null) {
+    return { kind: 'missing' };
+  }
+  return { kind: 'present', value: stats };
+}
+
+function resolveSuffixes(suffixes: readonly ParsedSuffixRule[]): readonly SuffixRule[] {
+  const declarationOrder = [...suffixes].reverse();
+  const resolution = new Map<ParsedSuffixRule, SuffixResolution>();
+  for (const [index, current,] of declarationOrder.entries()) {
+    if (resolution.get(current) === 'shadowed') {
       continue;
     }
     let mergedCase = false;
-    for (const older of suffixes.slice(index + 1)) {
-      if (older.shadowed || older.folded !== current.folded) {
+    for (const older of declarationOrder.slice(index + 1)) {
+      if (resolution.get(older) === 'shadowed' || older.folded !== current.folded) {
         continue;
       }
       if (older.suffix === current.suffix) {
-        older.shadowed = true;
+        resolution.set(older, 'shadowed');
       } else if (mergedCase || older.sequence === current.sequence) {
-        older.shadowed = true;
+        resolution.set(older, 'shadowed');
         mergedCase = true;
       } else {
-        current.caseSensitive = true;
-        older.caseSensitive = true;
+        resolution.set(current, 'case-sensitive');
+        resolution.set(older, 'case-sensitive');
       }
     }
   }
-  return suffixes.filter((rule) => !rule.shadowed);
+  return declarationOrder
+    .filter((rule) => resolution.get(rule) !== 'shadowed')
+    .map((rule) => ({
+      ...rule,
+      caseSensitive: (resolution.get(rule) ?? 'case-insensitive') === 'case-sensitive',
+      shadowed: false,
+    }));
 }
 
 /** Parses the common SGR-based LS_COLORS rules, retaining order and terminal palette indices. */
 export function parseLsColors(input: string): LsColors {
   const indicators = new Map<string, string>();
-  const suffixes: SuffixRule[] = [];
+  const parsedSuffixes: ParsedSuffixRule[] = [];
   for (const entry of splitEscaped(input, ':')) {
     const fields = splitEscaped(entry, '=');
     if (fields.length !== 2) {
@@ -120,13 +151,13 @@ export function parseLsColors(input: string): LsColors {
     } else if (isSgrSequence(sequence)) {
       if (name.startsWith('*')) {
         const suffix = name.slice(1);
-        suffixes.push({ suffix, folded: foldAscii(suffix), sequence, caseSensitive: false, shadowed: false });
+        parsedSuffixes.push({ suffix, folded: foldAscii(suffix), sequence });
       } else if (indicatorNames.has(name)) {
         indicators.set(name, sequence);
       }
     }
   }
-  const orderedSuffixes = prioritizeSuffixes(suffixes);
+  const orderedSuffixes = resolveSuffixes(parsedSuffixes);
   const followSymlinks = indicators.get('ln') === 'target';
   return {
     indicators,
@@ -183,22 +214,23 @@ function fileIndicator(stats: FileStat, rules: LsColors): string {
 }
 
 export function fileSequence(path: string, options: FileStyleOptions, rules: LsColors): string | undefined {
-  let stats = options.stats;
-  if (stats === null) {
+  let state = fileStatState(options.stats);
+  if (state.kind === 'missing') {
     return rules.indicators.get('mi') ?? rules.indicators.get('or') ?? rules.indicators.get('no');
   }
-  if (stats !== undefined && (stats.mode & constants.S_IFMT) === constants.S_IFLNK) {
-    if (options.targetStats === null && (rules.followSymlinks || isColored(rules.indicators.get('or')))) {
+  if (state.kind === 'present' && (state.value.mode & constants.S_IFMT) === constants.S_IFLNK) {
+    const targetState = fileStatState(options.targetStats);
+    if (targetState.kind === 'missing' && (rules.followSymlinks || isColored(rules.indicators.get('or')))) {
       return rules.indicators.get('or') ?? rules.indicators.get('no');
     }
-    if (rules.followSymlinks && options.targetStats != null) {
+    if (rules.followSymlinks && targetState.kind === 'present') {
       // GNU ln=target uses the target mode but the symlink's own hard-link count.
-      stats = { ...stats, mode: options.targetStats.mode };
+      state = { kind: 'present', value: { ...state.value, mode: targetState.value.mode } };
     } else if (rules.followSymlinks) {
       return rules.indicators.get('no');
     }
   }
-  const indicator = stats === undefined ? 'fi' : fileIndicator(stats, rules);
+  const indicator = state.kind === 'unknown' ? 'fi' : fileIndicator(state.value, rules);
   if (indicator === 'fi') {
     const name = basename(path);
     const folded = foldAscii(name);

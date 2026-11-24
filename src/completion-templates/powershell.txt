@@ -165,7 +165,7 @@ Register-ArgumentCompleter -Native -CommandName {{EXECUTABLE_QUOTED}} -ScriptBlo
     if ($scanState -eq 'command' -and -not $consumeAsPositional) {
       $spec = & $getOptionSpec $context $word
       if ($null -ne $spec) {
-        if (-not $spec.RequireEquals) {
+        if (-not $spec.RequireEquals -and $spec.Maximum -ne 0) {
           $pendingOption = $word
           $scanState = 'option-values'
           $pendingSpec = $spec
@@ -180,17 +180,22 @@ Register-ArgumentCompleter -Native -CommandName {{EXECUTABLE_QUOTED}} -ScriptBlo
         for ($shortIndex = 0; $shortIndex -lt $cluster.Length; $shortIndex++) {
           $short = "-$($cluster[$shortIndex])"
           $spec = & $getOptionSpec $context $short
-          if ($null -eq $spec) { continue }
-          $attached = $cluster.Substring($shortIndex + 1).TrimStart('=')
+          if ($null -eq $spec) {
+            if (-not (& $isDeclaredOption $context $short)) { break }
+            continue
+          }
+          $attached = $cluster.Substring($shortIndex + 1)
+          $attachedPresent = $attached.Length -gt 0
+          if ($attachedPresent -and $attached.StartsWith('=')) { $attached = $attached.Substring(1) }
           $pendingSpec = $spec
           $pendingDelimiter = & $decodeHex $spec.DelimiterHex
           $pendingConsumed = 0
           $pendingRawCount = 0
-          if ($attached.Length -gt 0) {
+          if ($attachedPresent) {
             $pendingConsumed = & $valueCount $attached $pendingDelimiter
             $pendingRawCount = 1
           }
-          if (($attached.Length -gt 0 -or -not $spec.RequireEquals) -and ($spec.Maximum -lt 0 -or $pendingConsumed -lt $spec.Maximum) -and (-not $spec.SingleRaw -or $pendingRawCount -eq 0)) {
+          if (($attachedPresent -or -not $spec.RequireEquals) -and ($spec.Maximum -lt 0 -or $pendingConsumed -lt $spec.Maximum) -and (-not $spec.SingleRaw -or $pendingRawCount -eq 0)) {
             $pendingOption = $short
             $scanState = 'option-values'
           }
@@ -305,9 +310,14 @@ Register-ArgumentCompleter -Native -CommandName {{EXECUTABLE_QUOTED}} -ScriptBlo
     $cluster = $wordToComplete.Substring(1)
     for ($shortIndex = 0; $shortIndex -lt $cluster.Length; $shortIndex++) {
       $short = "-$($cluster[$shortIndex])"
-      if (-not (& $takesValue $context $short)) { continue }
-      $attached = $cluster.Substring($shortIndex + 1).TrimStart('=')
-      if ($attached.Length -gt 0) {
+      if (-not (& $takesValue $context $short)) {
+        if (-not (& $isDeclaredOption $context $short)) { break }
+        continue
+      }
+      $attached = $cluster.Substring($shortIndex + 1)
+      $attachedPresent = $attached.Length -gt 0
+      if ($attachedPresent -and $attached.StartsWith('=')) { $attached = $attached.Substring(1) }
+      if ($attachedPresent) {
         $prefix = $wordToComplete.Substring(0, $shortIndex + 2)
         if ($cluster.Substring($shortIndex + 1).StartsWith('=')) { $prefix += '=' }
         $mode = & $getValueMode $context $short

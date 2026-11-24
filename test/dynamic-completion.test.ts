@@ -115,6 +115,25 @@ describe('dynamic completion', () => {
       await resolveDynamicCompletion(cli, ['-m', '--target', '']);
     }
 
+    let inlineBoundary: DynamicCompletionContext | undefined;
+    const inlineBoundaryCli = command('tool', {
+      args: [
+        option('mode', parsers.string, {
+          defaultMissing: 'auto',
+          requireEquals: false,
+        }),
+        option('query', parsers.string, {
+          complete: (context) => {
+            inlineBoundary = context;
+            return ['done'];
+          },
+        }),
+      ],
+    });
+    await resolveDynamicCompletion(inlineBoundaryCli, ['--mode', '--query=']);
+    expect(inlineBoundary?.values.mode).toBe('auto');
+    expect(inlineBoundary?.rawValues.mode).toEqual([]);
+
     expect(received).toHaveLength(4);
     for (const context of received) {
       expect(context.values.mode).toBe('auto');
@@ -224,6 +243,83 @@ describe('dynamic completion', () => {
     expect(received[0]?.rawValues.number).toEqual(['bad-env']);
     expect(received[1]?.values).toMatchObject({ number: undefined, format: 'text', status: 'input' });
     expect(received[1]?.rawValues.number).toEqual(['bad-cli']);
+  });
+
+  test('resolves environment fallbacks after CLI overrides before conditional defaults', async () => {
+    const envName = 'KONSTIT_COMPLETION_PROFILE';
+    const previous = Bun.env[envName];
+    Bun.env[envName] = 'prod';
+    const received: DynamicCompletionContext[] = [];
+    try {
+      const cli = command('tool', {
+        args: [
+          flag('reset'),
+          option('profile', parsers.string, { env: envName, default: 'dev' }),
+          option('mode', parsers.string, { default: 'safe' }),
+          positional('target', parsers.string, {
+            complete: (context) => {
+              received.push(context);
+              return [];
+            },
+          }),
+        ],
+        defaultIf: [{ source: 'profile', equals: 'prod', target: 'mode', value: 'live' }],
+        overrides: [['reset', 'profile']],
+      });
+
+      await resolveDynamicCompletion(cli, ['target']);
+      await resolveDynamicCompletion(cli, ['--reset', 'target']);
+    } finally {
+      if (previous === undefined) {
+        delete Bun.env[envName];
+      } else {
+        Bun.env[envName] = previous;
+      }
+    }
+
+    expect(received.map(({ values }) => ({ profile: values.profile, mode: values.mode }))).toEqual([
+      { profile: 'prod', mode: 'live' },
+      { profile: 'dev', mode: 'safe' },
+    ]);
+  });
+
+  test('keeps visible ancestor raw values and child values shadowing ancestor arguments', async () => {
+    const envName = 'KONSTIT_COMPLETION_SHADOWED_VALUE';
+    const previous = Bun.env[envName];
+    Bun.env[envName] = 'ancestor';
+    let received: DynamicCompletionContext | undefined;
+    try {
+      const cli = command('tool', {
+        args: [
+          option('value', parsers.string, { env: envName }),
+          option('region', parsers.string, { env: envName }),
+        ],
+        subcommands: [command('run', {
+          args: [
+            option('value', parsers.string),
+            positional('query', parsers.string, {
+              complete: (context) => {
+                received = context;
+                return [];
+              },
+            }),
+          ],
+        })],
+      });
+
+      await resolveDynamicCompletion(cli, ['run', '--value=child', '']);
+    } finally {
+      if (previous === undefined) {
+        delete Bun.env[envName];
+      } else {
+        Bun.env[envName] = previous;
+      }
+    }
+
+    expect(received?.values.value).toBe('child');
+    expect(received?.rawValues.value).toEqual(['child']);
+    expect(received?.values.region).toBe('ancestor');
+    expect(received?.rawValues.region).toEqual(['ancestor']);
   });
 
   test('supports async iterables and delimiter-aware output', async () => {

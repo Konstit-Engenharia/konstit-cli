@@ -104,7 +104,7 @@
 
 {{NAME}}() {
   local context="0" word child current previous option suffix prefix="" spec
-  local pending_option="" pending_delimiter="__NONE__" pending_delimiter_hex positional_key maximum cluster short attached output_prefix
+  local pending_option="" pending_delimiter="__NONE__" pending_delimiter_hex positional_key maximum cluster short attached output_prefix attached_present
   local scan_state=command pending_terminator="" pending_terminator_hex positional_trailing
   local positional_delimiter="__NONE__" positional_delimiter_hex positional_terminator="" positional_terminator_hex positional_spec
   integer index short_index pending_min=0 pending_max=0 pending_consumed=0 pending_require_equals=0
@@ -165,7 +165,7 @@
       {{NAME}}_decode_hex "$pending_delimiter_hex"; pending_delimiter="$REPLY"
       {{NAME}}_decode_hex "$pending_terminator_hex"; pending_terminator="$REPLY"
       [[ -z "$pending_delimiter" ]] && pending_delimiter="__NONE__"
-      if (( pending_require_equals == 0 )); then
+      if (( pending_require_equals == 0 && pending_max != 0 )); then
         pending_option="$word"
         scan_state=option-values
         pending_consumed=0
@@ -183,18 +183,26 @@
           {{NAME}}_decode_hex "$pending_terminator_hex"; pending_terminator="$REPLY"
           [[ -z "$pending_delimiter" ]] && pending_delimiter="__NONE__"
           attached="${cluster[short_index+1,-1]}"
-          [[ "$attached" == '='* ]] && attached="${attached[2,-1]}"
+          attached_present=0
+          if [[ -n "$attached" ]]; then
+            attached_present=1
+            [[ "$attached" == '='* ]] && attached="${attached[2,-1]}"
+          fi
           pending_consumed=0
           pending_raw_count=0
-          if [[ -n "$attached" ]]; then
+          if (( attached_present )); then
             {{NAME}}_value_count "$attached" "$pending_delimiter"
             pending_consumed="$REPLY"
             pending_raw_count=1
           fi
-          if [[ -n "$attached" || "$pending_require_equals" == 0 ]] && (( (pending_max < 0 || pending_consumed < pending_max) && !(pending_single_raw && pending_raw_count >= 1) )); then
+          if (( attached_present || pending_require_equals == 0 )) && (( (pending_max < 0 || pending_consumed < pending_max) && !(pending_single_raw && pending_raw_count >= 1) )); then
             pending_option="$short"
             scan_state=option-values
           fi
+          break
+        elif {{NAME}}_declared_option "$context" "$short"; then
+          continue
+        else
           break
         fi
       done
@@ -258,12 +266,16 @@
       short="-${cluster[short_index]}"
       if {{NAME}}_takes_value "$context" "$short"; then
         attached="${cluster[short_index+1,-1]}"
+        attached_present=0
+        if [[ -n "$attached" ]]; then attached_present=1; fi
         output_prefix="-${cluster[1,short_index]}"
-        if [[ "$attached" == '='* ]]; then attached="${attached[2,-1]}"; output_prefix+="="; fi
-        if [[ -n "$attached" ]]; then
+        if (( attached_present )) && [[ "$attached" == '='* ]]; then attached="${attached[2,-1]}"; output_prefix+="="; fi
+        if (( attached_present )); then
           {{NAME}}_complete_value "$context" "$short" "$attached" "$output_prefix"
           return
         fi
+        break
+      elif ! {{NAME}}_declared_option "$context" "$short"; then
         break
       fi
     done

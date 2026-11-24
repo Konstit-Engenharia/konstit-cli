@@ -10,6 +10,7 @@ import {
   command,
   ErrorKind,
   flag,
+  getValueSource,
   option,
   parsers,
 } from '../src';
@@ -163,6 +164,34 @@ describe('color flag', () => {
         'failure\n',
       ]);
     });
+  });
+
+  test('restores automatic color value and output when an override clears the color flag', async () => {
+    for (const noColor of [null, '']) {
+      for (const requestedColor of [false, true]) {
+        await withColorEnvironment({ noColor, term: 'xterm', stdoutTTY: true }, async () => {
+          const output: string[] = [];
+          const expectedColor = noColor === null && requestedColor;
+          const cli = command('tool', {
+            args: [colorFlag('color'), flag('reset')],
+            overrides: [['reset', 'color']],
+            handler: (args, { style, stdout }) => {
+              expect(args.color).toBe(expectedColor);
+              expect(getValueSource(args, 'color')).toBe(noColor === null ? 'default' : 'env');
+              return stdout(style('sample', { bold: true }));
+            },
+          });
+          expect(
+            await cli.run({
+              argv: ['--color', '--reset'],
+              color: requestedColor,
+              stdout: (text) => output.push(text),
+            }),
+          ).toBe(0);
+          expect(output).toEqual([expectedColor ? '\x1b[1msample\x1b[0m' : 'sample']);
+        });
+      }
+    }
   });
 
   test('honors NO_COLOR for all output even without a color flag', async () => {

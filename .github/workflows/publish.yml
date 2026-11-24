@@ -74,14 +74,24 @@ jobs:
           test -f "$TARBALL"
           echo "tarball=$TARBALL" >> "$GITHUB_OUTPUT"
 
-      - name: Add tarball to GitHub Release
+      - name: Inspect publication state
+        id: publication
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
           TARBALL: ${{ steps.package.outputs.tarball }}
-        run: gh release upload "$RELEASE_TAG" "$TARBALL" --clobber
+        run: bun ./scripts/package-publication.ts "$RELEASE_TAG" "$TARBALL"
+
+      - name: Add tarball to GitHub Release
+        if: steps.publication.outputs.asset == 'missing'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+          TARBALL: ${{ steps.package.outputs.tarball }}
+        run: gh release upload "$RELEASE_TAG" "$TARBALL"
 
       - name: Publish package
+        if: steps.publication.outputs.registry == 'missing'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           TARBALL: ${{ steps.package.outputs.tarball }}

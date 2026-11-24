@@ -9,6 +9,7 @@ import {
 import * as fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { parseLsColors } from '../src/ls-colors';
 import { createStyle } from '../src/style';
 
 const colors = {
@@ -62,6 +63,25 @@ test('handles duplicate suffixes and GNU ASCII case distinctions', () => {
   expect(style.file('file.CsV')).toBe(wrap('34', 'file.CsV'));
   const merged = createStyle(colors, '*.x=31:*.X=32:*.x=32');
   expect(merged.file('file.X')).toBe(wrap('32', 'file.X'));
+});
+
+test('keeps parsed suffixes separate from resolved precedence state', () => {
+  const rules = parseLsColors('*.txt=31:*.TXT=32:*.txt=33');
+  expect(rules.suffixes.map(({ suffix, sequence, caseSensitive, shadowed }) => ({
+    suffix,
+    sequence,
+    caseSensitive,
+    shadowed,
+  }))).toEqual([
+    { suffix: '.txt', sequence: '33', caseSensitive: true, shadowed: false },
+    { suffix: '.TXT', sequence: '32', caseSensitive: true, shadowed: false },
+  ]);
+});
+
+test('distinguishes suffix-only matching from a missing path', () => {
+  const style = createStyle(colors, 'mi=35:*.csv=31');
+  expect(style.file('missing.csv')).toBe(wrap('31', 'missing.csv'));
+  expect(style.file('missing.csv', { stats: null })).toBe(wrap('35', 'missing.csv'));
 });
 
 test.each(

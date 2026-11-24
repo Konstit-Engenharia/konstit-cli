@@ -41,8 +41,8 @@ import {
 } from './config.js';
 import {
   commandError,
+  createHelpDisplay,
   displayArgument,
-  renderHelp,
   suggestToken,
   suggestTokenCandidates,
 } from './help.js';
@@ -75,11 +75,30 @@ class DisplayRequest {
 
 export type ColorMode = 'auto' | 'always' | 'never';
 
-interface ParseSession {
+interface ParseSessionData {
   readonly defaultColor: boolean;
   readonly warnings: DeprecationWarning[];
-  validators?: Array<() => void>;
   colorMode?: ColorMode;
+}
+
+interface CollectingParseSession extends ParseSessionData {
+  readonly validation: {
+    readonly phase: 'collecting';
+    readonly validators: Array<() => void>;
+  };
+}
+
+interface RunningParseSession extends ParseSessionData {
+  readonly validation: {
+    readonly phase: 'running';
+    readonly validators: readonly (() => void)[];
+  };
+}
+
+interface CompleteParseSession extends ParseSessionData {
+  readonly validation: {
+    readonly phase: 'complete';
+  };
 }
 
 export const outputColorModes = new WeakMap<object, ColorMode>();
@@ -91,7 +110,11 @@ export function parseConfigured<Value>(
   options: ParseOptions = {},
 ): ParseOutcome<Value> {
   validateConfigShape(options.config);
-  const session: ParseSession = { defaultColor, warnings: [] };
+  const session: CollectingParseSession = {
+    defaultColor,
+    warnings: [],
+    validation: { phase: 'collecting', validators: [] },
+  };
   try {
     const value = parseDefinition(
       definition,
@@ -102,12 +125,10 @@ export function parseConfigured<Value>(
       session,
       options.config,
     ) as Value;
-    session.validators?.forEach((validate) => {
-      validate();
-    });
+    const completed = runDeferredValidators(session);
     const outcome = { ok: true, type: 'value', value } as const;
-    if (session.colorMode !== undefined) {
-      outputColorModes.set(outcome, session.colorMode);
+    if (completed.colorMode !== undefined) {
+      outputColorModes.set(outcome, completed.colorMode);
     }
     setWarnings(outcome, session.warnings);
     return outcome;
@@ -126,6 +147,27 @@ export function parseConfigured<Value>(
     }
     throw error;
   }
+}
+
+function deferValidator(session: CollectingParseSession, validate: () => void): void {
+  session.validation.validators.push(validate);
+}
+
+function runDeferredValidators(session: CollectingParseSession): CompleteParseSession {
+  const running: RunningParseSession = {
+    ...session,
+    validation: {
+      phase: 'running',
+      validators: session.validation.validators,
+    },
+  };
+  for (const validate of running.validation.validators) {
+    validate();
+  }
+  return {
+    ...running,
+    validation: { phase: 'complete' },
+  };
 }
 
 export function tryParseConfigured<Value>(
@@ -147,7 +189,7 @@ export function tryParseConfigured<Value>(
 }
 
 interface ParseState extends RelationState {
-  readonly session: ParseSession;
+  readonly session: CollectingParseSession;
   positionalIndex: number;
   subcommand?: { readonly name: string; readonly args: Record<string, unknown>; };
 }
@@ -178,7 +220,7 @@ function parseDefinition(
   argvOffset: number,
   path: readonly string[],
   inheritedGlobals: readonly GlobalBinding[],
-  session: ParseSession,
+  session: CollectingParseSession,
   config: CommandConfig | undefined,
 ): Record<string, unknown> {
   collectDeprecation(
@@ -216,16 +258,11 @@ function parseDefinition(
       && !definition.disableHelpFlag
       && (token === '--help' || token === '-h')
     ) {
-      throw new DisplayRequest({
-        ok: true,
-        type: 'display',
-        kind: DisplayKind.Help,
-        output: renderHelp(
-          definition,
-          path,
-          inheritedGlobals.map(({ argument }) => argument),
-        ),
-      });
+      throw new DisplayRequest(createHelpDisplay(
+        definition,
+        path,
+        inheritedGlobals.map(({ argument }) => argument),
+      ));
     }
     if (
       wordState.kind === 'command'
@@ -290,18 +327,13 @@ function parseDefinition(
         && !definition.disableHelpSubcommand
         && !hasExactSubcommand(definition, token)
       ) {
-        throw new DisplayRequest({
-          ok: true,
-          type: 'display',
-          kind: DisplayKind.Help,
-          output: renderSubcommandHelp(
-            definition,
-            argv.slice(index + 1),
-            argvOffset + index + 1,
-            path,
-            inheritedGlobals,
-          ),
-        });
+        throw new DisplayRequest(renderSubcommandHelp(
+          definition,
+          argv.slice(index + 1),
+          argvOffset + index + 1,
+          path,
+          inheritedGlobals,
+        ));
       }
       const child = resolveSubcommand(
         definition,
@@ -457,8 +489,7 @@ function parseDefinition(
   const validate = definition.validate;
   if (validate !== undefined) {
     // Ancestor configuration can update inherited value sources after a child is parsed.
-    session.validators ??= [];
-    session.validators.push(() => {
+    deferValidator(session, () => {
       const issue = validate(result as never);
       if (issue !== undefined) {
         reportValidationIssue(issue, definition, path, state, inheritedArguments);
@@ -925,7 +956,7 @@ function renderSubcommandHelp(
   argvOffset: number,
   path: readonly string[],
   inheritedGlobals: readonly GlobalBinding[],
-): string {
+): ParseDisplay {
   let current = definition;
   let currentPath = [...path];
   let inheritedArguments = inheritedGlobals.map(({ argument }) => argument);
@@ -960,7 +991,7 @@ function renderSubcommandHelp(
     currentPath = [...currentPath, child.name];
     inheritedArguments = globalsForChild;
   }
-  return renderHelp(current, currentPath, inheritedArguments);
+  return createHelpDisplay(current, currentPath, inheritedArguments);
 }
 
 function parseLongOption(
@@ -1511,17 +1542,12 @@ function storeSwitch(
     || argument.action === ArgumentAction.HelpShort
     || argument.action === ArgumentAction.HelpLong
   ) {
-    throw new DisplayRequest({
-      ok: true,
-      type: 'display',
-      kind: DisplayKind.Help,
-      output: renderHelp(
-        definition,
-        path,
-        inheritedArguments,
-        argument.action !== ArgumentAction.HelpShort,
-      ),
-    });
+    throw new DisplayRequest(createHelpDisplay(
+      definition,
+      path,
+      inheritedArguments,
+      argument.action !== ArgumentAction.HelpShort,
+    ));
   }
   if (argument.action === ArgumentAction.Version) {
     if (definition.version === undefined) {
@@ -1733,12 +1759,7 @@ function validateParsedValues(
     && suppliedArgumentNames(state).next().done === true
     && state.subcommand === undefined
   ) {
-    throw new DisplayRequest({
-      ok: true,
-      type: 'display',
-      kind: DisplayKind.Help,
-      output: renderHelp(definition, path, inheritedArguments),
-    });
+    throw new DisplayRequest(createHelpDisplay(definition, path, inheritedArguments));
   }
   if (definition.subcommandRequired && state.subcommand === undefined) {
     throw commandError(
