@@ -33,7 +33,6 @@ import {
 import type {
   CommandArguments,
   CommandType,
-  // biome-ignore lint/correctness/noUnusedImports: The unique symbol is used as a declaration key.
   commandTypeKey,
   DuplicateArgument,
   DuplicateGroup,
