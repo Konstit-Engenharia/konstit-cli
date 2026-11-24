@@ -53,8 +53,8 @@ describe('enum value parsers', () => {
     });
 
     const help = cli.renderHelp();
-    expect(help).toContain('Usage: tool [OPTIONS] <MODE>');
-    expect(help).toContain('  <MODE>  [possible values: fast, slow] [slow: Slow mode; aliases: s] [case-insensitive values]');
+    expect(help).toContain('Usage: tool [options] <mode>');
+    expect(help).toContain('  <mode>  [possible values: fast, slow] [slow: Slow mode; aliases: s] [case-insensitive values]');
     expect(help).toMatch(/--fallback <MODE> +\[possible values: fast, slow\]/);
     expect(help).toMatch(/--preferred <fast\|slow> +\[slow: /);
     expect(help).not.toContain('legacy');
@@ -106,7 +106,7 @@ describe('enum value parsers', () => {
       ] as const,
     );
 
-    expect(parser.label).toBe('VALUE');
+    expect(parser.label).toBe('value');
     expect(parser.completions).toEqual([]);
     expect(parser.parse('secret')).toBe('secret');
     expect(parser.parse('s')).toBe('secret');

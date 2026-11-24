@@ -190,10 +190,10 @@ describe('modular command coverage', () => {
 
   test('renders short-only, fallback, zero-width, unbounded, trailing, and default values', () => {
     const shortOnly = command('short', { args: [optionWithoutLong('x')] });
-    expect(shortOnly.renderUsage()).toContain('-x <STRING>');
+    expect(shortOnly.renderUsage()).toContain('-x <string>');
 
     const fallback = command('fallback', { args: [optionWithoutLong()] });
-    expect(fallback.renderUsage()).toContain('value <STRING>');
+    expect(fallback.renderUsage()).toContain('value <string>');
 
     const help = command('help-shapes', {
       args: [
@@ -205,9 +205,9 @@ describe('modular command coverage', () => {
       ],
     }).renderHelp();
     expect(help).toContain('--zero');
-    expect(help).toContain('[<STRING>...]');
-    expect(help).toContain('<STRING> <STRING>...');
-    expect(help).toContain('[TAIL]...');
+    expect(help).toContain('[<string>...]');
+    expect(help).toContain('<string> <string>...');
+    expect(help).toContain('[tail]...');
     expect(help).toContain('[default: safe]');
   });
 

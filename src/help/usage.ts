@@ -28,7 +28,7 @@ export function displayName(definition: CommandDefinition, name: string): string
 }
 
 export function positionalValueName(argument: ArgumentDefinition): string {
-  return argument.valueName ?? argument.name.toUpperCase();
+  return argument.valueName ?? argument.name.toLowerCase();
 }
 
 export function resolveExampleCommand(example: CommandExampleDefinition, invocation: string): string {
@@ -70,10 +70,10 @@ export function renderUsageText(
     .map((argument) => renderPositionalCount(argument, positionalValueName(argument)));
   return [
     path.join(' '),
-    ...(options ? ['[OPTIONS]'] : []),
+    ...(options ? ['[options]'] : []),
     ...requiredOptionUsage,
     ...positionalUsage,
-    ...(definition.subcommands.some(({ hidden }) => !hidden) ? ['<COMMAND>'] : []),
+    ...(definition.subcommands.some(({ hidden }) => !hidden) ? ['<command>'] : []),
   ].join(' ');
 }
 

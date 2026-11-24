@@ -4,10 +4,7 @@ import {
 } from '../../argument/index.js';
 import { commandError } from '../../help/diagnostics.js';
 import { createHelpDisplay } from '../../help/render.js';
-import {
-  displayArgument,
-  positionalValueName,
-} from '../../help/usage.js';
+import { displayArgument } from '../../help/usage.js';
 import {
   DisplayKind,
   ErrorKind,
@@ -273,7 +270,7 @@ export function parseWith(
     return parsed;
   } catch (cause) {
     const label = source === 'cli' && argument.kind === 'positional'
-      ? `<${positionalValueName(argument)}>`
+      ? `<${argument.valueName ?? argument.name.toUpperCase()}>`
       : `'${display}'`;
     throw commandError(
       ErrorKind.InvalidValue,

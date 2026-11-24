@@ -377,7 +377,7 @@ describe('subcommands', () => {
     const result = cli.tryParse(['add', '--help']);
     expect(result).toMatchObject({ ok: true, type: 'display', kind: DisplayKind.Help });
     if (result.type === 'display') {
-      expect(result.output).toContain('Usage: tool add <FILE>');
+      expect(result.output).toContain('Usage: tool add <file>');
     }
   });
 

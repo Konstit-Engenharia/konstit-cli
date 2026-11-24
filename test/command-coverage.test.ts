@@ -687,15 +687,15 @@ describe('command coverage', () => {
     });
 
     expect(cli.renderUsage()).toBe(
-      'tool [OPTIONS] --pair <STRING> <STRING> --requiredEquals=<STRING>',
+      'tool [options] --pair <string> <string> --requiredEquals=<string>',
     );
-    expect(cli.renderHelp()).toContain('  --pair <STRING> <STRING>');
-    expect(cli.renderHelp()).toContain('  --requiredEquals=<STRING>');
+    expect(cli.renderHelp()).toContain('  --pair <string> <string>');
+    expect(cli.renderHelp()).toContain('  --requiredEquals=<string>');
     expect(cli.renderHelp()).toContain(
-      '  --range <INTEGER> [<INTEGER>] [<INTEGER>]',
+      '  --range <integer> [<integer>] [<integer>]',
     );
-    expect(cli.renderHelp()).toContain('  --equals=<STRING> <STRING>');
-    expect(cli.renderHelp()).toContain('  --optionalEquals[=<STRING>]');
+    expect(cli.renderHelp()).toContain('  --equals=<string> <string>');
+    expect(cli.renderHelp()).toContain('  --optionalEquals[=<string>]');
   });
 
   test('renders very large value counts without expanding every label', () => {
@@ -714,9 +714,9 @@ describe('command coverage', () => {
     });
 
     expect(cli.renderUsage()).toBe(
-      'tool [OPTIONS] --exact <STRING>{1000000} [VALUES]{10..}',
+      'tool [options] --exact <string>{1000000} [values]{10..}',
     );
-    expect(cli.renderHelp()).toContain('  --range <STRING>{10..1000000}');
+    expect(cli.renderHelp()).toContain('  --range <string>{10..1000000}');
     expect(cli.renderHelp().length).toBeLessThan(1_000);
   });
 
@@ -726,10 +726,10 @@ describe('command coverage', () => {
       args: [positional('values', parsers.string, { numArgs: { min: 3 } })],
     });
     expect(optional.renderUsage()).toBe(
-      'optional [<VALUES> <VALUES> <VALUES>...]',
+      'optional [<values> <values> <values>...]',
     );
     expect(optional.renderHelp()).toContain(
-      '  [<VALUES> <VALUES> <VALUES>...]',
+      '  [<values> <values> <values>...]',
     );
     expect(parse(optional, [])).toEqual({ values: undefined });
 
@@ -741,10 +741,10 @@ describe('command coverage', () => {
       })],
     });
     expect(required.renderUsage()).toBe(
-      'required <VALUES> <VALUES> <VALUES>...',
+      'required <values> <values> <values>...',
     );
     expect(required.renderHelp()).toContain(
-      '  <VALUES> <VALUES> <VALUES>...',
+      '  <values> <values> <values>...',
     );
     expect(required.tryParse([])).toMatchObject({
       ok: false,

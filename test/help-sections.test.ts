@@ -32,13 +32,13 @@ test('groups arguments under custom headings in help and documentation', () => {
   });
 
   expect(cli.renderHelp()).toContain(
-    'Input files:\n  <INPUT>\n\nOutput files:\n  --output <STRING>\n\nLogging:\n  -v, --verbose\n\nOptions:\n  -h, --help  Print help\n',
+    'Input files:\n  <input>\n\nOutput files:\n  --output <string>\n\nLogging:\n  -v, --verbose\n\nOptions:\n  -h, --help  Print help\n',
   );
   expect(renderMarkdown(cli)).toContain(
-    '## Input files\n- `<input>` — syntax \\<STRING\\>; arity 1; parser STRING\n\n## Output files\n',
+    '## Input files\n- `<input>` — syntax \\<string\\>; arity 1; parser string\n\n## Output files\n',
   );
   expect(renderManPage(cli)).toContain(
-    '.SH "INPUT FILES"\n.TP\n.B <input>\nsyntax <STRING>; arity 1; parser STRING\n.SH "OUTPUT FILES"\n.TP\n.B \\-\\-output\n',
+    '.SH "INPUT FILES"\n.TP\n.B <input>\nsyntax <string>; arity 1; parser string\n.SH "OUTPUT FILES"\n.TP\n.B \\-\\-output\n',
   );
 
   const metadata = describeCommand(cli);
@@ -64,7 +64,7 @@ test('renders one shared heading for positional and option arguments', () => {
   });
 
   expect(cli.renderHelp()).toContain(
-    'Input "files":\n  <INPUT>\n  --output <STRING>\n\nOptions:\n',
+    'Input "files":\n  <input>\n  --output <string>\n\nOptions:\n',
   );
   expect(cli.renderHelp().split('Input "files":')).toHaveLength(2);
   expect(renderMarkdown(cli).split('## Input "files"')).toHaveLength(2);
@@ -83,7 +83,7 @@ test('keeps built-ins in a shared Options heading', () => {
   });
 
   const help = cli.renderHelp();
-  expect(help).toContain('Options:\n  <INPUT>\n  -h, --help  Print help\n');
+  expect(help).toContain('Options:\n  <input>\n  -h, --help  Print help\n');
   expect(help.split('Options:')).toHaveLength(2);
 });
 
@@ -94,7 +94,7 @@ test('keeps the default options section for generated built-ins', () => {
   });
 
   expect(cli.renderHelp()).toContain(
-    'Output:\n  --output <STRING>\n\nOptions:\n  -h, --help     Print help\n  -V, --version  Print version\n',
+    'Output:\n  --output <string>\n\nOptions:\n  -h, --help     Print help\n  -V, --version  Print version\n',
   );
 });
 
@@ -143,7 +143,7 @@ test('can hide standard flags from descendant help while keeping them available'
     type: 'display',
     kind: 'help',
     output:
-      'branch (2.0.0)\n\nUsage: tool branch [OPTIONS] <COMMAND>\n\nCommands:\n  leaf\n  help  Print help for a subcommand\n\nOptions:\n  --debug\n',
+      'branch (2.0.0)\n\nUsage: tool branch [options] <command>\n\nCommands:\n  leaf\n  help  Print help for a subcommand\n\nOptions:\n  --debug\n',
   });
   for (
     const argv of [

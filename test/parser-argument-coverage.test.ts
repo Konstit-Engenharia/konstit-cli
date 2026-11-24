@@ -161,7 +161,7 @@ describe('built-in value parsers', () => {
     const weekdayMorning = '30 9 * * MON-FRI';
     expect(parsers.cron.parse(weekdayMorning)).toBe(weekdayMorning);
     expect(parsers.cron.parse('@daily')).toBe('@daily');
-    expect(parsers.cron.label).toBe('CRON');
+    expect(parsers.cron.label).toBe('cron');
     expect(() => parsers.cron.parse('0 0 * * * *')).toThrow(
       'expected a schedulable Bun cron expression',
     );
@@ -183,7 +183,7 @@ describe('built-in value parsers', () => {
     ) {
       expect(parsers.color.parse(input)).toBe(input);
     }
-    expect(parsers.color.label).toBe('COLOR');
+    expect(parsers.color.label).toBe('color');
     for (const input of ['not-a-color', 'var(--brand)', '16711680']) {
       expect(() => parsers.color.parse(input)).toThrow(
         'expected a valid CSS color',

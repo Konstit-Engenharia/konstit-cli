@@ -70,7 +70,7 @@ describe('argsConflictWithSubcommands', () => {
         },
       }),
     ).toBe(2);
-    expect(stderr).toEqual([`error: ${message}\n\nUsage: demo [OPTIONS] <COMMAND>\n\nFor more information, try '--help'.\n`]);
+    expect(stderr).toEqual([`error: ${message}\n\nUsage: demo [options] <command>\n\nFor more information, try '--help'.\n`]);
     expect(stdout).not.toHaveBeenCalled();
     expect(handler).not.toHaveBeenCalled();
   });

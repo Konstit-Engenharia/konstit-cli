@@ -24,10 +24,10 @@ import {
 /** Built-in value parsers and factories for custom parsing rules. */
 export const parsers = Object.freeze({
   /** Returns the raw argument text without conversion. */
-  string: createValueParser('STRING', (input) => input),
+  string: createValueParser('string', (input) => input),
 
   /** Parses a base-10 safe integer. */
-  integer: createValueParser('INTEGER', (input) => {
+  integer: createValueParser('integer', (input) => {
     if (!/^[+-]?\d+$/.test(input)) {
       throw new Error('expected an integer');
     }
@@ -39,10 +39,10 @@ export const parsers = Object.freeze({
   }),
 
   /** Parses a finite JavaScript number. */
-  float: createValueParser('NUMBER', finiteNumber),
+  float: createValueParser('number', finiteNumber),
 
   /** Parses a base-10 bigint. */
-  bigint: createValueParser('INTEGER', (input) => {
+  bigint: createValueParser('integer', (input) => {
     if (!/^[+-]?\d+$/.test(input)) {
       throw new Error('expected an integer');
     }
@@ -51,7 +51,7 @@ export const parsers = Object.freeze({
 
   /** Parses common true and false spellings. */
   boolean: createValueParser(
-    'BOOLEAN',
+    'boolean',
     (input) => {
       switch (input.toLowerCase()) {
         case '1':
@@ -72,7 +72,7 @@ export const parsers = Object.freeze({
   ),
 
   /** Parses a URL accepted by the JavaScript URL constructor. */
-  url: createValueParser('URL', (input) => {
+  url: createValueParser('url', (input) => {
     try {
       return new URL(input);
     } catch {
@@ -92,7 +92,7 @@ export const parsers = Object.freeze({
     if (typeof mustExist !== 'boolean') {
       throw new TypeError('Path parser option \'mustExist\' must be a boolean');
     }
-    return createValueParser(kind === 'file' ? 'FILE' : 'DIRECTORY', (input) => {
+    return createValueParser(kind, (input) => {
       if (input === '' || input.includes('\0')) {
         throw new Error('expected a non-empty path without null bytes');
       }
@@ -109,7 +109,7 @@ export const parsers = Object.freeze({
   },
 
   /** Parses a date accepted by the JavaScript Date constructor. */
-  date: createValueParser('DATE', (input) => {
+  date: createValueParser('date', (input) => {
     const value = new Date(input);
     if (Number.isNaN(value.getTime())) {
       throw new Error('expected a valid date');
@@ -118,7 +118,7 @@ export const parsers = Object.freeze({
   }),
 
   /** Parses a duration as an integer millisecond count. Unitless values are milliseconds. */
-  duration: createValueParser('DURATION', (input) =>
+  duration: createValueParser('duration', (input) =>
     scaledInteger(
       input,
       durationUnits,
@@ -126,7 +126,7 @@ export const parsers = Object.freeze({
     )),
 
   /** Parses an SI or IEC byte size as an integer byte count. Unitless values are bytes. */
-  byteSize: createValueParser('BYTES', (input) =>
+  byteSize: createValueParser('bytes', (input) =>
     scaledInteger(
       input,
       byteSizeUnits,
@@ -134,7 +134,7 @@ export const parsers = Object.freeze({
     )),
 
   /** Parses KEY=VALUE, splitting only at the first equals sign. */
-  keyValue: createValueParser('KEY=VALUE', (input): KeyValuePair => {
+  keyValue: createValueParser('key=value', (input): KeyValuePair => {
     const separator = input.indexOf('=');
     if (separator < 1) {
       throw new Error('expected KEY=VALUE with a non-empty key');
@@ -146,7 +146,7 @@ export const parsers = Object.freeze({
   }),
 
   /** Validates a schedulable five-field Bun cron expression or nickname. */
-  cron: createValueParser('CRON', (input) => {
+  cron: createValueParser('cron', (input) => {
     let next: Date | null;
     try {
       next = Bun.cron.parse(input, 0, { tz: 'UTC' });
@@ -160,7 +160,7 @@ export const parsers = Object.freeze({
   }),
 
   /** Validates a CSS color accepted by Bun while preserving its source text. */
-  color: createValueParser('COLOR', (input) => {
+  color: createValueParser('color', (input) => {
     if (Bun.color(input, 'css') === null) {
       throw new Error('expected a valid CSS color');
     }

@@ -433,7 +433,7 @@ export function createEnumParser<const Values extends readonly [EnumDefinition, 
     .map(({ value }) => value);
   const allowedText = visibleValues.join(', ');
   const parser = createValueParser(
-    visibleValues.length === 0 ? 'VALUE' : visibleValues.join('|'),
+    visibleValues.length === 0 ? 'value' : visibleValues.join('|'),
     (input): EnumCanonicalValues<Values> => {
       const canonical = lookup.get(normalizeEnumToken(input, ignoreCase));
       if (canonical === undefined) {
@@ -466,7 +466,7 @@ export function jsonParser<Value>(
   if (guard !== undefined && typeof guard !== 'function') {
     throw new TypeError('A JSON parser guard must be a function');
   }
-  return createValueParser('JSON', (input) => {
+  return createValueParser('json', (input) => {
     let value: unknown;
     try {
       value = JSON.parse(input);
