@@ -1,3 +1,5 @@
+import type { Environment } from './environment.js';
+
 /** Values accepted by caller supplied command configuration. */
 export type ConfigValue = string | readonly string[] | boolean | number;
 
@@ -13,6 +15,8 @@ export interface CommandConfig {
 export interface ParseOptions {
   /** Caller supplied values used below CLI and environment values. */
   readonly config?: CommandConfig;
+  /** Environment variables for this invocation. Defaults to Bun.env. */
+  readonly env?: Environment;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

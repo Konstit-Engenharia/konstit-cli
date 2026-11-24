@@ -1,4 +1,8 @@
 import type { RunOptions } from '../command.js';
+import {
+  readEnv,
+  type Environment,
+} from './environment.js';
 import type {
   OutputChannel,
   OutputWriter,
@@ -18,8 +22,10 @@ export function resolveOutputColor(
   mode: ColorMode | undefined,
   color: boolean | undefined,
   writer: OutputWriter | undefined,
+  env?: Environment,
 ): OutputColor {
-  if (Bun.env.NO_COLOR !== undefined || mode === 'never') {
+  const environment = env ?? Bun.env;
+  if (readEnv(environment, 'NO_COLOR') !== undefined || mode === 'never') {
     return { enabled: false, format: 'ansi-16' };
   }
   const requested = mode === 'always' ? true : color;
@@ -27,8 +33,8 @@ export function resolveOutputColor(
     return { enabled: requested, format: 'ansi-16m' };
   }
   const stream = process[channel];
-  const enabled = writer === undefined && stream.isTTY === true && Bun.env.TERM !== 'dumb';
-  const depth = enabled ? stream.getColorDepth?.() ?? 4 : 4;
+  const enabled = writer === undefined && stream.isTTY === true && readEnv(environment, 'TERM') !== 'dumb';
+  const depth = enabled ? stream.getColorDepth?.(env) ?? 4 : 4;
   return {
     enabled,
     format: depth >= 24 ? 'ansi-16m' : depth >= 8 ? 'ansi-256' : 'ansi-16',
@@ -36,6 +42,6 @@ export function resolveOutputColor(
 }
 
 /** The parsed color flag uses stdout capability independently of output capture. */
-export function handlerColorEnabled(options: RunOptions = {}): boolean {
-  return resolveOutputColor('stdout', undefined, options.color, undefined).enabled;
+export function handlerColorEnabled(options: Pick<RunOptions, 'color' | 'env'>): boolean {
+  return resolveOutputColor('stdout', undefined, options.color, undefined, options.env).enabled;
 }

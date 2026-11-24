@@ -11,6 +11,10 @@ import {
 } from './argument-state.js';
 import { handlerColorEnabled } from './color.js';
 import {
+  readEnv,
+  type Environment,
+} from './environment.js';
+import {
   commandError,
   displayName,
 } from './help.js';
@@ -36,6 +40,7 @@ function hasInputForConditionalDefault(state: RelationState, name: string): bool
 export function applyConditionalDefaults(
   definition: CommandDefinition,
   state: RelationState,
+  env: Environment,
 ): void {
   const rulesByTarget = new Map<string, typeof definition.defaultIf[number][]>();
   for (const rule of definition.defaultIf) {
@@ -76,7 +81,7 @@ export function applyConditionalDefaults(
           : rule.value;
         state.argumentStates.set(target.name, defaultArgument);
         if (target.color) {
-          if (Bun.env.NO_COLOR !== undefined) {
+          if (readEnv(env, 'NO_COLOR') !== undefined) {
             state.values[target.name] = false;
             if (state.session !== undefined) {
               state.session.colorMode = 'never';
@@ -101,6 +106,7 @@ export function applyConditionalDefaults(
 export function applyOverrides(
   definition: CommandDefinition,
   state: RelationState,
+  env: Environment,
 ): void {
   // Resolve every source before clearing any targets so chained rules see the same input.
   const overrides = definition.overrides.filter(({ source }) => hasCommandLineInput(state, source));
@@ -112,10 +118,10 @@ export function applyOverrides(
     restoreArgumentDefault(state, argument);
     if (argument.color) {
       // Clearing a color switch restores the automatic policy used by an absent flag.
-      const colorDisabled = Bun.env.NO_COLOR !== undefined;
+      const colorDisabled = readEnv(env, 'NO_COLOR') !== undefined;
       state.values[target] = colorDisabled
         ? false
-        : state.session?.defaultColor ?? handlerColorEnabled();
+        : state.session?.defaultColor ?? handlerColorEnabled({ env });
       if (state.session !== undefined) {
         state.session.colorMode = colorDisabled ? 'never' : 'auto';
       }

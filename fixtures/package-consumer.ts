@@ -34,6 +34,7 @@ import {
   type KeyValuePair,
   type LinkStyleOptions,
   type OutputWriter,
+  type ParseOptions,
   type ParseOutcome,
   type PathParserOptions,
   type PathStyleOptions,
@@ -145,12 +146,13 @@ void (() => {
   const output: ConsoleWriters = { stdout: syncWriter, stderr: () => {} };
   const consoleOptions: ConsoleOptions = { output, lsColors: '*.csv=38;5;114' };
   const stdin: ReadableStream<Uint8Array> = new Blob(['input']).stream();
+  const parseOptions: ParseOptions = { env: { PROFILE: 'test' } };
   const options: RunParsedOptions = { ...consoleOptions, parseErrorExitCode: 1, color: false, stdin, stderr };
-  const runOptions: RunOptions = { ...options, argv: [] };
+  const runOptions: RunOptions = { ...options, ...parseOptions, argv: [] };
   const executed: Promise<number> = cli.runParsed(outcome, options);
-  const attempted: Promise<number> = cli.runParsed(cli.tryParse([]), options);
+  const attempted: Promise<number> = cli.runParsed(cli.tryParse([], parseOptions), options);
   const run: Promise<number> = cli.run(runOptions);
-  const invokeOptions: InvokeOptions = { stdin };
+  const invokeOptions: InvokeOptions = { ...parseOptions, stdin };
   const invocation: Promise<InvokeResult> = invoke(cli, ['--config', 'tool.json', 'deploy', '--region', 'us'], invokeOptions);
   const configSchema: CommandConfigSchema = generateConfigSchema(cli);
   const loadedConfig: Promise<CommandConfig> = loadConfig('tool.json');

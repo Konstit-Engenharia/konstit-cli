@@ -667,7 +667,7 @@ describe('conditional defaults', () => {
       applyConditionalDefaults(definition, {
         values: { first: 'one', second: undefined },
         argumentStates: new Map(),
-      })
+      }, {})
     ).toThrow('dependency cycle');
 
     const color = colorFlag('color');
@@ -681,24 +681,14 @@ describe('conditional defaults', () => {
         hasEquals: false,
       }],
     } as unknown as CommandDefinition;
-    const previousNoColor = Bun.env.NO_COLOR;
-    Bun.env.NO_COLOR = '1';
-    try {
-      const state: RelationState = {
-        values: { source: 'value', color: true },
-        argumentStates: new Map(),
-        session: {},
-      };
-      recordSuppliedArgument(state, 'source', 'cli');
-      applyConditionalDefaults(colorDefinition, state);
-      expect(state.values.color).toBe(false);
-      expect(state.session?.colorMode).toBe('never');
-    } finally {
-      if (previousNoColor === undefined) {
-        delete Bun.env.NO_COLOR;
-      } else {
-        Bun.env.NO_COLOR = previousNoColor;
-      }
-    }
+    const state: RelationState = {
+      values: { source: 'value', color: true },
+      argumentStates: new Map(),
+      session: {},
+    };
+    recordSuppliedArgument(state, 'source', 'cli');
+    applyConditionalDefaults(colorDefinition, state, { NO_COLOR: '1' });
+    expect(state.values.color).toBe(false);
+    expect(state.session?.colorMode).toBe('never');
   });
 });

@@ -195,7 +195,7 @@ describe('color flag', () => {
   });
 
   test('honors NO_COLOR for all output even without a color flag', async () => {
-    await withColorEnvironment({ noColor: '', term: 'xterm', stdoutTTY: true, stderrTTY: true }, async () => {
+    await withColorEnvironment({ noColor: null, term: 'xterm', stdoutTTY: true, stderrTTY: true }, async () => {
       const messages: string[] = [];
       const cli = command('tool', {
         handler: (_args, { style, output }) => {
@@ -206,6 +206,7 @@ describe('color flag', () => {
       });
       const options = {
         color: true,
+        env: { NO_COLOR: '' },
         lsColors: '*.csv=31',
         stdout: (text: string) => messages.push(text),
         stderr: (text: string) => messages.push(text),
@@ -239,9 +240,19 @@ describe('color flag', () => {
         expect(await cli.run({ ...options, argv: [] })).toBe(0);
         expect(await cli.runParsed(cli.parse([]), options)).toBe(0);
         expect(await cli.run({ ...options, argv: [], lsColors: '*.csv=33' })).toBe(0);
+        expect(await cli.run({ ...options, argv: [], env: { LS_COLORS: '*.csv=34' } })).toBe(0);
+        expect(await cli.run({ ...options, argv: [], env: {} })).toBe(0);
         expect(await cli.run({ ...options, argv: [], lsColors: false })).toBe(0);
         expect(await cli.run({ ...options, argv: [], lsColors: '' })).toBe(0);
-        expect(output).toEqual(['\x1b[31mfile.csv\x1b[0m', '\x1b[32mfile.csv\x1b[0m', '\x1b[33mfile.csv\x1b[0m', 'file.csv', 'file.csv']);
+        expect(output).toEqual([
+          '\x1b[31mfile.csv\x1b[0m',
+          '\x1b[32mfile.csv\x1b[0m',
+          '\x1b[33mfile.csv\x1b[0m',
+          '\x1b[34mfile.csv\x1b[0m',
+          'file.csv',
+          'file.csv',
+          'file.csv',
+        ]);
       } finally {
         restoreEnvironment('LS_COLORS', previous);
       }

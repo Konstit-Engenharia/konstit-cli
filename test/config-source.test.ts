@@ -74,6 +74,16 @@ describe('caller supplied config and value sources', () => {
       const fromCli = unwrapValue(cli.parse(['--value', 'cli'], config));
       expect(fromCli).toEqual({ value: 'cli' });
       expect(getValueSource(fromCli, 'value')).toBe('cli');
+      const fromInjectedEnv = unwrapValue(cli.parse([], { ...config, env: { KONSTIT_CONFIG_SOURCE: '' } }));
+      expect(fromInjectedEnv.value).toBe('');
+      expect(getValueSource(fromInjectedEnv, 'value')).toBe('env');
+      const fromConfig = unwrapValue(cli.parse([], { ...config, env: {} }));
+      expect(fromConfig.value).toBe('config');
+      expect(getValueSource(fromConfig, 'value')).toBe('config');
+      const fromDefault = unwrapValue(cli.parse([], { env: { KONSTIT_CONFIG_SOURCE: undefined } }));
+      expect(fromDefault.value).toBe('default');
+      expect(getValueSource(fromDefault, 'value')).toBe('default');
+      expect(Bun.env.KONSTIT_CONFIG_SOURCE).toBe('environment');
     } finally {
       if (previous === undefined) {
         delete Bun.env.KONSTIT_CONFIG_SOURCE;
@@ -81,17 +91,6 @@ describe('caller supplied config and value sources', () => {
         Bun.env.KONSTIT_CONFIG_SOURCE = previous;
       }
     }
-
-    const defaults = command('tool', {
-      args: [option('value', parsers.string, { default: 'default' })],
-    });
-    const fromConfig = unwrapValue(defaults.parse([], {
-      config: { values: { value: 'config' } },
-    }));
-    expect(fromConfig.value).toBe('config');
-    expect(getValueSource(fromConfig, 'value')).toBe('config');
-    const fromDefault = unwrapValue(defaults.parse([]));
-    expect(getValueSource(fromDefault, 'value')).toBe('default');
   });
 
   test('keeps source metadata on the parsed identity and updates it safely', () => {
@@ -479,32 +478,25 @@ describe('caller supplied config and value sources', () => {
   });
 
   test('an inherited environment value wins over invalid child config', () => {
-    const environmentName = 'KONSTIT_CONFIG_INHERITED_ENV';
-    const previous = Bun.env[environmentName];
-    Bun.env[environmentName] = 'environment';
-    try {
-      const profile = option('profile', parsers.string, {
-        global: true,
-        env: environmentName,
-      });
-      const cli = command('tool', {
-        args: [profile],
-        subcommands: [command('child')],
-      });
-      const result = unwrapValue(cli.parse(['child'], {
-        config: {
-          subcommands: { child: { values: { profile: 1 } } },
-        },
-      }));
-      expect(result.profile).toBe('environment');
-      expect(getValueSource(result, 'profile')).toBe('env');
-    } finally {
-      if (previous === undefined) {
-        delete Bun.env[environmentName];
-      } else {
-        Bun.env[environmentName] = previous;
-      }
+    const profile = option('profile', parsers.integer, {
+      global: true,
+      env: 'KONSTIT_CONFIG_INHERITED_ENV',
+    });
+    const cli = command('tool', {
+      args: [profile],
+      subcommands: [command('child')],
+    });
+    const config = { subcommands: { child: { values: { profile: 'invalid' } } } };
+    const result = cli.tryParse(['child'], { config, env: { KONSTIT_CONFIG_INHERITED_ENV: '42' } });
+    if (result.type !== 'value') {
+      throw new Error(`Expected parsed value, got ${result.type}`);
     }
+    expect(result.value.profile).toBe(42);
+    expect(getValueSource(result.value, 'profile')).toBe('env');
+    expect(cli.tryParse(['child'], { config, env: { KONSTIT_CONFIG_INHERITED_ENV: 'invalid' } })).toMatchObject({
+      type: 'error',
+      error: { kind: 'invalid-value', argumentName: 'profile' },
+    });
   });
 
   test('CLI repeated values replace lower precedence arrays', () => {

@@ -370,6 +370,9 @@ const result = await invoke(serve, [], {
 });
 ```
 
+Pass `env` in the same options object to supply environment variables for the
+invocation. An empty map gives the test an empty environment.
+
 `stdout` and `stderr` contain the concatenated text for each stream. Each item
 in `writes` has a `stream` and a `chunk`, preserving the order and boundaries of
 individual writes across both streams. Unexpected handler exceptions reject
@@ -377,8 +380,21 @@ the invocation.
 
 ## Configuration and value sources
 
-`parse()` and `tryParse()` accept an optional second `ParseOptions` argument.
-`run()` accepts the same tree under `RunOptions.config`:
+Pass `env` to `parse()`, `tryParse()`, `run()`, or `invoke()` to control the
+environment for that invocation. If omitted, the CLI reads `Bun.env`. A
+supplied map replaces `Bun.env` for the CLI's own reads, including variables
+bound to arguments and `NO_COLOR`, `TERM`, and `LS_COLORS` where applicable.
+Missing keys and `undefined` values are unset. The CLI leaves `Bun.env`
+untouched.
+
+```ts
+const env = { PORT: '8080' };
+const parsed = cli.parse([], { env });
+const exitCode = await cli.run({ argv: [], env });
+```
+
+Pass a `CommandConfig` tree as `config` in the same options object to supply
+values below CLI and environment values.
 
 ```ts
 const result = cli.parse([], {

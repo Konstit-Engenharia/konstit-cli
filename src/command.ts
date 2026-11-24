@@ -10,14 +10,12 @@ import {
   type ArgumentType,
 } from './argument.js';
 import { handlerColorEnabled } from './command/color.js';
-import type {
-  CommandConfig,
-  ParseOptions,
-} from './command/config.js';
+import type { ParseOptions } from './command/config.js';
 import type {
   ConsoleOptions,
   HandlerConsole,
 } from './command/console.js';
+import { readEnv } from './command/environment.js';
 import {
   renderHelp,
   renderUsageText,
@@ -768,7 +766,7 @@ class Command<
     return parseConfigured<Infer<this>>(
       definition,
       argv,
-      handlerColorEnabled(),
+      handlerColorEnabled(options),
       options,
     );
   }
@@ -779,7 +777,7 @@ class Command<
     return tryParseConfigured<Infer<this>>(
       definition,
       argv,
-      handlerColorEnabled(),
+      handlerColorEnabled(options),
       options,
     );
   }
@@ -792,11 +790,13 @@ class Command<
       ? { argv: argvOrOptions }
       : argvOrOptions as RunOptions;
     const argv = options.argv ?? Bun.argv.slice(2);
-    if (Bun.env.KONSTIT_CLI_COMPLETE === '1') {
+    const env = options.env ?? Bun.env;
+    if (readEnv(env, 'KONSTIT_CLI_COMPLETE') === '1') {
       return import('./dynamic-completion.js').then(
         ({ runDynamicCompletionRequest }) =>
           runDynamicCompletionRequest(this, {
             argv,
+            env,
             ...(options.stdout === undefined ? {} : { stdout: options.stdout }),
           }),
       );
@@ -1482,11 +1482,9 @@ export interface RunParsedOptions extends ConsoleOptions {
 }
 
 /** Options for parsing argv and handling the result in one call. */
-export interface RunOptions extends RunParsedOptions {
+export interface RunOptions extends RunParsedOptions, ParseOptions {
   /** Arguments to parse. Defaults to `Bun.argv.slice(2)`. */
   readonly argv?: readonly string[];
   /** Controls ANSI styling and the automatic color-flag value. */
   readonly color?: boolean;
-  /** Caller supplied values used below CLI and environment values. */
-  readonly config?: CommandConfig;
 }

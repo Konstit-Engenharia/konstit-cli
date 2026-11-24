@@ -86,6 +86,25 @@ test('invoke supplies configuration only to the current invocation', async () =>
   expect((await invoke(cli, [])).stdout).toBe('3000\n');
 });
 
+test('invoke isolates environment variables across concurrent invocations', async () => {
+  const envName = 'KONSTIT_INVOKE_PORT';
+  const original = Bun.env[envName];
+  const cli = command('serve', {
+    args: [option('port', parsers.integer, { env: envName, default: 3000 })],
+    handler: async ({ port }, { stdout }) => {
+      await stdout(String(port));
+      expect(Bun.env[envName]).toBe(original);
+    },
+  });
+  const results = await Promise.all([
+    invoke(cli, [], { env: { [envName]: '8080' } }),
+    invoke(cli, [], { env: { [envName]: '9000' } }),
+    invoke(cli, [], { env: {}, config: { values: { port: '4000' } } }),
+  ]);
+  expect(results.map(({ exitCode, stdout }) => [exitCode, stdout])).toEqual([[0, '8080'], [0, '9000'], [0, '4000']]);
+  expect(Bun.env[envName]).toBe(original);
+});
+
 test('invoke captures a handler failure alongside earlier output', async () => {
   const cli = command('tool', {
     handler: (_args, { output }) => {

@@ -24,14 +24,14 @@ export interface InvokeResult {
   readonly writes: readonly InvokeWrite[];
 }
 
-/** Configuration and input options for an in-process command invocation. */
-export type InvokeOptions = Pick<RunOptions, 'config' | 'stdin'>;
+/** Configuration, environment, and input options for an in-process command invocation. */
+export type InvokeOptions = Pick<RunOptions, 'config' | 'env' | 'stdin'>;
 
-/** Runs a command in process with optional configuration and stdin, capturing its output. */
+/** Runs a command in process with the supplied options and captures its output. */
 export async function invoke(
   cli: HandledCommand,
   argv: readonly string[],
-  { config, stdin }: InvokeOptions = {},
+  { config, env, stdin }: InvokeOptions = {},
 ): Promise<InvokeResult> {
   const chunks: Record<OutputChannel, string[]> = { stdout: [], stderr: [] };
   const writes: InvokeWrite[] = [];
@@ -44,6 +44,7 @@ export async function invoke(
   const exitCode = await cli.run({
     argv,
     ...(config === undefined ? {} : { config }),
+    ...(env === undefined ? {} : { env }),
     ...(stdin === undefined ? {} : { stdin }),
     stdout,
     stderr,

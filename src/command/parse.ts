@@ -40,6 +40,10 @@ import {
   type ParseOptions,
 } from './config.js';
 import {
+  readEnv,
+  type Environment,
+} from './environment.js';
+import {
   commandError,
   createHelpDisplay,
   displayArgument,
@@ -77,6 +81,7 @@ export type ColorMode = 'auto' | 'always' | 'never';
 
 interface ParseSessionData {
   readonly defaultColor: boolean;
+  readonly env: Environment;
   readonly warnings: DeprecationWarning[];
   colorMode?: ColorMode;
 }
@@ -112,6 +117,7 @@ export function parseConfigured<Value>(
   validateConfigShape(options.config);
   const session: CollectingParseSession = {
     defaultColor,
+    env: options.env ?? Bun.env,
     warnings: [],
     validation: { phase: 'collecting', validators: [] },
   };
@@ -454,8 +460,8 @@ function parseDefinition(
     inheritedArguments,
   );
   applyConfigValues(definition, config, path, state, inheritedGlobals);
-  applyConditionalDefaults(definition, state);
-  applyOverrides(definition, state);
+  applyConditionalDefaults(definition, state, session.env);
+  applyOverrides(definition, state, session.env);
   refreshInheritedSources(state.subcommand, localGlobals);
   validateParsedValues(
     definition,
@@ -531,7 +537,7 @@ function initializeValues(
 ): void {
   for (const argument of definition.arguments) {
     if (argument.color) {
-      const disabled = Bun.env.NO_COLOR !== undefined;
+      const disabled = readEnv(state.session.env, 'NO_COLOR') !== undefined;
       state.values[argument.name] = disabled ? false : state.session.defaultColor;
       state.argumentStates.set(argument.name, disabled ? environmentPolicy : defaultArgument);
       state.session.colorMode = disabled ? 'never' : 'auto';
@@ -606,7 +612,7 @@ function configArgumentValue(
     if (typeof value !== 'boolean') {
       throw new TypeError(`Config value for '${display}' must be a boolean`);
     }
-    state.values[argument.name] = argument.color && Bun.env.NO_COLOR !== undefined
+    state.values[argument.name] = argument.color && readEnv(state.session.env, 'NO_COLOR') !== undefined
       ? false
       : value;
     recordSuppliedArgument(state, argument.name, 'config');
@@ -702,7 +708,7 @@ function applyConfigValues(
       || hasCommandLineInput(binding.state, name)
       || source === 'env'
       || source === 'config'
-      || hasEnvironmentValue(binding.argument)
+      || hasEnvironmentValue(state.session.env, binding.argument)
       || isOverriddenTarget(binding.definition, binding.state, name)
     ) {
       continue;
@@ -719,8 +725,8 @@ function applyConfigValues(
   }
 }
 
-function hasEnvironmentValue(argument: ArgumentDefinition): boolean {
-  return argument.env !== undefined && Bun.env[argument.env] !== undefined;
+function hasEnvironmentValue(env: Environment, argument: ArgumentDefinition): boolean {
+  return argument.env !== undefined && readEnv(env, argument.env) !== undefined;
 }
 
 function isOverriddenTarget(
@@ -752,7 +758,7 @@ function applyEnvironmentFallbacks(
     ) {
       continue;
     }
-    const raw = Bun.env[argument.env];
+    const raw = readEnv(state.session.env, argument.env);
     if (raw === undefined) {
       continue;
     }
@@ -1564,7 +1570,7 @@ function storeSwitch(
   }
   const previous = suppliedArgument(state, argument.name);
   const repeated = previous?.input === 'cli';
-  const colorDisabled = argument.color && Bun.env.NO_COLOR !== undefined;
+  const colorDisabled = argument.color && readEnv(state.session.env, 'NO_COLOR') !== undefined;
   if (
     argument.action === ArgumentAction.SetTrue
     || argument.action === ArgumentAction.SetFalse

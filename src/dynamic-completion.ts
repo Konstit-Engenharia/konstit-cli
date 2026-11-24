@@ -17,6 +17,10 @@ import {
   type ArgumentValues,
 } from './command/argument-state.js';
 import {
+  readEnv,
+  type Environment,
+} from './command/environment.js';
+import {
   writeOutput,
   type OutputWriter,
 } from './command/output.js';
@@ -127,6 +131,7 @@ export interface DynamicCompletionRequestOptions {
   readonly argv?: readonly string[];
   /** Index of the incomplete word. Defaults to the final argv item. */
   readonly cursor?: number;
+  readonly env?: Environment;
   readonly stdout?: OutputWriter;
 }
 
@@ -144,6 +149,7 @@ interface ActiveCommandScope {
 
 interface ScanState extends ArgumentValues {
   active: ActiveCommandScope;
+  readonly env: Environment;
   readonly owners: Map<string, CommandDefinition>;
   readonly scopes: Map<CommandDefinition, RelationState>;
   readonly rawValues: Record<string, string[]>;
@@ -159,10 +165,19 @@ interface ValueTarget {
  * Resolves one completion request without generating or invoking a shell
  * script. argv excludes the executable and includes the incomplete word.
  */
-export async function resolveDynamicCompletion(
+export function resolveDynamicCompletion(
   configuredCommand: CommandType,
   argv: readonly string[],
   options: DynamicCompletionOptions = {},
+): Promise<DynamicCompletionResult> {
+  return resolveCompletion(configuredCommand, argv, options, Bun.env);
+}
+
+async function resolveCompletion(
+  configuredCommand: CommandType,
+  argv: readonly string[],
+  options: DynamicCompletionOptions,
+  env: Environment,
 ): Promise<DynamicCompletionResult> {
   const cursor = options.cursor ?? (argv.length === 0 ? 0 : argv.length - 1);
   validateCursor(cursor, argv.length);
@@ -170,7 +185,7 @@ export async function resolveDynamicCompletion(
   const input = Object.freeze([...argv]);
   const currentWord = input[cursor] ?? '';
   const filter = options.filter ?? true;
-  const state = createScanState(getCommandDefinition(configuredCommand));
+  const state = createScanState(getCommandDefinition(configuredCommand), env);
   scanWords(state, input.slice(0, cursor));
   resolvePendingWordBoundary(state, currentWord);
   finalizeRelations(state);
@@ -226,10 +241,11 @@ export async function runDynamicCompletionRequest(
   configuredCommand: CommandType,
   options: DynamicCompletionRequestOptions = {},
 ): Promise<number> {
-  const result = await resolveDynamicCompletion(
+  const result = await resolveCompletion(
     configuredCommand,
     options.argv ?? Bun.argv.slice(2),
     options.cursor === undefined ? {} : { cursor: options.cursor },
+    options.env ?? Bun.env,
   );
   if (result.candidates.length > 0) {
     const output = `${
@@ -248,7 +264,7 @@ function validateCursor(cursor: number, argvLength: number): void {
   }
 }
 
-function createScanState(root: CommandDefinition): ScanState {
+function createScanState(root: CommandDefinition, env: Environment): ScanState {
   const state: ScanState = {
     active: {
       command: root,
@@ -257,6 +273,7 @@ function createScanState(root: CommandDefinition): ScanState {
       positionalIndex: 0,
       argvState: commandWords,
     },
+    env,
     owners: new Map(),
     scopes: new Map(),
     values: {},
@@ -303,14 +320,14 @@ function finalizeScope(definition: CommandDefinition, target: ArgumentValues, st
     ) {
       continue;
     }
-    const raw = Bun.env[argument.env];
+    const raw = readEnv(state.env, argument.env);
     if (raw !== undefined) {
       const visibleRawValues = state.owners.get(argument.name) === definition ? state.rawValues : undefined;
       applyEnvironmentValue(argument, raw, target, visibleRawValues);
     }
   }
-  applyConditionalDefaults(definition, target);
-  applyOverrides(definition, target);
+  applyConditionalDefaults(definition, target, state.env);
+  applyOverrides(definition, target, state.env);
 }
 
 function applyEnvironmentValue(
@@ -364,10 +381,10 @@ function initializeArguments(
   for (const argument of argumentsToInitialize) {
     delete state.rawValues[argument.name];
     if (argument.color) {
-      const disabled = Bun.env.NO_COLOR !== undefined;
+      const disabled = readEnv(state.env, 'NO_COLOR') !== undefined;
       state.values[argument.name] = !disabled
         && process.stdout.isTTY === true
-        && Bun.env.TERM !== 'dumb';
+        && readEnv(state.env, 'TERM') !== 'dumb';
       state.argumentStates.set(argument.name, disabled ? environmentPolicy : defaultArgument);
     } else {
       restoreArgumentDefault(state, argument);
@@ -715,7 +732,7 @@ function storeSwitch(
   explicitValue?: boolean,
 ): void {
   const firstCliValue = !hasCommandLineInput(state, argument.name);
-  const colorDisabled = argument.color && Bun.env.NO_COLOR !== undefined;
+  const colorDisabled = argument.color && readEnv(state.env, 'NO_COLOR') !== undefined;
   if (argument.kind === 'flag') {
     const value = explicitValue ?? argument.action !== 'setFalse';
     state.values[argument.name] = colorDisabled ? false : value;

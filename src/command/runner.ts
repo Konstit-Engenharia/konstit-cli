@@ -23,6 +23,7 @@ import {
   type AnsiColorFormat,
 } from './color.js';
 import { createConsole } from './console.js';
+import { readEnv } from './environment.js';
 import {
   helpDisplayMetadata,
   sanitizeDiagnostic,
@@ -95,7 +96,7 @@ function writeMessage(channel: OutputChannel, text: string, options: RunOptions)
 }
 
 async function writeParseFailure(error: CliError, options: RunOptions): Promise<number> {
-  const decision = resolveOutputColor('stderr', outputColorModes.get(error), options.color, options.stderr);
+  const decision = resolveOutputColor('stderr', outputColorModes.get(error), options.color, options.stderr, options.env);
   await writeMessage(
     'stderr',
     decision.enabled
@@ -161,7 +162,7 @@ async function writeDisplay(
   display: ParseDisplay,
   options: RunOptions,
 ): Promise<number> {
-  const decision = resolveOutputColor('stdout', outputColorModes.get(display), options.color, options.stdout);
+  const decision = resolveOutputColor('stdout', outputColorModes.get(display), options.color, options.stdout, options.env);
   const metadata = display.kind === DisplayKind.Help
     ? helpDisplayMetadata.get(display)
     : undefined;
@@ -189,7 +190,7 @@ export async function runConfiguredHandler<Args extends object>(
   result: ParseResult<Args>,
   options: RunOptions,
 ): Promise<number> {
-  const lsColors = options.lsColors ?? Bun.env.LS_COLORS;
+  const lsColors = options.lsColors ?? readEnv(options.env ?? Bun.env, 'LS_COLORS');
   if (
     options.parseErrorExitCode !== undefined
     && (!Number.isSafeInteger(options.parseErrorExitCode)
@@ -219,8 +220,8 @@ export async function runConfiguredHandler<Args extends object>(
   await writeWarnings(result, options);
   const mode = outputColorModes.get(result);
   const colors = {
-    stdout: resolveOutputColor('stdout', mode, options.color, options.stdout),
-    stderr: resolveOutputColor('stderr', mode, options.color, options.stderr),
+    stdout: resolveOutputColor('stdout', mode, options.color, options.stdout, options.env),
+    stderr: resolveOutputColor('stderr', mode, options.color, options.stderr, options.env),
   };
   let stdin = options.stdin;
   const context: HandlerContext = Object.freeze({
@@ -234,7 +235,7 @@ export async function runConfiguredHandler<Args extends object>(
     style: createStyle(colors, lsColors),
     output: createConsole(
       options.output,
-      resolveOutputColor('stderr', mode, options.color, options.output?.stderr),
+      resolveOutputColor('stderr', mode, options.color, options.output?.stderr, options.env),
     ),
     global<ArgumentType extends AnyGlobalArgument>(argument: ArgumentType) {
       const argumentDefinition = getArgumentDefinition(argument);

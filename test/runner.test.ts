@@ -384,6 +384,27 @@ test('completion stays ahead of normal validation and handler dispatch', async (
   expect(stdout).toBe(`${Buffer.from('--force').toString('hex')}\t\n`);
 });
 
+test('run resolves completion with the supplied environment', async () => {
+  const cli = command('tool', {
+    args: [
+      option('profile', parsers.string, { env: 'KONSTIT_COMPLETION_PROFILE' }),
+      option('target', parsers.string, { complete: ({ values }) => [String(values.profile)] }),
+    ],
+    handler: () => {
+      throw new Error('Completion invoked a handler');
+    },
+  });
+  const stdout = mock((_text: string) => {});
+  expect(
+    await cli.run({
+      argv: ['--target', ''],
+      env: { KONSTIT_CLI_COMPLETE: '1', KONSTIT_COMPLETION_PROFILE: 'test' },
+      stdout,
+    }),
+  ).toBe(0);
+  expect(stdout.mock.calls).toEqual([[`${Buffer.from('test').toString('hex')}\t\n`]]);
+});
+
 void (() => {
   const cli = command('tool', { args: [option('value', parsers.integer, { required: true })] });
   const other = command('other', { args: [option('value', parsers.string, { required: true })] });
