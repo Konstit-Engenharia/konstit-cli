@@ -105,6 +105,8 @@ export interface ArgumentMetadata {
   readonly literal?: true;
   /** The separator used to join CLI tokens into one value. */
   readonly joinWith?: string;
+  /** Present when a joined trailing positional returns a scalar. */
+  readonly output?: 'scalar';
   /** Whether the argument is inherited by descendant commands. */
   readonly global: boolean;
   /** Whether the argument is omitted from help and completion. */

@@ -251,6 +251,28 @@ describe('dynamic completion coverage', () => {
     expect(result.candidates).toEqual([{ value: 'new,file.txt' }]);
   });
 
+  test('supplies scalar joined output to completion providers', async () => {
+    let context: DynamicCompletionContext | undefined;
+    const cli = command('wrap', {
+      args: [positional('path', parsers.path({ kind: 'file' }), {
+        trailingVarArg: true,
+        literal: true,
+        joinWith: ' ',
+        output: 'scalar',
+        valueDelimiter: ',',
+        env: 'TEST_SCALAR_PATH_COMPLETION',
+        complete: (received) => {
+          context = received;
+          return [];
+        },
+      })],
+    });
+    await resolveDynamicCompletion(cli, ['My', 'Documents/a.txt', '']);
+    expect(context?.values.path).toBe('My Documents/a.txt');
+    await resolveDynamicCompletion(cli, [''], { env: { TEST_SCALAR_PATH_COMPLETION: 'one.txt,two.txt' } });
+    expect(context?.values.path).toBeUndefined();
+  });
+
   test('handles the option terminator with and without a positional', async () => {
     const positionalCli = command('literal', {
       args: [positional('value', parsers.string, { valueHint: 'directory' })],

@@ -12,7 +12,7 @@ export type {
   PositionalOptions,
   ValueCountRange,
 } from './options.js';
-export { ArgumentAction, getArgumentDefinition } from './runtime.js';
+export { ArgumentAction, collectsArgumentValues, getArgumentDefinition } from './runtime.js';
 export type {
   AnyArgument,
   AnyGlobalArgument,

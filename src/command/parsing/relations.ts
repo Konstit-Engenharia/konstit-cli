@@ -1,4 +1,7 @@
-import type { ArgumentDefinition } from '../../argument/index.js';
+import {
+  collectsArgumentValues,
+  type ArgumentDefinition,
+} from '../../argument/index.js';
 import { commandError } from '../../help/diagnostics.js';
 import { displayName } from '../../help/usage.js';
 import { ErrorKind } from '../../result/error.js';
@@ -23,11 +26,6 @@ export interface RelationState extends ArgumentValues {
     readonly defaultColor?: boolean;
     colorMode?: 'auto' | 'always' | 'never';
   };
-}
-
-function collectsValues(argument: ArgumentDefinition): boolean {
-  return (argument.kind === 'option' || argument.kind === 'positional')
-    && (argument.repeatable || argument.trailingVarArg || argument.maxValues !== 1);
 }
 
 function hasInputForConditionalDefault(state: RelationState, name: string): boolean {
@@ -74,7 +72,7 @@ export function applyConditionalDefaults(
         } else if (!hasInputForConditionalDefault(state, rule.source)) {
           continue;
         }
-        state.values[target.name] = collectsValues(target)
+        state.values[target.name] = collectsArgumentValues(target)
           ? [...(rule.value as readonly unknown[])]
           : rule.value;
         state.argumentStates.set(target.name, defaultArgument);

@@ -89,6 +89,12 @@ export function getArgumentDefinition(argument: ArgumentType): ArgumentDefinitio
   return definition;
 }
 
+export function collectsArgumentValues(argument: ArgumentDefinition | undefined): boolean {
+  return argument !== undefined
+    && (argument.kind === 'option' || argument.kind === 'positional')
+    && (argument.repeatable || argument.maxValues !== 1);
+}
+
 function validateName(name: string): void {
   if (typeof name !== 'string') {
     throw new TypeError('An argument name must be a string');
@@ -229,6 +235,9 @@ export function validateConfiguredValueOptions(
   if (options.joinWith !== undefined && options.literal !== true) {
     throw new TypeError('joinWith requires a literal trailing positional');
   }
+  if (options.output === 'scalar' && options.joinWith === undefined) {
+    throw new TypeError('Scalar output requires joinWith');
+  }
   if (hasDefaultValues) {
     if (!Array.isArray(options.defaultValues)) {
       throw new TypeError('Argument defaultValues must be an array');
@@ -250,7 +259,7 @@ export function validateConfiguredValueOptions(
       ? options.numArgs !== 1
       : options.numArgs.max !== 1;
     const collectsValues = options.repeatable === true
-      || options.trailingVarArg === true
+      || (options.trailingVarArg === true && options.output !== 'scalar')
       || numArgsCollectsValues;
     if (!collectsValues) {
       throw new TypeError('defaultValues requires a collection argument');
@@ -310,7 +319,7 @@ export function validateConfiguredValueOptions(
   if (hasDefault && options.repeatable === true) {
     throw new TypeError('A repeatable argument cannot have a scalar default');
   }
-  if (hasDefault && options.trailingVarArg === true) {
+  if (hasDefault && options.trailingVarArg === true && options.output !== 'scalar') {
     throw new TypeError('A trailing argument cannot have a scalar default');
   }
   if (hasDefault && options.numArgs !== undefined) {
@@ -370,7 +379,7 @@ export function validateArgumentOptionKeys(
       ]
       : []),
     ...(kind === 'option' ? ['defaultMissing', 'requireEquals', 'unique'] : []),
-    ...(kind === 'positional' ? ['trailingVarArg', 'literal', 'joinWith'] : []),
+    ...(kind === 'positional' ? ['trailingVarArg', 'literal', 'joinWith', 'output'] : []),
     ...(kind === 'flag' ? ['negated'] : []),
   ];
   const deferredUnsupported = kind === 'option'
@@ -405,6 +414,9 @@ export function validateArgumentOptionKeys(
   }
   if (configured.helpHeading === '') {
     throw new TypeError(`${kind} argument option 'helpHeading' cannot be empty`);
+  }
+  if (configured.output !== undefined && configured.output !== 'scalar') {
+    throw new TypeError(`${kind} argument option 'output' must be 'scalar'`);
   }
   if (typeof configured.helpHeading === 'string' && /[\r\n]/u.test(configured.helpHeading)) {
     throw new TypeError(`${kind} argument option 'helpHeading' cannot contain line breaks`);
@@ -601,10 +613,11 @@ export function applyValueArgumentOptions(
   if (options.trailingVarArg === true) {
     configured = copyDefinition(configured, {
       minValues: configured.presence === 'required' ? 1 : 0,
-      maxValues: null,
+      maxValues: options.output === 'scalar' ? 1 : null,
       trailingVarArg: true,
       ...(options.literal === true ? { literal: true } : {}),
       ...(options.joinWith === undefined ? {} : { joinWith: options.joinWith }),
+      ...(options.output === undefined ? {} : { output: options.output }),
       allowHyphenValues: true,
     });
   }

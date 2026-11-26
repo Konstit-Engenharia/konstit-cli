@@ -75,6 +75,8 @@ export interface ArgumentDefinition {
   readonly literal?: true;
   /** The separator used to join all CLI tokens of a literal trailing positional before parsing. */
   readonly joinWith?: string;
+  /** Whether the joined trailing positional returns a scalar. */
+  readonly output?: 'scalar';
   /** Whether the argument is inherited by descendant commands. */
   readonly global: boolean;
   /** Whether to omit the argument from help and completion. */

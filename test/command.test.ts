@@ -10,9 +10,11 @@ import {
   DisplayKind,
   ErrorKind,
   flag,
+  generateConfigSchema,
   option,
   parsers,
   positional,
+  validateConfig,
 } from '../src';
 import type { ParseOutcome } from '../src/result/error';
 
@@ -405,6 +407,63 @@ describe('command parsing', () => {
     );
     expect(() => positional('args', parsers.string, { trailingVarArg: true, literal: true, joinWith: 1 } as never)).toThrow(
       'option \'joinWith\' must be a string',
+    );
+  });
+
+  test('limits a scalar joined positional to one fallback value', () => {
+    const cli = command('wrap', {
+      args: [positional('path', parsers.path({ kind: 'file' }), {
+        trailingVarArg: true,
+        literal: true,
+        joinWith: ' ',
+        output: 'scalar',
+        env: 'TEST_SCALAR_PATH',
+        valueDelimiter: ',',
+      })],
+    });
+    expect(cli.parse([], { env: {} })).toMatchObject({ type: 'value', value: { path: undefined } });
+    expect(cli.parse([], { env: { TEST_SCALAR_PATH: 'My Documents/a.txt' } })).toMatchObject({
+      type: 'value',
+      value: { path: 'My Documents/a.txt' },
+    });
+    for (const path of ['My Documents/a.txt', ['My Documents/a.txt']]) {
+      expect(cli.parse([], { env: {}, config: { values: { path } } })).toMatchObject({
+        type: 'value',
+        value: { path: 'My Documents/a.txt' },
+      });
+    }
+
+    const config = { values: { path: ['one.txt', 'two.txt'] } };
+    for (const options of [{ env: {}, config }, { env: { TEST_SCALAR_PATH: 'one.txt,two.txt' } }]) {
+      expect(cli.tryParse([], options)).toMatchObject({ type: 'error', error: { kind: ErrorKind.TooManyValues, argumentName: 'path' } });
+    }
+    expect(cli.parse(['My', 'Documents/a,b.txt'], { env: { TEST_SCALAR_PATH: 'one.txt,two.txt' }, config })).toMatchObject({
+      type: 'value',
+      value: { path: 'My Documents/a,b.txt' },
+    });
+    expect(validateConfig(cli, config)).toMatchObject({ valid: false, issues: [{ kind: 'too-many-values', argumentName: 'path' }] });
+    expect(generateConfigSchema(cli).properties.values.properties.path).toMatchObject({
+      anyOf: [{ type: 'string' }, { type: 'array', minItems: 0, maxItems: 1 }],
+    });
+  });
+
+  test('uses scalar defaults for joined positionals', () => {
+    const options = { trailingVarArg: true, literal: true, joinWith: ' ', output: 'scalar' } as const;
+    const cli = command('wrap', {
+      args: [flag('cache'), positional('program'), positional('path', parsers.string, { ...options, default: 'fallback.txt' })],
+      defaultIf: [{ source: 'cache', target: 'path', value: 'cached.txt' }],
+    });
+    expect(parse(cli, []).path).toBe('fallback.txt');
+    expect(parse(cli, ['--cache']).path).toBe('cached.txt');
+    expect(parse(cli, ['--cache', 'read', 'input', 'file.txt']).path).toBe('input file.txt');
+
+    expect(() => positional('path', parsers.string, { trailingVarArg: true, literal: true, output: 'scalar' } as never))
+      .toThrow('Scalar output requires joinWith');
+    expect(() => positional('path', parsers.string, { ...options, output: 'many' } as never)).toThrow(
+      'option \'output\' must be \'scalar\'',
+    );
+    expect(() => positional('path', parsers.string, { ...options, defaultValues: ['one', 'two'] } as never)).toThrow(
+      'defaultValues requires a collection argument',
     );
   });
 });

@@ -1,5 +1,6 @@
 import {
   ArgumentAction,
+  collectsArgumentValues,
   type ArgumentDefinition,
 } from '../argument/index.js';
 import { shellQuote } from '../completion/quotes.js';
@@ -43,7 +44,7 @@ function exampleError(definition: CommandDefinition, message: string): TypeError
 
 function exampleValues(definition: CommandDefinition, argument: ArgumentDefinition, input: unknown): ExampleValue[] {
   const isArray = Array.isArray(input);
-  const collectsValues = argument.repeatable || argument.trailingVarArg || argument.maxValues !== 1;
+  const collectsValues = collectsArgumentValues(argument);
   if (collectsValues !== isArray && !(isArray && input.length === 0 && argument.minValues === 0)) {
     throw exampleError(definition, `'${argument.name}' requires ${collectsValues ? 'an array' : 'one value'}`);
   }

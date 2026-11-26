@@ -153,6 +153,7 @@ function describeArgument(argument: ArgumentDefinition, includeHidden: boolean):
     trailingVarArg: argument.trailingVarArg,
     ...(argument.literal === true ? { literal: true as const } : {}),
     ...(argument.joinWith === undefined ? {} : { joinWith: argument.joinWith }),
+    ...(argument.output === undefined ? {} : { output: argument.output }),
     global: argument.global,
     hidden: argument.hidden,
     ...(argument.sensitive ? { sensitive: true as const } : {}),

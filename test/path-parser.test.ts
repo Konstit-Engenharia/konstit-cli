@@ -83,6 +83,29 @@ test('joins an unquoted literal trailing path before checking that it exists', a
   }
 });
 
+test('returns a required joined path as a scalar', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'konstit-cli-scalar-path-'));
+  try {
+    const file = join(directory, 'input file.txt');
+    await writeFile(file, 'input');
+    const cli = command('open-file', {
+      args: [positional('path', parsers.path({ kind: 'file', mustExist: true }), {
+        trailingVarArg: true,
+        literal: true,
+        joinWith: ' ',
+        output: 'scalar',
+        required: true,
+      })],
+    });
+
+    expect(cli.parse([join(directory, 'input'), 'file.txt'])).toMatchObject({ type: 'value', value: { path: file } });
+    expect(cli.tryParse([])).toMatchObject({ type: 'error', error: { kind: ErrorKind.MissingRequiredArgument, argumentName: 'path' } });
+    expect(cli.renderUsage()).toBe('open-file <path>...');
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('path parsers reject malformed paths and options', () => {
   const file = parsers.path({ kind: 'file' });
   expect(() => file.parse('')).toThrow('expected a non-empty path');

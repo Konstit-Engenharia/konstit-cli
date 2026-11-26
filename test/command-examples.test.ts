@@ -13,6 +13,7 @@ import {
   positional,
   renderManPage,
   renderMarkdown,
+  type Infer,
 } from '../src';
 import { invoke } from '../src/testing';
 
@@ -206,6 +207,46 @@ test('renders a joined trailing value as one quoted argument in structured examp
   expect(() => command('wrap', { args, examples: [{ args: { path: ['one', 'two'] }, description: '' }] })).toThrow(
     'accepts at most one joined value',
   );
+});
+
+const scalarPathOptions = { trailingVarArg: true, literal: true, joinWith: ' ', output: 'scalar' } as const;
+const scalarPath = parsers.path({ kind: 'file' });
+const requiredScalarPath = command('open-file', {
+  args: [positional('path', scalarPath, { ...scalarPathOptions, required: true })],
+  examples: [{ args: { path: 'My Documents/a.txt' }, description: '' }],
+});
+const optionalScalarPath = command('open-file', { args: [positional('path', scalarPath, scalarPathOptions)] });
+
+void (() => {
+  const checkOutputs = (
+    required: Infer<typeof requiredScalarPath>['path'],
+    optional: Infer<typeof optionalScalarPath>['path'],
+  ): [string, string | undefined] => [required, optional];
+  void checkOutputs;
+  command('open-file', {
+    args: [positional('path', scalarPath, scalarPathOptions)],
+    // @ts-expect-error a scalar positional example accepts a single value
+    examples: [{ args: { path: ['one.txt', 'two.txt'] }, description: '' }],
+  });
+  // @ts-expect-error scalar output requires a separator
+  positional('path', scalarPath, { trailingVarArg: true, literal: true, output: 'scalar' });
+  // @ts-expect-error scalar positionals use default instead of defaultValues
+  positional('path', scalarPath, { ...scalarPathOptions, defaultValues: ['one.txt', 'two.txt'] });
+});
+
+test('uses scalar path types and help examples', () => {
+  const required: Infer<typeof requiredScalarPath>['path'] = 'My Documents/a.txt';
+  const optional: Infer<typeof optionalScalarPath>['path'] = undefined;
+  expect(requiredScalarPath.renderHelp()).toEndWith('  $ open-file \'My Documents/a.txt\'\n');
+  expect(describeCommand(requiredScalarPath).arguments[0]?.output).toBe('scalar');
+  expect(requiredScalarPath.parse([required])).toMatchObject({ type: 'value', value: { path: required } });
+  expect(optionalScalarPath.parse([])).toMatchObject({ type: 'value', value: { path: optional } });
+  expect(() =>
+    command('open-file', {
+      args: [positional('path', scalarPath, scalarPathOptions)],
+      examples: [{ args: { path: ['one.txt', 'two.txt'] }, description: '' }] as never,
+    })
+  ).toThrow('requires one value');
 });
 
 test('uses an option terminator before the next structured flag', () => {

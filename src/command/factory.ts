@@ -1,13 +1,13 @@
-import type { AnyArgument } from '../argument/index.js';
+import {
+  collectsArgumentValues,
+  type AnyArgument,
+} from '../argument/index.js';
 import type { ParseOptions } from '../configuration/shape.js';
 import type {
   ParseOutcome,
   ParseResult,
 } from '../result/error.js';
-import {
-  Command,
-  conditionalDefaultCollectsValues,
-} from './configurator.js';
+import { Command } from './configurator.js';
 import { prepareCommandExamples } from './examples.js';
 import {
   copyCommand,
@@ -204,7 +204,7 @@ export function command(
           source: rule.source,
           ...(Object.hasOwn(rule, 'equals') ? { equals: rule.equals } : {}),
           target: rule.target,
-          value: conditionalDefaultCollectsValues(argumentsByName.get(rule.target))
+          value: collectsArgumentValues(argumentsByName.get(rule.target))
               && Array.isArray(rule.value)
             ? Object.freeze([...rule.value])
             : rule.value,

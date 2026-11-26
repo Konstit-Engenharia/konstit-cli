@@ -1,7 +1,6 @@
 import {
   getArgumentDefinition,
   type ArgumentCardinality,
-  type ArgumentDefinition,
   type ArgumentKind,
   type ArgumentType,
 } from '../argument/index.js';
@@ -59,14 +58,6 @@ function toValueConditions(
   conditions: readonly (readonly [string, unknown])[],
 ): readonly ValueConditionDefinition[] {
   return conditions.map(([source, expected,]) => ({ source, expected }));
-}
-
-export function conditionalDefaultCollectsValues(
-  argument: ArgumentDefinition | undefined,
-): boolean {
-  return argument !== undefined
-    && (argument.kind === 'option' || argument.kind === 'positional')
-    && (argument.repeatable || argument.trailingVarArg || argument.maxValues !== 1);
 }
 
 function validateValueConditions(

@@ -1,5 +1,6 @@
 import {
   ArgumentAction,
+  collectsArgumentValues,
   type ArgumentDefinition,
 } from '../../argument/index.js';
 import { commandError } from '../../help/diagnostics.js';
@@ -124,9 +125,7 @@ export function storeParsedValues(
   inheritedArguments: readonly ArgumentDefinition[] = [],
   argsOverrideSelf = definition.argsOverrideSelf,
 ): void {
-  const collectsValues = argument.repeatable
-    || argument.trailingVarArg
-    || argument.maxValues !== 1;
+  const collectsValues = collectsArgumentValues(argument);
   const previous = state.argumentStates.get(argument.name);
   const replaceSource = previous?.source !== undefined && previous.source !== source;
   const repeatedOption = argument.kind === 'option'

@@ -1,4 +1,7 @@
-import type { ArgumentDefinition } from '../../argument/types.js';
+import {
+  collectsArgumentValues,
+  type ArgumentDefinition,
+} from '../../argument/index.js';
 import type { CommandDefinition } from '../schema.js';
 import {
   validateArray,
@@ -123,9 +126,7 @@ function validateConditionalDefaults(
     if (target === undefined) {
       continue;
     }
-    const collectsValues = (target.kind === 'option' || target.kind === 'positional')
-      && (target.repeatable || target.trailingVarArg || target.maxValues !== 1);
-    if (collectsValues) {
+    if (collectsArgumentValues(target)) {
       const values = validateDenseArray(rule.value, `${context} collection value`);
       validateDefaultValueCount(target, values.length, `${context} collection value`);
     } else {

@@ -2,7 +2,7 @@ import type { ArgumentDefinition } from '../../argument/types.js';
 import { shellQuote } from '../quotes.js';
 
 export function shellMaximum(argument: ArgumentDefinition): number {
-  return argument.maxValues ?? -1;
+  return argument.trailingVarArg ? -1 : argument.maxValues ?? -1;
 }
 
 export function shellOptionSpec(argument: ArgumentDefinition): string {

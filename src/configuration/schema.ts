@@ -98,7 +98,7 @@ function arrayAritySchema(
 ): Pick<ArraySchema, 'minItems' | 'maxItems'> {
   // Repeated occurrences can be partitioned in several valid ways, so JSON
   // Schema cannot express their complete occurrence arithmetic faithfully.
-  if (argument.valueDelimiter !== undefined) {
+  if (argument.valueDelimiter !== undefined && argument.output !== 'scalar') {
     return {};
   }
   if (argument.repeatable) {

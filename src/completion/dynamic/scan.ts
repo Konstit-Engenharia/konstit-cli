@@ -1,5 +1,6 @@
 import {
   ArgumentAction,
+  collectsArgumentValues,
   type ArgumentDefinition,
 } from '../../argument/index.js';
 import {
@@ -167,11 +168,14 @@ function applyEnvironmentValue(
   }
 
   const values = splitValue(argument, raw);
+  if (argument.output === 'scalar' && values.length > 1) {
+    return;
+  }
   target.argumentStates.set(argument.name, { kind: 'unparsed', input: 'env' });
   if (visibleRawValues !== undefined) {
     visibleRawValues[argument.name] = [...values];
   }
-  target.values[argument.name] = collectsValues(argument) ? [] : undefined;
+  target.values[argument.name] = collectsArgumentValues(argument) ? [] : undefined;
   const parsed = parseCompletionValues(argument, values);
   if (parsed.length > 0) {
     storeCompletedValues(argument, parsed, target, 'env');
@@ -230,7 +234,7 @@ function applyConfigValue(
     recordSuppliedArgument(target, argument.name, 'config');
     return;
   }
-  target.values[argument.name] = collectsValues(argument) ? [] : undefined;
+  target.values[argument.name] = collectsArgumentValues(argument) ? [] : undefined;
   if (visibleRawValues) {
     state.rawValues[argument.name] = [...prepared.values];
   }
@@ -567,7 +571,7 @@ function beginArgumentInput(
   if (!hasCommandLineInput(state, argument.name) || (occurrenceStart && shouldOverrideSelf(argument, state))) {
     state.argumentStates.set(argument.name, { kind: 'unparsed', input: 'cli' });
     state.rawValues[argument.name] = [];
-    state.values[argument.name] = collectsValues(argument) ? [] : undefined;
+    state.values[argument.name] = collectsArgumentValues(argument) ? [] : undefined;
   }
 }
 
@@ -578,7 +582,7 @@ function storeCompletedValues(
   input: 'cli' | 'env' | 'config',
 ): void {
   if (parsed.length > 0) {
-    if (collectsValues(argument)) {
+    if (collectsArgumentValues(argument)) {
       const current = state.values[argument.name];
       state.values[argument.name] = [...(Array.isArray(current) ? current : []), ...parsed];
     } else {
@@ -596,13 +600,6 @@ function shouldOverrideSelf(
   return argument.kind === 'option'
     && !argument.repeatable
     && state.owners.get(argument.name)?.argsOverrideSelf === true;
-}
-
-function collectsValues(argument: ArgumentDefinition): boolean {
-  return argument.repeatable
-    || argument.trailingVarArg
-    || argument.maxValues === null
-    || argument.maxValues !== 1;
 }
 
 function storeSwitch(

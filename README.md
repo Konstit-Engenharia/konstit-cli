@@ -722,8 +722,9 @@ Value options and positionals accept:
 | `allowNegativeNumbers` | Accept negative numeric values while preserving option parsing. |
 
 Options also accept `defaultMissing`, `requireEquals`, and `unique`. Positionals also
-accept `trailingVarArg`, `literal`, and `joinWith`. Flags accept `negated`. Counters use their occurrence
-count as the output value. `colorFlag()` provides the paired color policy.
+accept `trailingVarArg`, `literal`, `joinWith`, and `output`. Flags accept `negated`.
+Counters use their occurrence count as the output value. `colorFlag()` provides
+the paired color policy.
 
 ```ts
 const port = option('port', parsers.integer, {
@@ -887,6 +888,12 @@ const open = command('open-file', {
 containing one path. `joinWith` applies to CLI input and takes precedence over
 `valueDelimiter` for those tokens. Environment and config values use their usual
 parsing rules. Quote the path when the exact whitespace matters.
+
+Add `output: 'scalar'` to receive the parsed path directly. With `required: true`,
+the example's `path` is a `string`. Without `required` or a default, its type is
+`string | undefined`. In scalar mode, environment and config fallbacks can
+supply at most one value after delimiter splitting. Structured examples use a
+single value such as `{ path: 'My Documents/a.txt' }`.
 
 ## Parsers
 

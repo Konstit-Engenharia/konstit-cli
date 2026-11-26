@@ -572,6 +572,14 @@ printf 'AFTER_TERMINATOR:%s\n' "\${COMPREPLY[*]}"
       positional('args', parsers.enum(['--config-delegate', 'payload']), { trailingVarArg: true, literal: true }),
     ],
   });
+  const scalarPositionalCli = command('argv-state', {
+    args: [positional('path', parsers.enum(['first', 'payload']), {
+      trailingVarArg: true,
+      literal: true,
+      joinWith: ' ',
+      output: 'scalar',
+    })],
+  });
   const staticStateCli = command('argv-state', {
     args: [
       option('check', parsers.string, {
@@ -629,6 +637,13 @@ printf 'AFTER_TERMINATOR:%s\n' "\${COMPREPLY[*]}"
       expect(remaining.exitCode).toBe(0);
       expect(remaining.stdout.trim().split(/\r?\n/).sort()).toEqual(['--config-delegate', 'payload']);
     }, { timeout: 20_000 });
+
+    shellTest(`${shell} keeps completing a scalar joined positional after the first token`, () => {
+      const result = completeStaticShell(shell, generateCompletion(scalarPositionalCli, shell), ['first']);
+      expect(result.stderr).toBe('');
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout.trim().split(/\r?\n/).sort()).toEqual(['first', 'payload']);
+    });
 
     shellTest(`${shell} keeps zero-arity and hidden options out of value transitions`, () => {
       const script = generateCompletion(staticStateCli, shell);

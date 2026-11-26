@@ -34,7 +34,7 @@ export function restoreArgumentDefault(state: ArgumentValues, argument: Argument
     state.argumentStates.set(name, defaultArgument);
     return;
   }
-  state.values[name] = argument.repeatable || argument.trailingVarArg ? [] : undefined;
+  state.values[name] = argument.repeatable || (argument.trailingVarArg && argument.output !== 'scalar') ? [] : undefined;
   state.argumentStates.delete(name);
 }
 

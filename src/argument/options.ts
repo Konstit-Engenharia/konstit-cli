@@ -103,6 +103,8 @@ export type PositionalOptions<Value> = ValueMetadataOptions<Value> & {
   readonly literal?: boolean;
   /** Joins the remaining CLI tokens with this separator and parses them as one value. Requires literal trailing capture. */
   readonly joinWith?: string;
+  /** Returns one parsed value. Requires joinWith on a literal trailing positional. */
+  readonly output?: 'scalar';
 };
 
 /** Settings accepted by flag(). */
@@ -143,11 +145,15 @@ type NumArgsAllowsScalarDefault<Options> = 'numArgs' extends keyof Options
   : false
   : true;
 
+type TrailingCollectionEnabled<Options> = Options extends { readonly output: 'scalar'; } ? false
+  : 'scalar' extends Field<Options, 'output'> ? ConfiguredField<Options, 'trailingVarArg'> | false
+  : ConfiguredField<Options, 'trailingVarArg'>;
+
 type CheckedDefaultOptions<Value, Options> = Options extends { readonly default: infer Default; }
   ? [Default] extends [Value]
     ? true extends Field<Options, 'required'> ? ConfigurationError<'An argument cannot be required and have a default'>
     : true extends Field<Options, 'repeatable'> ? ConfigurationError<'A repeatable argument cannot have a scalar default'>
-    : true extends Field<Options, 'trailingVarArg'> ? ConfigurationError<'A trailing argument cannot have a scalar default'>
+    : true extends TrailingCollectionEnabled<Options> ? ConfigurationError<'A trailing argument cannot have a scalar default'>
     : NumArgsAllowsScalarDefault<Options> extends true ? unknown
     : ConfigurationError<'A multi-value argument cannot have a scalar default'>
   : { readonly default: NoInfer<Value>; }
@@ -158,7 +164,7 @@ type CollectionNumArgs<NumArgs> = NumArgs extends number ? NumArgs extends 1 ? f
   : false;
 
 type HasCollectionShape<Options> = true extends Field<Options, 'repeatable'> ? true
-  : true extends Field<Options, 'trailingVarArg'> ? true
+  : true extends TrailingCollectionEnabled<Options> ? true
   : true extends CollectionNumArgs<Field<Options, 'numArgs'>> ? true
   : false;
 
@@ -224,6 +230,7 @@ export type CheckedPositionalOptions<Options> = 'global' extends keyof Options ?
   : Options extends { readonly joinWith: string; }
     ? [true, true] extends [Field<Options, 'trailingVarArg'>, Field<Options, 'literal'>] ? unknown
     : ConfigurationError<'joinWith requires a literal trailing positional'>
+  : Options extends { readonly output: 'scalar'; } ? ConfigurationError<'Scalar output requires joinWith'>
   : Options extends { readonly literal: true; } ? true extends Field<Options, 'trailingVarArg'> ? unknown
     : ConfigurationError<'literal requires a trailing positional'>
   : unknown;
@@ -282,7 +289,7 @@ export type ConfiguredValueOutput<Value, Options> = CollectionOutput<
     >,
     ConfiguredField<Options, 'repeatable'>
   >,
-  ConfiguredField<Options, 'trailingVarArg'>
+  TrailingCollectionEnabled<Options>
 >;
 
 type ExactCountCardinality<Count extends number> = number extends Count ? 'one' | 'many'
@@ -314,7 +321,7 @@ export type ConfiguredCardinality<Options> = CollectionCardinality<
     >,
     ConfiguredField<Options, 'repeatable'>
   >,
-  ConfiguredField<Options, 'trailingVarArg'>
+  TrailingCollectionEnabled<Options>
 >;
 
 export interface RuntimeValueOptions<Value> extends ValueMetadataOptions<Value> {
@@ -325,6 +332,7 @@ export interface RuntimeValueOptions<Value> extends ValueMetadataOptions<Value> 
   readonly trailingVarArg?: boolean;
   readonly literal?: boolean;
   readonly joinWith?: string;
+  readonly output?: 'scalar';
 }
 
 export interface RuntimeOptionOptions<Value> extends NamedArgumentOptions, RuntimeValueOptions<Value> {}

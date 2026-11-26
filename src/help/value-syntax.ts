@@ -6,6 +6,7 @@ export interface ValueCountSyntax {
 
 export interface PositionalCountSyntax extends ValueCountSyntax {
   readonly presence: 'optional' | 'required' | 'default';
+  readonly trailingVarArg: boolean;
 }
 
 const expandedValueCountLimit = 8;
@@ -67,12 +68,13 @@ export function renderPositionalCount(
 ): string {
   const value = `<${name}>`;
   const optionalValue = `[${name}]`;
-  const compact = compactValueCount(argument.minValues, argument.maxValues);
+  const maximum = argument.trailingVarArg ? null : argument.maxValues;
+  const compact = compactValueCount(argument.minValues, maximum);
   if (compact !== undefined) {
     const compactValue = argument.presence === 'required' ? value : optionalValue;
     return `${compactValue}${compact}${argument.repeatable ? '...' : ''}`;
   }
-  if (argument.maxValues === null) {
+  if (maximum === null) {
     if (argument.presence !== 'required') {
       if (argument.minValues <= 1) {
         return `${optionalValue}...`;
@@ -85,7 +87,7 @@ export function renderPositionalCount(
   }
   const requiredCount = argument.presence === 'required' ? argument.minValues : 0;
   const required = Array<string>(requiredCount).fill(value);
-  const optional = Array<string>(argument.maxValues - requiredCount).fill(optionalValue);
+  const optional = Array<string>(maximum - requiredCount).fill(optionalValue);
   const repeated = argument.repeatable ? '...' : '';
   return `${[...required, ...optional].join(' ')}${repeated}`;
 }
