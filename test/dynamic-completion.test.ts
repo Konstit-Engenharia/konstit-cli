@@ -269,6 +269,18 @@ describe('dynamic completion', () => {
     expect(global.candidates.map(({ value }) => value)).toContain('--verbose');
   });
 
+  test('completes option aliases and their values', async () => {
+    const cli = command('build', {
+      args: [option('output', parsers.enum(['report.csv']), { aliases: ['out'] })],
+    });
+
+    const names = await resolveDynamicCompletion(cli, ['--ou']);
+    expect(names.candidates.map(({ value }) => value).sort()).toEqual(['--out', '--output']);
+    const values = await resolveDynamicCompletion(cli, ['--out', 'rep']);
+    expect(values.argument?.name).toBe('output');
+    expect(values.candidates.map(({ value }) => value)).toEqual(['report.csv']);
+  });
+
   test('awaits a provider and supplies parsed command context', async () => {
     let received: DynamicCompletionContext | undefined;
     const cli = command('tool', {

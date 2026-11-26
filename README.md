@@ -709,6 +709,9 @@ content. For flags, `env` tests whether the variable exists. An empty value
 counts as present. Named arguments also accept `global`, `short`, `long`,
 `aliases`, and `deprecatedAliases`.
 
+Terminal help lists an option's active long aliases. Aliases listed in
+`deprecatedAliases` are omitted from help and emit a warning when used.
+
 Set `helpHeading` to group arguments under a named heading in terminal help,
 Markdown, and man pages. For example, assign `helpHeading: 'Output'` to format
 and destination options. The argument metadata returned by `describeCommand()`

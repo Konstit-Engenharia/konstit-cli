@@ -50,7 +50,7 @@ export interface NamedArgumentOptions extends ArgumentOptions {
   readonly short?: string;
   /** Sets the long form without the leading --. */
   readonly long?: string;
-  /** Adds parseable long aliases. */
+  /** Adds parseable long aliases. Active option aliases appear in help. */
   readonly aliases?: readonly string[];
 }
 

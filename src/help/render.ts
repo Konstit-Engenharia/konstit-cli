@@ -323,6 +323,13 @@ function annotateHelp(argument: ArgumentDefinition): string {
   if (argument.help !== undefined) {
     annotations.push(argument.help);
   }
+  if (argument.kind === 'option') {
+    const { deprecatedAliases } = argument;
+    const aliases = argument.aliases.filter((alias) => deprecatedAliases === undefined || !Object.hasOwn(deprecatedAliases, alias));
+    if (aliases.length > 0) {
+      annotations.push(`[aliases: ${aliases.map((alias) => `--${alias}`).join(', ')}]`);
+    }
+  }
   if (argument.presence === 'without-subcommand') {
     annotations.push('[required without a subcommand]');
   }

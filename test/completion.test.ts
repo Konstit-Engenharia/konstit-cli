@@ -589,6 +589,9 @@ printf 'AFTER_TERMINATOR:%s\n' "\${COMPREPLY[*]}"
       output: 'scalar',
     })],
   });
+  const optionAliasCli = command('argv-state', {
+    args: [option('output', parsers.enum(['report.csv']), { aliases: ['destination'] })],
+  });
   const staticStateCli = command('argv-state', {
     args: [
       option('check', parsers.string, {
@@ -614,6 +617,18 @@ printf 'AFTER_TERMINATOR:%s\n' "\${COMPREPLY[*]}"
   for (const shell of completionShells) {
     const executable = shell === 'powershell' ? 'pwsh' : shell;
     const shellTest = test.skipIf(Bun.which(executable) === null);
+    shellTest(`${shell} completes option aliases and their values`, () => {
+      const script = generateCompletion(optionAliasCli, shell);
+      const names = completeStaticShell(shell, script, [], '--dest');
+      expect(names.stderr).toBe('');
+      expect(names.exitCode).toBe(0);
+      expect(names.stdout.trim().split(/\r?\n/)).toContain('--destination');
+      const values = completeStaticShell(shell, script, ['--destination'], 'rep');
+      expect(values.stderr).toBe('');
+      expect(values.exitCode).toBe(0);
+      expect(values.stdout.trim()).toBe('report.csv');
+    }, { timeout: 20_000 });
+
     shellTest(`${shell} consumes the option terminator and advances to the next positional`, () => {
       const script = generateCompletion(optionTerminatorCli, shell);
       for (const optionWords of [['--values', 'one'], ['--values=one'], ['-vone']]) {

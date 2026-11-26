@@ -7,12 +7,45 @@ import {
   command,
   describeCommand,
   flag,
+  getWarnings,
   option,
   parsers,
   positional,
   renderManPage,
   renderMarkdown,
 } from '../src';
+
+test('shows active option aliases and accepts deprecated aliases with a warning', () => {
+  const cli = command('build', {
+    args: [
+      option('output', parsers.string, {
+        short: 'o',
+        valueName: 'FILE',
+        aliases: ['out', 'old-output', 'destination'],
+        deprecatedAliases: { 'old-output': 'Use --output.' },
+      }),
+      option('format', parsers.string, {
+        aliases: ['old-format'],
+        deprecatedAliases: { 'old-format': 'Use --format.' },
+      }),
+    ],
+  });
+
+  const help = cli.renderHelp();
+  expect(help).toMatch(/-o, --output <FILE> +\[aliases: --out, --destination\]/);
+  expect(help).not.toContain('--old-output');
+  expect(help).not.toContain('--old-format');
+  expect(help).not.toContain('[aliases: ]');
+
+  const active = cli.parse(['--out', 'report.csv']);
+  expect(active).toMatchObject({ type: 'value', value: { output: 'report.csv' } });
+  expect(getWarnings(active)).toEqual([]);
+  const deprecated = cli.parse(['--old-output', 'report.csv']);
+  expect(deprecated).toMatchObject({ type: 'value', value: { output: 'report.csv' } });
+  expect(getWarnings(deprecated)).toMatchObject([
+    { kind: 'deprecated', target: 'alias', name: 'old-output', argumentName: 'output', message: 'Use --output.' },
+  ]);
+});
 
 test('groups arguments under custom headings in help and documentation', () => {
   const cli = command('tool', {

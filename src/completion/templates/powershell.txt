@@ -256,6 +256,7 @@ Register-ArgumentCompleter -Native -CommandName {{EXECUTABLE_QUOTED}} -ScriptBlo
     param([string]$value, [string]$description, [string]$prefix = '')
     $completion = "$prefix$value"
     if ($completion.StartsWith($wordToComplete, [System.StringComparison]::OrdinalIgnoreCase) -and $seen.Add($completion)) {
+      if ([string]::IsNullOrEmpty($description)) { $description = $value }
       [System.Management.Automation.CompletionResult]::new($completion, $value, 'ParameterValue', $description)
     }
   }
@@ -265,9 +266,7 @@ Register-ArgumentCompleter -Native -CommandName {{EXECUTABLE_QUOTED}} -ScriptBlo
       foreach ($entry in @(& $getStaticValues $context $token)) {
         $value = [string]$entry.Value
         if ($value.StartsWith($partial, [System.StringComparison]::OrdinalIgnoreCase)) {
-          $description = [string]$entry.Description
-          if ([string]::IsNullOrEmpty($description)) { $description = $value }
-          & $emit $value $description $prefix
+          & $emit $value $entry.Description $prefix
         }
       }
       return
