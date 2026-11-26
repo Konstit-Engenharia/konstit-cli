@@ -223,6 +223,9 @@ export function validateConfiguredValueOptions(
   if (options.unique === true && options.repeatable !== true) {
     throw new TypeError('unique requires a repeatable option');
   }
+  if (options.literal === true && options.trailingVarArg !== true) {
+    throw new TypeError('literal requires a trailing positional');
+  }
   if (hasDefaultValues) {
     if (!Array.isArray(options.defaultValues)) {
       throw new TypeError('Argument defaultValues must be an array');
@@ -364,7 +367,7 @@ export function validateArgumentOptionKeys(
       ]
       : []),
     ...(kind === 'option' ? ['defaultMissing', 'requireEquals', 'unique'] : []),
-    ...(kind === 'positional' ? ['trailingVarArg'] : []),
+    ...(kind === 'positional' ? ['trailingVarArg', 'literal'] : []),
     ...(kind === 'flag' ? ['negated'] : []),
   ];
   const deferredUnsupported = kind === 'option'
@@ -414,6 +417,7 @@ export function validateArgumentOptionKeys(
       'allowHyphenValues',
       'allowNegativeNumbers',
       'trailingVarArg',
+      'literal',
       'negated',
     ]
   ) {
@@ -569,9 +573,11 @@ export function applyValueArgumentOptions(
     if (options.valueTerminator.length === 0) {
       throw new TypeError('A value terminator cannot be empty');
     }
-    configured = copyDefinition(configured, {
-      valueTerminator: options.valueTerminator,
-    });
+    if (options.literal !== true) {
+      configured = copyDefinition(configured, {
+        valueTerminator: options.valueTerminator,
+      });
+    }
   }
   if (options.requireEquals !== undefined) {
     configured = copyDefinition(configured, {
@@ -593,6 +599,7 @@ export function applyValueArgumentOptions(
       minValues: configured.presence === 'required' ? 1 : 0,
       maxValues: null,
       trailingVarArg: true,
+      ...(options.literal === true ? { literal: true } : {}),
       allowHyphenValues: true,
     });
   }

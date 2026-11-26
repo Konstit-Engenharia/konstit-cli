@@ -203,6 +203,31 @@ describe('dynamic completion coverage', () => {
     expect(noPositional.commandPath).toEqual(['empty']);
   });
 
+  test('completes the first literal trailing value before known flags and options', async () => {
+    let context: DynamicCompletionContext | undefined;
+    const cli = command('wrap', {
+      args: [
+        flag('verbose', { short: 'v' }),
+        option('config'),
+        positional('program'),
+        positional('args', parsers.string, {
+          trailingVarArg: true,
+          literal: true,
+          complete: (received) => {
+            context = received;
+            return ['--config=delegate', '--version'];
+          },
+        }),
+      ],
+    });
+    const first = await resolveDynamicCompletion(cli, ['node', '--config=']);
+    expect(first.argument?.name).toBe('args');
+    expect(first.candidates.map(({ value }) => value)).toEqual(['--config=delegate']);
+
+    await resolveDynamicCompletion(cli, ['-v', 'node', '--config', '--', '--v']);
+    expect(context?.values).toMatchObject({ verbose: true, program: 'node', args: ['--config', '--'] });
+  });
+
   test('handles the option terminator with and without a positional', async () => {
     const positionalCli = command('literal', {
       args: [positional('value', parsers.string, { valueHint: 'directory' })],

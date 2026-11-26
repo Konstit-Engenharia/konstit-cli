@@ -209,6 +209,10 @@ function parseDefinition(
       break;
     }
 
+    const positionalArgument = currentPositional(positionals, state);
+    if (positionalArgument?.literal === true) {
+      wordState = literalWords;
+    }
     if (
       wordState.kind === 'command'
       && !definition.disableHelpFlag
@@ -234,7 +238,6 @@ function parseDefinition(
         output: `${definition.name} ${definition.version}\n`,
       });
     }
-    const positionalArgument = currentPositional(positionals, state);
     const consumeAsPositional = wordState.kind === 'command'
       && positionalArgument !== undefined
       && acceptsOptionLookingPositional(

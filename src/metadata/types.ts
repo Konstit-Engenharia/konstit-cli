@@ -101,6 +101,8 @@ export interface ArgumentMetadata {
   readonly allowNegativeNumbers: boolean;
   /** Whether this positional can capture trailing tokens that look like options. */
   readonly trailingVarArg: boolean;
+  /** Present when a trailing positional takes precedence over options and subcommands. */
+  readonly literal?: true;
   /** Whether the argument is inherited by descendant commands. */
   readonly global: boolean;
   /** Whether the argument is omitted from help and completion. */

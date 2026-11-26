@@ -11,6 +11,7 @@ import {
   completionForArguments,
   declaredOptionTokens,
   hasVisiblePositionals,
+  literalPositionalKeys,
   optionTokens,
   parsePositionals,
   visibleArguments,
@@ -166,6 +167,10 @@ export function generateFish(
           `                    set positional_trailing ${argument.trailingVarArg ? 1 : 0}`,
         ])
       ).join('\n'),
+      LITERAL_POSITIONAL_CASES: literalPositionalKeys(nodes).flatMap((key) => [
+        `        case ${fishQuote(key)}`,
+        '            return 0',
+      ]).join('\n'),
       DECLARED_OPTION_CASES: nodes.flatMap((node) => {
         const tokens = declaredOptionTokens(node);
         return tokens.length === 0 ? [] : [

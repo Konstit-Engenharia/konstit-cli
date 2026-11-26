@@ -138,6 +138,7 @@ function compileExampleArgs(definition: CommandDefinition, args: Readonly<Record
     kind === 'positional' && Object.hasOwn(args, name)
     && args[name] !== undefined && !(Array.isArray(args[name]) && args[name].length === 0)
   );
+  const hasLiteralTail = definition.arguments.some(({ literal }) => literal === true);
   let literalPositionals = false;
   const argumentsForValidation = definition.arguments.map((argument, index) => {
     const input = Object.hasOwn(args, argument.name) ? args[argument.name] : undefined;
@@ -148,9 +149,8 @@ function compileExampleArgs(definition: CommandDefinition, args: Readonly<Record
       const destination = argument.trailingVarArg ? trailing : positionals;
       if (tokens.length > 0) {
         supplied.add(argument.name);
-        literalPositionals ||= tokens.some((token) =>
-          token.startsWith('-') || token === 'help' || matchSubcommand(definition, token).kind !== 'none'
-        );
+        literalPositionals ||= argument.literal !== true
+          && tokens.some((token) => token.startsWith('-') || token === 'help' || matchSubcommand(definition, token).kind !== 'none');
         destination.push(...tokens);
       }
       if (
@@ -187,7 +187,9 @@ function compileExampleArgs(definition: CommandDefinition, args: Readonly<Record
     };
   });
 
-  const argv = literalPositionals
+  const argv = hasLiteralTail
+    ? [...options, ...(literalPositionals ? ['--'] : []), ...positionals, ...trailing]
+    : literalPositionals
     ? [...options, '--', ...positionals, ...trailing]
     : [...positionals, ...options, ...(trailing.length === 0 ? [] : ['--', ...trailing])];
   const subcommands = definition.subcommands.map(({ validate: _validate, ...child }) => ({ ...child, arguments: [], subcommands: [] }));

@@ -42,6 +42,13 @@
   esac
 }
 
+{{NAME}}_literal_positional() {
+  case "$1:$2" in
+{{LITERAL_POSITIONAL_CASES}}
+    *) return 1 ;;
+  esac
+}
+
 {{NAME}}_declared_option() {
   local token="$2"
   case "$1:$token" in
@@ -130,6 +137,7 @@
       fi
       scan_state=command
     fi
+    if [[ "$scan_state" == command ]] && {{NAME}}_literal_positional "$context" "$positional_index"; then scan_state=literal; fi
     if [[ "$scan_state" == command && "$word" == "--" ]]; then scan_state=literal; continue; fi
     consume_as_positional=0
     if [[ "$scan_state" == command && "$word" == -?* && "$word" != -- ]]; then
@@ -247,6 +255,7 @@
     fi
     scan_state=command
   fi
+  if [[ "$scan_state" == command ]] && {{NAME}}_literal_positional "$context" "$positional_index"; then scan_state=literal; fi
   consume_as_positional=0
   if [[ "$scan_state" == literal || "$current" != -* ]]; then
     consume_as_positional=1

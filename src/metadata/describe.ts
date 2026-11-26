@@ -151,6 +151,7 @@ function describeArgument(argument: ArgumentDefinition, includeHidden: boolean):
     allowHyphenValues: argument.allowHyphenValues,
     allowNegativeNumbers: argument.allowNegativeNumbers,
     trailingVarArg: argument.trailingVarArg,
+    ...(argument.literal === true ? { literal: true as const } : {}),
     global: argument.global,
     hidden: argument.hidden,
     ...(argument.sensitive ? { sensitive: true as const } : {}),

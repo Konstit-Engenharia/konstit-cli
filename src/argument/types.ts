@@ -71,6 +71,8 @@ export interface ArgumentDefinition {
   readonly allowNegativeNumbers: boolean;
   /** Whether this positional can capture trailing tokens that look like options. */
   readonly trailingVarArg: boolean;
+  /** Whether this trailing positional captures tokens before option and subcommand recognition. */
+  readonly literal?: true;
   /** Whether the argument is inherited by descendant commands. */
   readonly global: boolean;
   /** Whether to omit the argument from help and completion. */

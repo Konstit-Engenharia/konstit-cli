@@ -26,6 +26,14 @@ Register-ArgumentCompleter -Native -CommandName {{EXECUTABLE_QUOTED}} -ScriptBlo
     }
   }
 
+  $isLiteralPositional = {
+    param([string]$context, [int]$index)
+    switch ("$context`:$index") {
+{{LITERAL_POSITIONAL_CASES}}
+      default { return $false }
+    }
+  }
+
   $isDeclaredOption = {
     param([string]$context, [string]$token)
     switch ("$context`:$token") {
@@ -133,6 +141,7 @@ Register-ArgumentCompleter -Native -CommandName {{EXECUTABLE_QUOTED}} -ScriptBlo
       }
       $scanState = 'command'
     }
+    if ($scanState -eq 'command' -and (& $isLiteralPositional $context $positionalIndex)) { $scanState = 'literal' }
     if ($scanState -eq 'command' -and $word -eq '--') { $scanState = 'literal'; continue }
     $consumeAsPositional = $false
     if ($scanState -eq 'command' -and $word -ne '-' -and $word.StartsWith('-')) {
@@ -291,6 +300,7 @@ Register-ArgumentCompleter -Native -CommandName {{EXECUTABLE_QUOTED}} -ScriptBlo
     }
     $scanState = 'command'
   }
+  if ($scanState -eq 'command' -and (& $isLiteralPositional $context $positionalIndex)) { $scanState = 'literal' }
   $consumeAsPositional = $scanState -eq 'literal' -or -not $wordToComplete.StartsWith('-')
   if (-not $consumeAsPositional -and $wordToComplete -ne '--') {
     if ($positionalRemaining -eq 0) { $positionalSpec = & $getPositionalSpec $context $positionalIndex }

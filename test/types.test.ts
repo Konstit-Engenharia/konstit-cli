@@ -442,6 +442,10 @@ void (() => {
     required: true,
     short: 'p',
   });
+  // @ts-expect-error literal capture requires a trailing positional
+  positional('args', parsers.string, { literal: true });
+  // @ts-expect-error named options cannot start literal capture
+  option('args', parsers.string, { literal: true });
   // @ts-expect-error flags cannot be repeatable
   flag('value-flag', {
     describe: 'Invalid value configuration',

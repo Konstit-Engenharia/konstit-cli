@@ -219,6 +219,13 @@ export function parsePositionals(node: CompletionNode): readonly ArgumentDefinit
   return node.arguments.filter(({ kind }) => kind === 'positional');
 }
 
+export function literalPositionalKeys(nodes: readonly CompletionNode[]): readonly string[] {
+  return nodes.flatMap((node) => {
+    const index = parsePositionals(node).findIndex(({ literal }) => literal === true);
+    return index === -1 ? [] : [`${node.id}:${index}`];
+  });
+}
+
 export function valueOptionTokens(node: CompletionNode): readonly string[] {
   return visibleArguments(node)
     .filter(({ kind, maxValues }) => kind === 'option' && maxValues !== 0)

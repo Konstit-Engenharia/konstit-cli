@@ -177,6 +177,19 @@ test('allows documentation values without running custom parsers or validators',
   expect(cli.renderHelp()).toEndWith('  $ tool \';\' sample --input example.txt -- one\n');
 });
 
+test('renders structured examples with wrapper flags before a literal trailing positional', () => {
+  const cli = command('wrap', {
+    args: [
+      flag('verbose'),
+      positional('program', parsers.string, { required: true }),
+      positional('args', parsers.string, { trailingVarArg: true, literal: true }),
+    ],
+    examples: [{ args: { verbose: true, program: 'node', args: ['--', '--verbose', '--help'] }, description: '' }],
+  });
+  expect(cli.renderHelp()).toEndWith('  $ wrap --verbose node -- --verbose --help\n');
+  expect(describeCommand(cli).arguments.at(-1)?.literal).toBe(true);
+});
+
 test('uses an option terminator before the next structured flag', () => {
   const cli = command('tool', {
     args: [

@@ -565,6 +565,13 @@ printf 'AFTER_TERMINATOR:%s\n' "\${COMPREPLY[*]}"
       })],
     })],
   });
+  const literalPositionalCli = command('argv-state', {
+    args: [
+      option('config', parsers.enum(['wrapper']), { short: 'c' }),
+      positional('program'),
+      positional('args', parsers.enum(['--config-delegate', 'payload']), { trailingVarArg: true, literal: true }),
+    ],
+  });
   const staticStateCli = command('argv-state', {
     args: [
       option('check', parsers.string, {
@@ -607,6 +614,21 @@ printf 'AFTER_TERMINATOR:%s\n' "\${COMPREPLY[*]}"
       expect(result.exitCode).toBe(0);
       expect(result.stdout.trim().split(/\r?\n/).sort()).toEqual(['payload', 'run', 'tail']);
     });
+
+    shellTest(`${shell} completes a literal trailing positional before recognizing the first flag`, () => {
+      const script = generateCompletion(literalPositionalCli, shell);
+      const first = completeStaticShell(shell, script, ['node'], '--con');
+      expect(first.stderr).toBe('');
+      expect(first.exitCode).toBe(0);
+      const firstCandidates = first.stdout.trim().split(/\r?\n/);
+      expect(firstCandidates).toContain('--config-delegate');
+      expect(firstCandidates).not.toContain('--config');
+
+      const remaining = completeStaticShell(shell, script, ['node', '--config']);
+      expect(remaining.stderr).toBe('');
+      expect(remaining.exitCode).toBe(0);
+      expect(remaining.stdout.trim().split(/\r?\n/).sort()).toEqual(['--config-delegate', 'payload']);
+    }, { timeout: 20_000 });
 
     shellTest(`${shell} keeps zero-arity and hidden options out of value transitions`, () => {
       const script = generateCompletion(staticStateCli, shell);

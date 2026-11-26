@@ -341,6 +341,43 @@ describe('command parsing', () => {
       command: ['node', '--inspect', 'app.ts'],
     });
   });
+
+  test('starts a literal trailing positional before option and subcommand recognition', () => {
+    const cli = command('wrap', {
+      version: '1.0.0',
+      args: [
+        flag('verbose', { short: 'v' }),
+        option('config'),
+        positional('program', parsers.string, { required: true }),
+        positional('args', parsers.string, { trailingVarArg: true, literal: true, valueTerminator: 'END' }),
+      ],
+      subcommands: [command('run')],
+    });
+
+    for (const first of ['--verbose', '-v', '--config=child', '--help', '-h', '--version', '-V', '--', 'run', 'END']) {
+      expect(parse(cli, ['-v', '--config', 'wrapper', 'node', first, 'payload'])).toEqual({
+        verbose: true,
+        config: 'wrapper',
+        program: 'node',
+        args: [first, 'payload'],
+        subcommand: undefined,
+      });
+    }
+    expect(cli.parse(['--help']).type).toBe('display');
+    expect(cli.parse(['--version']).type).toBe('display');
+  });
+
+  test('captures from the first token when the literal tail is the only positional', () => {
+    const cli = command('wrap', {
+      args: [flag('verbose', { short: 'v' }), positional('args', parsers.string, { trailingVarArg: true, literal: true })],
+    });
+    expect(parse(cli, ['-v', '--help'])).toEqual({ verbose: false, args: ['-v', '--help'] });
+    expect(parse(cli, [])).toEqual({ verbose: false, args: [] });
+    expect(() => positional('args', parsers.string, { literal: true } as never)).toThrow('literal requires a trailing positional');
+    expect(() => positional('args', parsers.string, { trailingVarArg: true, literal: 'yes' } as never)).toThrow(
+      'option \'literal\' must be a boolean',
+    );
+  });
 });
 
 describe('subcommands', () => {

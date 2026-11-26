@@ -722,7 +722,7 @@ Value options and positionals accept:
 | `allowNegativeNumbers` | Accept negative numeric values while preserving option parsing. |
 
 Options also accept `defaultMissing`, `requireEquals`, and `unique`. Positionals also
-accept `trailingVarArg`. Flags accept `negated`. Counters use their occurrence
+accept `trailingVarArg` and `literal`. Flags accept `negated`. Counters use their occurrence
 count as the output value. `colorFlag()` provides the paired color policy.
 
 ```ts
@@ -847,6 +847,25 @@ const run = command('run', {
   It must be the last positional. Named arguments can appear after it in `args`.
   TypeScript checks literal argument tuples, and runtime validation also checks
   widened arrays and JavaScript input.
+
+Set `literal: true` with `trailingVarArg: true` to start capture as soon as the
+trailing positional is next. Options, flags, subcommand names, `--`, and value
+terminators then enter the positional as values, including on the first token.
+Use `parsers.string` without a delimiter to keep each token as one string.
+
+```ts
+const wrap = command('wrap', {
+  args: [
+    flag('verbose', { short: 'v' }),
+    positional('program', parsers.string, { required: true }),
+    positional('args', parsers.string, { trailingVarArg: true, literal: true }),
+  ],
+});
+```
+
+`wrap -v node --help -v` sets `verbose` to `true`, `program` to `node`, and
+`args` to `['--help', '-v']`. When the literal tail is the only positional, it
+captures from the first token of that command.
 
 ## Parsers
 

@@ -99,6 +99,8 @@ export type OptionOptions<Value> =
 export type PositionalOptions<Value> = ValueMetadataOptions<Value> & {
   /** Captures all remaining tokens, including option-looking tokens. */
   readonly trailingVarArg?: boolean;
+  /** Starts capturing as soon as this trailing positional is next, even for the first option-looking token. */
+  readonly literal?: boolean;
 };
 
 /** Settings accepted by flag(). */
@@ -217,6 +219,8 @@ export type CheckedOptionOptions<Value, Options> = 'trailingVarArg' extends keyo
 export type CheckedPositionalOptions<Options> = 'global' extends keyof Options ? ConfigurationError<'Positional arguments cannot be global'>
   : 'defaultMissing' extends keyof Options ? ConfigurationError<'Positional arguments cannot configure defaultMissing'>
   : 'requireEquals' extends keyof Options ? ConfigurationError<'Positional arguments cannot require equals-form values'>
+  : Options extends { readonly literal: true; } ? true extends Field<Options, 'trailingVarArg'> ? unknown
+    : ConfigurationError<'literal requires a trailing positional'>
   : unknown;
 
 type ConfiguredScalarOutput<Value, Options> = Options extends { readonly defaultValues: unknown; } ? Value
@@ -314,6 +318,7 @@ export interface RuntimeValueOptions<Value> extends ValueMetadataOptions<Value> 
   readonly requireEquals?: boolean;
   readonly unique?: boolean;
   readonly trailingVarArg?: boolean;
+  readonly literal?: boolean;
 }
 
 export interface RuntimeOptionOptions<Value> extends NamedArgumentOptions, RuntimeValueOptions<Value> {}

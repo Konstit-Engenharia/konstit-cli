@@ -286,7 +286,12 @@ export function scanWords(state: ScanState, words: readonly string[]): void {
       }
     }
 
-    const consumeAsPositional = argvState.kind === 'command' && acceptsOptionLookingPositional(state, word);
+    const positional = currentPositional(state);
+    if (positional?.literal === true) {
+      state.active.argvState = literalWords;
+      argvState = literalWords;
+    }
+    const consumeAsPositional = argvState.kind === 'command' && acceptsOptionLookingPositional(state, word, positional);
     const kind = recognizeWord(argvState, word, consumeAsPositional);
     if (kind === 'end-options') {
       state.active.argvState = literalWords;
@@ -309,7 +314,6 @@ export function scanWords(state: ScanState, words: readonly string[]): void {
       }
     }
 
-    const positional = currentPositional(state);
     if (positional !== undefined) {
       if (word === positional.valueTerminator) {
         state.active.positionalIndex += 1;
@@ -472,8 +476,7 @@ function consumePending(
   }
 }
 
-function acceptsOptionLookingPositional(state: ScanState, token: string): boolean {
-  const argument = currentPositional(state);
+function acceptsOptionLookingPositional(state: ScanState, token: string, argument: ArgumentDefinition | undefined): boolean {
   if (
     argument === undefined
     || token === '--'
@@ -663,11 +666,9 @@ export function findValueTarget(
   if (argvState.kind === 'option-values') {
     return valueTarget(argvState.argument, currentWord, '');
   }
-  if (argvState.kind === 'literal') {
-    return currentPositionalTarget(state, currentWord);
-  }
-  if (acceptsOptionLookingPositional(state, currentWord)) {
-    return currentPositionalTarget(state, currentWord);
+  const positional = currentPositional(state);
+  if (argvState.kind === 'literal' || positional?.literal === true || acceptsOptionLookingPositional(state, currentWord, positional)) {
+    return positional === undefined ? undefined : valueTarget(positional, currentWord, '');
   }
 
   if (currentWord.startsWith('--')) {
@@ -704,14 +705,6 @@ export function findValueTarget(
   }
 
   return undefined;
-}
-
-function currentPositionalTarget(
-  state: ScanState,
-  currentWord: string,
-): ValueTarget | undefined {
-  const argument = currentPositional(state);
-  return argument === undefined ? undefined : valueTarget(argument, currentWord, '');
 }
 
 function valueTarget(

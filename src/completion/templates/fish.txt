@@ -12,6 +12,13 @@ function {{NAME}}_decode --argument-names hex
     string join '' -- $result
 end
 
+function {{NAME}}_literal_positional --argument-names context index
+    switch "$context:$index"
+{{LITERAL_POSITIONAL_CASES}}
+    end
+    return 1
+end
+
 function {{NAME}} --argument-names target
     set -l tokens (commandline -opc)
     set -l context 0
@@ -67,6 +74,9 @@ function {{NAME}} --argument-names target
                 continue
             end
             set scan_state command
+        end
+        if test "$scan_state" = command; and {{NAME}}_literal_positional "$context" "$positional_index"
+            set scan_state literal
         end
         if test "$scan_state" = command; and test "$word" = --
             set scan_state literal
@@ -199,6 +209,9 @@ function {{NAME}} --argument-names target
             test $positional_repeatable -eq 0; and set positional_index (math $positional_index + 1)
             set positional_remaining 0
         end
+    end
+    if test "$scan_state" = command; and {{NAME}}_literal_positional "$context" "$positional_index"
+        set scan_state literal
     end
     if test "$target" = named; and test "$scan_state" = literal
         echo literal

@@ -9,6 +9,7 @@ import {
   childScanEntries,
   completionForArguments,
   declaredOptionTokens,
+  literalPositionalKeys,
   optionTokens,
   parsePositionals,
   valueCompletions,
@@ -74,6 +75,7 @@ export function generateBash(
         `    ${shellQuote(`${node.id}:${index}`)}) printf '%s\\n' ${shellQuote(shellPositionalSpec(argument))} ;;`
       )
     ).join('\n'),
+    LITERAL_POSITIONAL_CASES: literalPositionalKeys(nodes).map((key) => `    ${shellQuote(key)}) return 0 ;;`).join('\n'),
     DECLARED_OPTION_CASES: nodes.flatMap((node) => {
       const tokens = declaredOptionTokens(node);
       return tokens.length === 0 ? [] : [
