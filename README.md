@@ -868,8 +868,12 @@ const wrap = command('wrap', {
 `args` to `['--help', '-v']`. When the literal tail is the only positional, it
 captures from the first token of that command.
 
+#### Joined file paths
+
 Use `joinWith: ' '` on a literal trailing positional when the rest of the command
-line represents one value, such as a path with spaces.
+line represents one value, such as a path with spaces. Joined positionals return
+a readonly array by default. Set `output: 'scalar'` to receive the parsed value
+directly.
 
 ```ts
 const open = command('open-file', {
@@ -878,22 +882,25 @@ const open = command('open-file', {
       trailingVarArg: true,
       literal: true,
       joinWith: ' ',
+      output: 'scalar',
+      required: true,
     }),
   ],
 });
 ```
 
 `open-file My Documents/a.txt` joins the two tokens and passes
-`My Documents/a.txt` to the path parser once. The result is a readonly array
-containing one path. `joinWith` applies to CLI input and takes precedence over
-`valueDelimiter` for those tokens. Environment and config values use their usual
-parsing rules. Quote the path when the exact whitespace matters.
+`My Documents/a.txt` to the path parser once. The file must exist, and the parsed
+`path` field is a `string`. Omit `required: true` to make the path optional. Without
+a default, its type is `string | undefined`.
 
-Add `output: 'scalar'` to receive the parsed path directly. With `required: true`,
-the example's `path` is a `string`. Without `required` or a default, its type is
-`string | undefined`. In scalar mode, environment and config fallbacks can
-supply at most one value after delimiter splitting. Structured examples use a
-single value such as `{ path: 'My Documents/a.txt' }`.
+`joinWith` applies to CLI input and takes precedence over `valueDelimiter` for
+those tokens. Environment and config values use their usual parsing rules. Quote
+the path when the exact whitespace matters.
+
+In scalar mode, environment and config fallbacks can supply at most one value
+after delimiter splitting. Structured examples use a single value such as
+`{ path: 'My Documents/a.txt' }`.
 
 ## Parsers
 
@@ -915,7 +922,11 @@ parsers.custom('PORT', parsePort);
 provides a matching `file` or `directory` shell completion hint. An existing
 path must match `kind`, with symlinks checked against their targets.
 `mustExist` defaults to `false`, so missing paths are accepted for output
-destinations. Set it to `true` to require an existing file or directory.
+destinations. Set `mustExist: true` on the parser to check that a supplied path
+exists. Set `required: true` on the option or positional when the command needs
+a path from the CLI, environment, or config. For example, an optional `--config`
+can require an existing file whenever it is supplied.
+[Joined scalar path example](#joined-file-paths)
 
 Enum entries may include aliases, descriptions, and visibility settings:
 
