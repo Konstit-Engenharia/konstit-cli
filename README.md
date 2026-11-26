@@ -109,7 +109,7 @@ options object.
 | `disableVersionFlag`          | Disable generated `-V` and `--version`.                                 |
 | `hide`                        | Hide this command from parent help and completion.                      |
 | `requires`                    | Unconditional argument dependencies.                                    |
-| `requiresIf`                  | Single-value conditional dependencies.                                  |
+| `requiresIf`                  | Conditional dependencies with optional total value counts.              |
 | `requiresValue`               | Require another argument with a specific parsed value.                  |
 | `requiredIfAny`               | Dependencies activated by any matching condition.                       |
 | `requiredIfAll`               | Dependencies activated by all matching conditions.                      |
@@ -1076,6 +1076,28 @@ on the CLI before any target is cleared. Every override relation uses that same
 snapshot, so a chain such as `a -> b` and `b -> c` clears both targets in either
 declaration order. Environment, configuration, and default values do not make
 an override source explicit.
+
+A `requiresIf` tuple can include a fourth element with a count constraint for a
+repeatable target option. The count covers all parsed values across occurrences.
+
+```ts
+const exportCommand = command('export', {
+  args: [
+    option('mode', parsers.enum(['pair', 'batch', 'any'])),
+    option('input', parsers.string, { repeatable: true }),
+  ],
+  requiresIf: [
+    ['mode', 'pair', 'input', { exactValues: 2 }],
+    ['mode', 'batch', 'input', { minValues: 2, maxValues: 5 }],
+  ],
+});
+```
+
+Use `minValues` or `maxValues` alone for a one-sided constraint. Bounds are
+inclusive, and all counts must be non-negative safe integers. Use `exactValues`
+on its own. A matching rule always requires the target to be supplied. An absent
+target produces `MissingDependency`. A supplied target outside the constraint
+produces `TooFewValues` or `TooManyValues`.
 
 ### Cross-argument validation
 

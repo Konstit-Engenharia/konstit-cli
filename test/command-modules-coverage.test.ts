@@ -91,6 +91,26 @@ describe('modular command coverage', () => {
     expect(() => runtimeCommand('invalid name')).toThrow('Invalid command name');
   });
 
+  test('rejects malformed conditional value count rules at definition time', () => {
+    const args = [flag('one'), option('input', parsers.string, { repeatable: true }), option('scalar')];
+    const cases = [
+      [['one', true], 'must contain 3 or 4 values'],
+      [['one', true, 'input', undefined], 'value count must be an object'],
+      [['one', true, 'input', { length: 2 }], 'unsupported field \'length\''],
+      [['one', true, 'input', {}], 'must specify exactValues, minValues, or maxValues'],
+      [['one', true, 'input', { exactValues: '2' }], '\'exactValues\' must be a non-negative safe integer'],
+      [['one', true, 'input', { minValues: -1 }], '\'minValues\' must be a non-negative safe integer'],
+      [['one', true, 'input', { maxValues: 1.5 }], '\'maxValues\' must be a non-negative safe integer'],
+      [['one', true, 'input', { exactValues: 2, minValues: 1 }], 'cannot combine exactValues with minValues or maxValues'],
+      [['one', true, 'input', { minValues: 3, maxValues: 2 }], 'minValues cannot exceed maxValues'],
+      [['one', true, 'scalar', { exactValues: 2 }], 'target \'scalar\' must be a repeatable option'],
+    ] as const;
+
+    for (const [rule, message,] of cases) {
+      expect(() => runtimeCommand('tool', { args, requiresIf: [rule] })).toThrow(message);
+    }
+  });
+
   test('retains defensive relation checks when option getters change', () => {
     expect(() =>
       runtimeCommand(

@@ -1,3 +1,5 @@
+import type { RequiresIfValueCount } from '../command/types.js';
+
 export interface ValueCountSyntax {
   readonly minValues: number;
   readonly maxValues: number | null;
@@ -10,6 +12,15 @@ export interface PositionalCountSyntax extends ValueCountSyntax {
 }
 
 const expandedValueCountLimit = 8;
+
+export function describeRequiredValueCount({ exactValues, minValues, maxValues }: RequiresIfValueCount): string {
+  if (minValues !== undefined && maxValues !== undefined) {
+    return `between ${minValues} and ${maxValues} values`;
+  }
+  const count = exactValues ?? minValues ?? maxValues;
+  const qualifier = exactValues !== undefined ? 'exactly' : minValues !== undefined ? 'at least' : 'at most';
+  return `${qualifier} ${count} ${count === 1 ? 'value' : 'values'}`;
+}
 
 function compactValueCount(
   minimum: number,

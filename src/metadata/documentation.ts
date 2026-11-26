@@ -3,6 +3,7 @@ import {
   type HelpArgumentGroup,
 } from '../help/sections.js';
 import {
+  describeRequiredValueCount,
   renderEqualsValueCount,
   renderPositionalCount,
   renderValueCount,
@@ -41,8 +42,9 @@ export function relationDescriptions(command: CommandMetadata): readonly string[
   for (const { source, target } of command.requirements) {
     lines.push(`${markdownInline(source)} requires ${markdownInline(target)}`);
   }
-  for (const { source, target, expected } of command.conditionalRequirements) {
-    lines.push(`${markdownInline(source)} = ${formatMarkdownValue(expected)} requires ${markdownInline(target)}`);
+  for (const { source, target, expected, valueCount } of command.conditionalRequirements) {
+    const count = valueCount === undefined ? '' : ` with ${describeRequiredValueCount(valueCount)}`;
+    lines.push(`${markdownInline(source)} = ${formatMarkdownValue(expected)} requires ${markdownInline(target)}${count}`);
   }
   for (const { source, target, expected } of command.requiresValue) {
     lines.push(`${markdownInline(source)} requires ${markdownInline(target)} = ${formatMarkdownValue(expected)}`);

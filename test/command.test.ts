@@ -769,6 +769,96 @@ describe('validation and errors', () => {
       verbose: 0,
     });
   });
+
+  test('requires an exact total for a repeatable option when its source matches', () => {
+    const cli = command('export', {
+      args: [
+        option('mode', parsers.enum(['pair', 'any']), { default: 'pair' }),
+        option('input', parsers.string, {
+          repeatable: true,
+          valueDelimiter: ',',
+          env: 'EXPORT_INPUTS',
+          defaultValues: ['default-a', 'default-b'],
+        }),
+      ],
+      requiresIf: [['mode', 'pair', 'input', { exactValues: 2 }]],
+    });
+
+    expect(cli.tryParse([], { env: {} })).toMatchObject({
+      ok: false,
+      error: {
+        kind: ErrorKind.MissingDependency,
+        argumentName: 'input',
+        relatedArguments: ['mode'],
+        message: expect.stringContaining('with exactly 2 values'),
+      },
+    });
+    expect(cli.tryParse(['--input', 'a'])).toMatchObject({
+      ok: false,
+      error: {
+        kind: ErrorKind.TooFewValues,
+        argumentName: 'input',
+        relatedArguments: ['mode'],
+        tokenIndex: 0,
+        message: 'argument \'--input\' requires exactly 2 values when \'--mode\' is \'pair\' (received 1)',
+      },
+    });
+    expect(cli.tryParse(['--input', 'a,b', '--input', 'c'])).toMatchObject({
+      ok: false,
+      error: { kind: ErrorKind.TooManyValues },
+    });
+    expect(parse(cli, ['--input', 'a', '--input', 'b']).input).toEqual(['a', 'b']);
+    expect(parse(cli, ['--mode', 'any', '--input', 'a']).input).toEqual(['a']);
+    expect(cli.tryParse([], { env: { EXPORT_INPUTS: 'a,b' } })).toMatchObject({ ok: true, value: { input: ['a', 'b'] } });
+    expect(cli.tryParse([], { env: {}, config: { values: { input: ['a'] } } })).toMatchObject({
+      ok: false,
+      error: { kind: ErrorKind.TooFewValues },
+    });
+  });
+
+  test('applies one-sided and inclusive range constraints to the total value count', () => {
+    const cli = command('export', {
+      args: [
+        option('mode', parsers.enum(['min', 'max', 'range'])),
+        option('input', parsers.string, { repeatable: true, valueDelimiter: ',' }),
+      ],
+      requiresIf: [
+        ['mode', 'min', 'input', { minValues: 2 }],
+        ['mode', 'max', 'input', { maxValues: 3 }],
+        ['mode', 'range', 'input', { minValues: 2, maxValues: 3 }],
+      ],
+    });
+
+    expect(parse(cli, ['--mode', 'min', '--input', 'a,b,c,d']).input).toEqual(['a', 'b', 'c', 'd']);
+    expect(parse(cli, ['--mode', 'max', '--input', 'a']).input).toEqual(['a']);
+    expect(parse(cli, ['--mode', 'range', '--input', 'a,b']).input).toEqual(['a', 'b']);
+    expect(parse(cli, ['--mode', 'range', '--input', 'a,b,c']).input).toEqual(['a', 'b', 'c']);
+
+    for (
+      const [mode, inputs, kind, message,] of [
+        ['min', 'a', ErrorKind.TooFewValues, 'at least 2'],
+        ['max', 'a,b,c,d', ErrorKind.TooManyValues, 'at most 3'],
+        ['range', 'a', ErrorKind.TooFewValues, 'between 2 and 3'],
+        ['range', 'a,b,c,d', ErrorKind.TooManyValues, 'between 2 and 3'],
+      ] as const
+    ) {
+      expect(cli.tryParse(['--mode', mode, '--input', inputs])).toMatchObject({
+        ok: false,
+        error: { kind, message: expect.stringContaining(message) },
+      });
+    }
+  });
+
+  test('requires presence even when the requested value count is zero', () => {
+    const cli = command('export', {
+      args: [flag('empty'), option('input', parsers.string, { repeatable: true, numArgs: { min: 0, max: 1 } })],
+      requiresIf: [['empty', true, 'input', { exactValues: 0 }]],
+    });
+
+    expect(parse(cli, ['--empty', '--input']).input).toEqual([]);
+    expect(cli.tryParse(['--empty'])).toMatchObject({ ok: false, error: { kind: ErrorKind.MissingDependency } });
+    expect(cli.tryParse(['--empty', '--input', 'a'])).toMatchObject({ ok: false, error: { kind: ErrorKind.TooManyValues } });
+  });
 });
 
 describe('help, version, and runner', () => {

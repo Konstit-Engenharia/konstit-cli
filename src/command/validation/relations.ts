@@ -3,6 +3,7 @@ import {
   type ArgumentDefinition,
 } from '../../argument/index.js';
 import type { CommandDefinition } from '../schema.js';
+import type { RequiresIfValueCount } from '../types.js';
 import {
   validateArray,
   validateClosedObject,
@@ -29,7 +30,7 @@ interface RuntimeGroupRelations {
 
 interface RuntimeCommandRelations {
   readonly requires?: readonly (readonly [string, string])[];
-  readonly requiresIf?: readonly (readonly [string, unknown, string])[];
+  readonly requiresIf?: readonly (readonly [string, unknown, string, RequiresIfValueCount?])[];
   readonly requiresValue?: readonly (readonly [string, string, unknown])[];
   readonly requiredIfAny?: readonly RuntimeConditionalSetRelation[];
   readonly requiredIfAll?: readonly RuntimeConditionalSetRelation[];
@@ -203,8 +204,15 @@ export function validateCommandRelations(
   for (const [source, target,] of options.requires ?? []) {
     validateDistinctRelation(names, source, target, 'Command option \'requires\'');
   }
-  for (const [source, , target,] of options.requiresIf ?? []) {
-    validateDistinctRelation(names, source, target, 'Command option \'requiresIf\'');
+  for (const [source, , target, valueCount,] of options.requiresIf ?? []) {
+    const context = 'Command option \'requiresIf\'';
+    validateDistinctRelation(names, source, target, context);
+    if (
+      valueCount !== undefined
+      && !definition.arguments.some((argument) => argument.name === target && argument.kind === 'option' && argument.repeatable)
+    ) {
+      throw new TypeError(`${context} value count target '${target}' must be a repeatable option`);
+    }
   }
   for (const [source, target,] of options.requiresValue ?? []) {
     validateDistinctRelation(names, source, target, 'Command option \'requiresValue\'');

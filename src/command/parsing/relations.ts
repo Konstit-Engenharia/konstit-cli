@@ -4,6 +4,7 @@ import {
 } from '../../argument/index.js';
 import { commandError } from '../../help/diagnostics.js';
 import { displayName } from '../../help/usage.js';
+import { describeRequiredValueCount } from '../../help/value-syntax.js';
 import { ErrorKind } from '../../result/error.js';
 import { handlerColorEnabled } from '../../terminal/color.js';
 import {
@@ -176,14 +177,16 @@ export function validateRelations(
       );
     }
   }
-  for (const { source, expected, target } of definition.conditionalRequirements) {
-    if (
-      matchesRelationValue(state.values[source], expected)
-      && !isSupplied(target)
-    ) {
+  for (const { source, expected, target, valueCount } of definition.conditionalRequirements) {
+    if (!matchesRelationValue(state.values[source], expected)) {
+      continue;
+    }
+    const supplied = suppliedArgument(state, target);
+    if (supplied === undefined) {
+      const count = valueCount === undefined ? '' : ` with ${describeRequiredValueCount(valueCount)}`;
       throw commandError(
         ErrorKind.MissingDependency,
-        `argument '${displayName(definition, source)}' requires '${displayName(definition, target)}' when its value is '${
+        `argument '${displayName(definition, source)}' requires '${displayName(definition, target)}'${count} when its value is '${
           displayRelationValue(definition, source, expected)
         }'`,
         definition,
@@ -191,6 +194,23 @@ export function validateRelations(
         inheritedArguments,
         { argumentName: target, relatedArguments: [source] },
       );
+    }
+    if (valueCount !== undefined) {
+      const { exactValues, minValues, maxValues } = valueCount;
+      const { valueCount: count, tokenIndex } = supplied;
+      const tooFew = count < (exactValues ?? minValues ?? 0);
+      if (tooFew || count > (exactValues ?? maxValues ?? Infinity)) {
+        throw commandError(
+          tooFew ? ErrorKind.TooFewValues : ErrorKind.TooManyValues,
+          `argument '${displayName(definition, target)}' requires ${describeRequiredValueCount(valueCount)} when '${
+            displayName(definition, source)
+          }' is '${displayRelationValue(definition, source, expected)}' (received ${count})`,
+          definition,
+          path,
+          inheritedArguments,
+          { argumentName: target, relatedArguments: [source], ...(tokenIndex === undefined ? {} : { tokenIndex }) },
+        );
+      }
     }
   }
   for (const requirement of definition.conditionalSetRequirements) {

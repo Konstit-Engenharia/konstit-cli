@@ -43,6 +43,7 @@ import type {
   HandlerResult,
   Infer,
   RelationValue,
+  RequiresIfValueCount,
   RunOptions,
   RunParsedOptions,
   Simplify,
@@ -349,7 +350,7 @@ export class Command<
     });
   }
 
-  /** Requires target when source equals expected. */
+  /** Requires a target when the source matches, optionally constraining its total value count. */
   requiresIf<
     const Source extends StringKeyOf<Fields>,
     const Target extends Exclude<StringKeyOf<Fields>, Source>,
@@ -357,12 +358,13 @@ export class Command<
     source: Source,
     expected: RelationValue<Fields[Source]>,
     target: Target,
+    valueCount?: RequiresIfValueCount,
   ): Command<Name, Fields, Subcommands, SubcommandRequired, Groups> {
     const definition = getCommandDefinition(this);
     return this.with({
       conditionalRequirements: [
         ...definition.conditionalRequirements,
-        { source, expected, target },
+        { source, expected, target, ...(valueCount === undefined ? {} : { valueCount: Object.freeze({ ...valueCount }) }) },
       ],
     });
   }

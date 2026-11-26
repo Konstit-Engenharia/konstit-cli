@@ -217,12 +217,8 @@ export function command(
   for (const [source, target,] of options.requires ?? []) {
     configured = configured.requires(source as never, target as never);
   }
-  for (const [source, expected, target,] of options.requiresIf ?? []) {
-    configured = configured.requiresIf(
-      source as never,
-      expected as never,
-      target as never,
-    );
+  for (const [source, expected, target, valueCount,] of options.requiresIf ?? []) {
+    configured = configured.requiresIf(source as never, expected as never, target as never, valueCount);
   }
   for (const { conditions, target } of options.requiredIfAny ?? []) {
     configured = configured.requiredIfAny(conditions as never, target as never);

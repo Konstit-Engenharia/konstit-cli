@@ -2,6 +2,7 @@ import type { ArgumentDefinition } from '../argument/index.js';
 import type {
   CommandHandler,
   CommandValidator,
+  RequiresIfValueCount,
 } from './types.js';
 
 /** A directional relation between two arguments. */
@@ -16,6 +17,8 @@ export interface RequirementDefinition {
 export interface ConditionalRequirementDefinition extends RequirementDefinition {
   /** The value compared against the source in requiresIf or the target in requiresValue. */
   readonly expected: unknown;
+  /** The total value count required of the target by `requiresIf`. */
+  readonly valueCount?: RequiresIfValueCount;
 }
 
 /** A comparison of one argument to a configured value. */

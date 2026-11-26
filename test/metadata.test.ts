@@ -153,6 +153,21 @@ describe('command metadata', () => {
     expect(metadata.arguments[14]).not.toHaveProperty('defaultValue');
   });
 
+  test('exports and documents conditional value counts', () => {
+    const valueCount = { exactValues: 2 };
+    const cli = command('export', {
+      args: [option('mode'), option('input', parsers.string, { repeatable: true })],
+      requiresIf: [['mode', 'pair', 'input', valueCount]],
+    });
+    valueCount.exactValues = 3;
+
+    const [relation,] = describeCommand(cli).conditionalRequirements;
+    expect(relation).toEqual({ source: 'mode', target: 'input', expected: 'pair', valueCount: { exactValues: 2 } });
+    expect(Object.isFrozen(relation?.valueCount)).toBe(true);
+    expect(renderMarkdown(cli)).toContain('`mode` = `pair` requires `input` with exactly 2 values');
+    expect(renderManPage(cli)).toContain('requires `input` with exactly 2 values');
+  });
+
   test('exports relations and group metadata with hidden filtering', () => {
     const cli = command('relations', {
       args: [

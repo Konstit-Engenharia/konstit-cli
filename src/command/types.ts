@@ -249,6 +249,12 @@ type BinaryArgumentRelation<Fields extends object> = {
   ];
 }[StringKeyOf<Fields>];
 
+/** The total value count required for a repeatable option by `requiresIf`. */
+export type RequiresIfValueCount =
+  | { readonly exactValues: number; readonly minValues?: never; readonly maxValues?: never; }
+  | { readonly exactValues?: never; readonly minValues: number; readonly maxValues?: number; }
+  | { readonly exactValues?: never; readonly minValues?: never; readonly maxValues: number; };
+
 /** Requires an argument when another argument matches an expected value. */
 type ConditionalArgumentRelation<Fields extends object> = {
   [Source in StringKeyOf<Fields>]: readonly [
@@ -258,6 +264,8 @@ type ConditionalArgumentRelation<Fields extends object> = {
     expected: RelationValue<Fields[Source]>,
     /** The argument required when the source matches. */
     target: Exclude<StringKeyOf<Fields>, Source>,
+    /** Optional count constraint across all occurrences of a repeatable target option. */
+    valueCount?: RequiresIfValueCount,
   ];
 }[StringKeyOf<Fields>];
 
@@ -495,7 +503,7 @@ export interface CommandOptions<
   readonly requires?: readonly BinaryArgumentRelation<
     FieldsFromArguments<Arguments>
   >[];
-  /** Requires a target whenever its source equals an expected value. */
+  /** Requires a target, optionally with a total value count, whenever its source matches an expected value. */
   readonly requiresIf?: readonly ConditionalArgumentRelation<
     FieldsFromArguments<Arguments>
   >[];

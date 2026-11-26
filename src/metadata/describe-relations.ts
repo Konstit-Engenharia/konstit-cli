@@ -50,12 +50,13 @@ export function describeRelations(
       rules
         .filter(({ source, target }) => isVisible(source) && isVisible(target))
         .map((rule) => {
-          const { source, target, expected } = rule;
+          const { source, target, expected, valueCount } = rule;
           const safeExpected = sensitive.has(rule[valueArgument]) ? undefined : toMetadataValue(expected);
           return Object.freeze({
             source,
             target,
             ...(safeExpected === undefined ? {} : { expected: safeExpected }),
+            ...(valueCount === undefined ? {} : { valueCount }),
           });
         }),
     );

@@ -1,5 +1,6 @@
 import type { ArgumentDefinition } from '../argument/index.js';
 import type { CommandExample } from '../command/schema.js';
+import type { RequiresIfValueCount } from '../command/types.js';
 import type {
   CompletionValueHint,
   EnumValue,
@@ -143,6 +144,8 @@ export interface RequirementMetadata {
 export interface ConditionalRequirementMetadata extends RequirementMetadata {
   /** The comparison value, omitted if it cannot be represented as metadata. */
   readonly expected?: MetadataValue;
+  /** The total value count required of the target by `requiresIf`. */
+  readonly valueCount?: RequiresIfValueCount;
 }
 
 /** A comparison between a parsed argument and a configured value. */
@@ -245,7 +248,7 @@ export interface CommandMetadata {
   readonly subcommands: readonly CommandMetadata[];
   /** Dependencies triggered by the presence of a source argument. */
   readonly requirements: readonly RequirementMetadata[];
-  /** Dependencies triggered by a matching source value. */
+  /** Dependencies, including any target value counts, triggered by a matching source value. */
   readonly conditionalRequirements: readonly ConditionalRequirementMetadata[];
   /** Each provided source requires its target to match the expected value. */
   readonly requiresValue: readonly ConditionalRequirementMetadata[];

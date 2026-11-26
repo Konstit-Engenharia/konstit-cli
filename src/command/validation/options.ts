@@ -72,6 +72,7 @@ const commandBooleanOptionKeys = [
 ] as const;
 
 const conditionalSetKeys = new Set(['conditions', 'target']);
+const conditionalValueCountKeys = new Set(['exactValues', 'minValues', 'maxValues'] as const);
 const commandExampleKeys = new Set(['command', 'args', 'description']);
 const requiredUnlessKeys = new Set(['alternatives', 'target']);
 const commandGroupKeys = new Set([
@@ -139,11 +140,41 @@ function validateBinaryRelations(value: unknown, context: string): void {
   }
 }
 
-function validateConditionalRelations(value: unknown, context: string, targetIndex: 1 | 2): void {
+function validateConditionalValueCount(value: unknown, context: string): void {
+  validateClosedObject(value, conditionalValueCountKeys, context);
+  const counts: Partial<Record<'exactValues' | 'minValues' | 'maxValues', number>> = {};
+  for (const [key, count,] of Object.entries(value) as [keyof typeof counts, unknown][]) {
+    if (typeof count !== 'number' || !Number.isSafeInteger(count) || count < 0) {
+      throw new TypeError(`${context} '${key}' must be a non-negative safe integer`);
+    }
+    counts[key] = count;
+  }
+  const { exactValues, minValues, maxValues } = counts;
+  if (exactValues === undefined && minValues === undefined && maxValues === undefined) {
+    throw new TypeError(`${context} must specify exactValues, minValues, or maxValues`);
+  }
+  if (exactValues !== undefined && (minValues !== undefined || maxValues !== undefined)) {
+    throw new TypeError(`${context} cannot combine exactValues with minValues or maxValues`);
+  }
+  if (minValues !== undefined && maxValues !== undefined && minValues > maxValues) {
+    throw new TypeError(`${context} minValues cannot exceed maxValues`);
+  }
+}
+
+function validateConditionalRelations(value: unknown, kind: 'requiresIf' | 'requiresValue'): void {
+  const context = `Command option '${kind}'`;
+  const targetIndex = kind === 'requiresIf' ? 2 : 1;
   for (const relation of validateArray(value, context)) {
-    const tuple = validateTuple(relation, 3, `${context} entry`);
+    const tuple = validateArray(relation, `${context} entry`);
+    const hasValueCount = kind === 'requiresIf' && tuple.length === 4;
+    if (tuple.length !== 3 && !hasValueCount) {
+      throw new TypeError(`${context} entry must contain ${kind === 'requiresIf' ? '3 or 4' : 'exactly 3'} values`);
+    }
     if (typeof tuple[0] !== 'string' || typeof tuple[targetIndex] !== 'string') {
       throw new TypeError(`${context} entries must contain argument names`);
+    }
+    if (hasValueCount) {
+      validateConditionalValueCount(tuple[3], `${context} value count`);
     }
   }
 }
@@ -262,10 +293,10 @@ export function validateCommandOptions(options: unknown): void {
     validateBinaryRelations(options.requires, 'Command option \'requires\'');
   }
   if (options.requiresIf !== undefined) {
-    validateConditionalRelations(options.requiresIf, 'Command option \'requiresIf\'', 2);
+    validateConditionalRelations(options.requiresIf, 'requiresIf');
   }
   if (options.requiresValue !== undefined) {
-    validateConditionalRelations(options.requiresValue, 'Command option \'requiresValue\'', 1);
+    validateConditionalRelations(options.requiresValue, 'requiresValue');
   }
   if (options.requiredIfAny !== undefined) {
     validateConditionalSets(options.requiredIfAny, 'Command option \'requiredIfAny\'');

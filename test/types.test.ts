@@ -554,4 +554,12 @@ void (() => {
   command('archive', { args: valueArgs, requiresValue: [['format', 'format', 'zip']] });
   // @ts-expect-error both argument names must exist
   command('archive', { args: valueArgs, requiresValue: [['missing', 'format', 'zip']] });
+  const countArgs = [option('mode', parsers.enum(['pair', 'any'])), option('input', parsers.string, { repeatable: true })] as const;
+  command('export', { args: countArgs, requiresIf: [['mode', 'pair', 'input', { exactValues: 2 }]] });
+  // @ts-expect-error count constraints still check the source value type
+  command('export', { args: countArgs, requiresIf: [['mode', 'other', 'input', { exactValues: 2 }]] });
+  // @ts-expect-error exact counts are mutually exclusive with bounds
+  command('export', { args: countArgs, requiresIf: [['mode', 'pair', 'input', { exactValues: 2, maxValues: 3 }]] });
+  // @ts-expect-error the fourth tuple element must specify at least one count
+  command('export', { args: countArgs, requiresIf: [['mode', 'pair', 'input', {}]] });
 });
