@@ -430,8 +430,8 @@ void (() => {
     // @ts-expect-error a dash is not a valid short option
     short: '-',
   });
-  count('emoji-short', {
-    short: '💥',
+  count('unicode-short', {
+    short: '界',
   });
   positional('path', parsers.string, {
     // @ts-expect-error positional arguments cannot be global
