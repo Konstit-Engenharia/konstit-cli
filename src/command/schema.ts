@@ -2,6 +2,7 @@ import type { ArgumentDefinition } from '../argument/index.js';
 import type {
   CommandHandler,
   CommandValidator,
+  RequirementConditionInput,
   RequiresIfValueCount,
 } from './types.js';
 
@@ -11,6 +12,14 @@ export interface RequirementDefinition {
   readonly source: string;
   /** The argument affected by the relation. */
   readonly target: string;
+}
+
+/** A dependency from a supplied argument to at least one member of a named group. */
+export interface GroupRequirementDefinition {
+  /** The argument that triggers the requirement. */
+  readonly source: string;
+  /** The group that must have a supplied member. */
+  readonly group: string;
 }
 
 /** A dependency that compares either the source or target to an expected value. */
@@ -163,6 +172,10 @@ export interface CommandDefinition {
   readonly subcommands: readonly CommandDefinition[];
   /** Dependencies triggered by the presence of a source argument. */
   readonly requirements: readonly RequirementDefinition[];
+  /** Dependencies that require any member of a named group. */
+  readonly groupRequirements?: readonly GroupRequirementDefinition[];
+  /** Controls which source values can trigger conditional requirements. */
+  readonly requirementConditionInput?: RequirementConditionInput;
   /** Dependencies triggered by a matching source value. */
   readonly conditionalRequirements: readonly ConditionalRequirementDefinition[];
   /** Dependencies that require a target value when a source argument is present. */
@@ -175,7 +188,7 @@ export interface CommandDefinition {
   readonly requiredUnlessAll: readonly RequiredUnlessDefinition[];
   /** Fallbacks triggered by another argument's presence or value. */
   readonly defaultIf: readonly ConditionalDefaultDefinition[];
-  /** Arguments that conflict with every other supplied argument. */
+  /** Arguments that conflict with other supplied arguments declared on this command. */
   readonly exclusiveArguments: readonly string[];
   /** Relations that clear a target when its source is explicitly provided. */
   readonly overrides: readonly OverrideDefinition[];

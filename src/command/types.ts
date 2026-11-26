@@ -432,6 +432,9 @@ type CheckedGroups<
     : CheckedGroup<First> & CheckedGroups<Rest, Seen | First['name']>
   : unknown;
 
+/** Whether conditional requirements compare supplied inputs or all resolved values. */
+export type RequirementConditionInput = 'supplied' | 'resolved';
+
 /** Optional values applied when starting an immutable command definition. */
 export interface CommandOptions<
   Arguments extends readonly AnyArgument[] = readonly AnyArgument[],
@@ -503,6 +506,13 @@ export interface CommandOptions<
   readonly requires?: readonly BinaryArgumentRelation<
     FieldsFromArguments<Arguments>
   >[];
+  /** Requires at least one member of a named group whenever its source is supplied. */
+  readonly requiresGroup?: readonly (readonly [
+    source: StringKeyOf<FieldsFromArguments<Arguments>>,
+    group: NoInfer<GroupNamesFromTuple<Groups>>,
+  ])[];
+  /** Selects the inputs checked by `requiresIf`, `requiredIfAny`, and `requiredIfAll`. */
+  readonly requirementConditionInput?: RequirementConditionInput;
   /** Requires a target, optionally with a total value count, whenever its source matches an expected value. */
   readonly requiresIf?: readonly ConditionalArgumentRelation<
     FieldsFromArguments<Arguments>
@@ -537,12 +547,14 @@ export interface CommandOptions<
   readonly conflicts?: readonly AtLeastTwoTuple<
     StringKeyOf<FieldsFromArguments<Arguments>>
   >[];
-  /** Makes each listed argument conflict with all other supplied arguments. */
+  /** Makes each listed argument conflict with other supplied arguments declared on this command. */
   readonly exclusive?: NonEmptyTuple<
     StringKeyOf<FieldsFromArguments<Arguments>>
   >;
   /** Defines clap-style argument groups and their relations. */
   readonly groups?: Groups;
+  /** Rejects direct contradictions between presence requirements and conflicts. Defaults to false. */
+  readonly strictRelations?: boolean;
   /** Validates resolved arguments after defaults, overrides, and built-in relations. */
   readonly validate?: CommandValidator<
     CommandArguments<FieldsFromArguments<Arguments>, SubcommandsFromTuple<Subcommands>, SubcommandRequired>,

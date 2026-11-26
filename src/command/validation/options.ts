@@ -31,6 +31,8 @@ const commandOptionKeys = new Set([
   'hideStandardFlagsInSubcommandHelp',
   'hide',
   'requires',
+  'requiresGroup',
+  'requirementConditionInput',
   'requiresIf',
   'requiresValue',
   'requiredIfAny',
@@ -42,6 +44,7 @@ const commandOptionKeys = new Set([
   'conflicts',
   'exclusive',
   'groups',
+  'strictRelations',
   'validate',
   'handler',
 ]);
@@ -69,6 +72,7 @@ const commandBooleanOptionKeys = [
   'disableVersionFlag',
   'hideStandardFlagsInSubcommandHelp',
   'hide',
+  'strictRelations',
 ] as const;
 
 const conditionalSetKeys = new Set(['conditions', 'target']);
@@ -131,11 +135,11 @@ function validateTuple(
   return tuple;
 }
 
-function validateBinaryRelations(value: unknown, context: string): void {
+function validateBinaryRelations(value: unknown, context: string, names = 'argument names'): void {
   for (const relation of validateArray(value, context)) {
     const tuple = validateTuple(relation, 2, `${context} entry`);
     if (typeof tuple[0] !== 'string' || typeof tuple[1] !== 'string') {
-      throw new TypeError(`${context} entries must contain argument names`);
+      throw new TypeError(`${context} entries must contain ${names}`);
     }
   }
 }
@@ -291,6 +295,16 @@ export function validateCommandOptions(options: unknown): void {
   }
   if (options.requires !== undefined) {
     validateBinaryRelations(options.requires, 'Command option \'requires\'');
+  }
+  if (options.requiresGroup !== undefined) {
+    validateBinaryRelations(options.requiresGroup, 'Command option \'requiresGroup\'', 'an argument name and a group name');
+  }
+  if (
+    options.requirementConditionInput !== undefined
+    && options.requirementConditionInput !== 'supplied'
+    && options.requirementConditionInput !== 'resolved'
+  ) {
+    throw new TypeError('Command option \'requirementConditionInput\' must be \'supplied\' or \'resolved\'');
   }
   if (options.requiresIf !== undefined) {
     validateConditionalRelations(options.requiresIf, 'requiresIf');

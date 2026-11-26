@@ -7,6 +7,7 @@ import {
 import { sanitizeDiagnostic } from './diagnostics.js';
 import { groupHelpArguments } from './sections.js';
 import {
+  displayArgument,
   positionalValueName,
   renderEqualsValueCount,
   renderUsage,
@@ -197,6 +198,12 @@ function renderHelpDocument(
     });
     pushAligned(lines, helpGroupEntries(group, builtInEntries), group.heading);
   }
+  const constraints = helpConstraintEntries(definition, argumentsToRender);
+  if (constraints.length > 0) {
+    appendLine(lines, '', { kind: 'plain' });
+    appendLine(lines, 'Constraints:', { kind: 'heading', section: 'Constraints' });
+    pushAligned(lines, constraints, 'Constraints');
+  }
   if (includeLongAbout && definition.longAbout !== undefined) {
     appendLine(lines, '', { kind: 'plain' });
     appendText(lines, definition.longAbout, { kind: 'plain' });
@@ -250,6 +257,51 @@ function helpArgumentEntries(
       : renderValueCount(argument);
     return [`  ${names}${value}`, annotateHelp(argument)] as const;
   });
+}
+
+function helpConstraintEntries(
+  definition: CommandDefinition,
+  visibleArguments: readonly ArgumentDefinition[],
+): readonly HelpEntry[] {
+  if (definition.groups.length === 0 && definition.exclusiveArguments.length === 0) {
+    return [];
+  }
+  const alternativeList = new Intl.ListFormat('en', { type: 'disjunction' });
+  const rendered = new Set(visibleArguments);
+  const labels = new Map(
+    definition.arguments.filter((argument) => rendered.has(argument)).map((argument) => [
+      argument.name,
+      sanitizeDiagnostic(displayArgument(argument)),
+    ]),
+  );
+  const groups = definition.groups.filter(({ members }) => members.every((name) => labels.has(name)));
+  const entries: HelpEntry[] = [];
+  for (const group of groups) {
+    if (!group.required && (group.multiple || group.members.length < 2)) {
+      continue;
+    }
+    const alternatives = alternativeList.format(group.members.map((name) => labels.get(name) ?? name));
+    const cardinality = group.required
+      ? group.multiple ? 'at least one' : 'exactly one'
+      : 'at most one';
+    const description = group.members.length === 1 ? `Provide ${alternatives}.` : `Choose ${cardinality} of ${alternatives}.`;
+    entries.push([`  ${sanitizeDiagnostic(group.name)}`, description]);
+  }
+  for (const { source, group } of definition.groupRequirements ?? []) {
+    const label = labels.get(source);
+    const target = groups.find(({ name }) => name === group);
+    if (label !== undefined && target !== undefined) {
+      const alternatives = alternativeList.format(target.members.map((name) => labels.get(name) ?? name));
+      entries.push([`  ${label}`, `Requires an argument from the ${sanitizeDiagnostic(group)} group (${alternatives}).`]);
+    }
+  }
+  for (const name of definition.exclusiveArguments) {
+    const label = labels.get(name);
+    if (label !== undefined) {
+      entries.push([`  ${label}`, 'Cannot be combined with other arguments declared on this command.']);
+    }
+  }
+  return entries;
 }
 
 function helpGroupEntries(

@@ -30,6 +30,7 @@ interface RuntimeGroupRelations {
 
 interface RuntimeCommandRelations {
   readonly requires?: readonly (readonly [string, string])[];
+  readonly requiresGroup?: readonly (readonly [string, string])[];
   readonly requiresIf?: readonly (readonly [string, unknown, string, RequiresIfValueCount?])[];
   readonly requiresValue?: readonly (readonly [string, string, unknown])[];
   readonly requiredIfAny?: readonly RuntimeConditionalSetRelation[];
@@ -281,6 +282,77 @@ export function validateCommandRelations(
         names,
         target,
         `Argument group '${group.name}' conflicts`,
+      );
+    }
+  }
+  for (const [source, group,] of options.requiresGroup ?? []) {
+    const context = 'Command option \'requiresGroup\'';
+    validateArgumentReference(names, source, context);
+    if (!options.groups?.some(({ name }) => name === group)) {
+      throw new TypeError(`${context} references unknown argument group '${group}'`);
+    }
+  }
+}
+
+function conflictingRule(definition: CommandDefinition, source: string, target: string): string | undefined {
+  if (source === target) {
+    return undefined;
+  }
+  if (definition.exclusiveArguments.includes(source) || definition.exclusiveArguments.includes(target)) {
+    return '\'exclusive\'';
+  }
+  if (definition.conflicts.some((names) => names.includes(source) && names.includes(target))) {
+    return '\'conflicts\'';
+  }
+  for (const group of definition.groups) {
+    const sourceMember = group.members.includes(source);
+    const targetMember = group.members.includes(target);
+    if (
+      (sourceMember && targetMember && !group.multiple)
+      || (sourceMember && group.conflicts.includes(target))
+      || (targetMember && group.conflicts.includes(source))
+    ) {
+      return `argument group '${group.name}'`;
+    }
+  }
+  return undefined;
+}
+
+export function validateRelationConsistency(definition: CommandDefinition): void {
+  for (
+    const [rule, requirements,] of [
+      ['requires', definition.requirements],
+      ['requiresValue', definition.requiresValue],
+    ] as const
+  ) {
+    for (const { source, target } of requirements) {
+      const conflict = conflictingRule(definition, source, target);
+      if (conflict !== undefined) {
+        throw new TypeError(
+          `Command '${definition.name}' cannot satisfy '${rule}' from '${source}' to '${target}' because of ${conflict}`,
+        );
+      }
+    }
+  }
+  for (const { name, members, requires } of definition.groups) {
+    for (const source of members) {
+      for (const target of requires) {
+        const conflict = conflictingRule(definition, source, target);
+        if (conflict !== undefined) {
+          throw new TypeError(
+            `Command '${definition.name}' argument '${source}' cannot satisfy group '${name}' requirement '${target}' because of ${conflict}`,
+          );
+        }
+      }
+    }
+  }
+  for (const { source, group } of definition.groupRequirements ?? []) {
+    const members = definition.groups.find(({ name }) => name === group)?.members ?? [];
+    const conflicts = members.map((member) => conflictingRule(definition, source, member));
+    if (conflicts.length > 0 && conflicts.every((conflict) => conflict !== undefined)) {
+      const rules = [...new Set(conflicts)].join(', ');
+      throw new TypeError(
+        `Command '${definition.name}' cannot satisfy 'requiresGroup' from '${source}' to '${group}' because of ${rules}`,
       );
     }
   }

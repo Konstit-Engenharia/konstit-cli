@@ -212,12 +212,8 @@ export function applyEnvironmentFallbacks(
   state: ParseState,
   path: readonly string[],
   inheritedArguments: readonly ArgumentDefinition[],
+  overriddenTargets: ReadonlySet<string>,
 ): void {
-  const overriddenTargets = new Set(
-    definition.overrides
-      .filter(({ source }) => hasCommandLineInput(state, source))
-      .map(({ target }) => target),
-  );
   for (const argument of definition.arguments) {
     if (
       argument.env === undefined

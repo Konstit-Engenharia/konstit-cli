@@ -358,6 +358,31 @@ describe('conditional defaults', () => {
     });
   });
 
+  test('evaluates conditional defaults using the values left by CLI overrides', () => {
+    const cli = command('build', {
+      args: [
+        flag('reset'),
+        option('profile', parsers.string, { default: 'dev' }),
+        option('mode', parsers.string),
+        option('notice', parsers.string),
+      ],
+      overrides: [['reset', 'profile']],
+      defaultIf: [
+        { source: 'profile', equals: 'prod', target: 'mode', value: 'live' },
+        { source: 'profile', equals: 'dev', target: 'mode', value: 'safe' },
+        { source: 'profile', target: 'notice', value: 'supplied' },
+        { source: 'reset', target: 'profile', value: 'staging' },
+      ],
+    });
+    expect(parse(cli, ['--profile', 'prod'])).toMatchObject({ profile: 'prod', mode: 'live', notice: 'supplied' });
+    for (const argv of [['--reset'], ['--reset', '--profile', 'prod'], ['--profile', 'prod', '--reset']]) {
+      const result = parse(cli, argv);
+      expect(result).toEqual({ reset: true, profile: 'dev', mode: 'safe', notice: undefined });
+      expect(getValueSource(result, 'profile')).toBe('default');
+      expect(getValueSource(result, 'mode')).toBe('default');
+    }
+  });
+
   test('honors CLI, environment, config, and ordinary defaults for targets', () => {
     const environmentName = 'KONSTIT_CONDITIONAL_MODE';
     const previous = Bun.env[environmentName];

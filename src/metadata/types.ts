@@ -1,6 +1,12 @@
 import type { ArgumentDefinition } from '../argument/index.js';
-import type { CommandExample } from '../command/schema.js';
-import type { RequiresIfValueCount } from '../command/types.js';
+import type {
+  CommandExample,
+  GroupRequirementDefinition,
+} from '../command/schema.js';
+import type {
+  RequirementConditionInput,
+  RequiresIfValueCount,
+} from '../command/types.js';
 import type {
   CompletionValueHint,
   EnumValue,
@@ -140,6 +146,9 @@ export interface RequirementMetadata {
   readonly target: string;
 }
 
+/** A dependency from a supplied argument to at least one member of a named group. */
+export type GroupRequirementMetadata = GroupRequirementDefinition;
+
 /** A requirement that compares either the source or target to an expected value. */
 export interface ConditionalRequirementMetadata extends RequirementMetadata {
   /** The comparison value, omitted if it cannot be represented as metadata. */
@@ -248,6 +257,10 @@ export interface CommandMetadata {
   readonly subcommands: readonly CommandMetadata[];
   /** Dependencies triggered by the presence of a source argument. */
   readonly requirements: readonly RequirementMetadata[];
+  /** Dependencies that require any member of a named group. */
+  readonly groupRequirements?: readonly GroupRequirementMetadata[];
+  /** Which source values can trigger conditional requirements, when explicitly configured. */
+  readonly requirementConditionInput?: RequirementConditionInput;
   /** Dependencies, including any target value counts, triggered by a matching source value. */
   readonly conditionalRequirements: readonly ConditionalRequirementMetadata[];
   /** Each provided source requires its target to match the expected value. */
@@ -260,7 +273,7 @@ export interface CommandMetadata {
   readonly requiredUnless: readonly RequiredUnlessMetadata[];
   /** Requirements waived when all alternatives are present. */
   readonly requiredUnlessAll: readonly RequiredUnlessMetadata[];
-  /** Arguments that conflict with every other supplied argument. */
+  /** Arguments that conflict with other supplied arguments declared on this command. */
   readonly exclusiveArguments: readonly string[];
   /** Relations that clear a target when its source is explicitly provided. */
   readonly overrides: readonly RequirementMetadata[];

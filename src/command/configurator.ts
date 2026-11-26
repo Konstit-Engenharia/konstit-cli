@@ -490,7 +490,7 @@ export class Command<
     });
   }
 
-  /** Makes each listed argument conflict with every other provided argument. */
+  /** Makes each listed argument conflict with other supplied arguments declared on this command. */
   exclusive<
     const First extends StringKeyOf<Fields>,
     const Rest extends readonly Exclude<StringKeyOf<Fields>, First>[],

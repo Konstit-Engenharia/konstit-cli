@@ -109,7 +109,9 @@ options object.
 | `disableVersionFlag`          | Disable generated `-V` and `--version`.                                 |
 | `hide`                        | Hide this command from parent help and completion.                      |
 | `requires`                    | Unconditional argument dependencies.                                    |
+| `requiresGroup`               | Require a supplied member of a named group.                             |
 | `requiresIf`                  | Conditional dependencies with optional total value counts.              |
+| `requirementConditionInput`   | Choose supplied inputs or resolved values for conditional requirements. |
 | `requiresValue`               | Require another argument with a specific parsed value.                  |
 | `requiredIfAny`               | Dependencies activated by any matching condition.                       |
 | `requiredIfAll`               | Dependencies activated by all matching conditions.                      |
@@ -118,8 +120,9 @@ options object.
 | `overrides`                   | Clear a target when a source is explicitly supplied.                    |
 | `defaultIf`                   | Supply a typed default when another argument matches.                   |
 | `conflicts`                   | Mutually conflicting argument sets.                                     |
-| `exclusive`                   | Arguments that conflict with every other supplied argument.             |
+| `exclusive`                   | Arguments that conflict with other supplied arguments on this command.  |
 | `groups`                      | Named argument groups and their relations.                              |
+| `strictRelations`             | Reject direct contradictions between requirements and conflicts.        |
 | `validate`                    | Synchronous validation of resolved arguments.                           |
 | `handler`                     | Synchronous or asynchronous command callback.                           |
 
@@ -1012,75 +1015,104 @@ A custom parser can throw an `Error`. The library converts it to a structured
 
 ## Relations and groups
 
-Relation names are checked against the `args` tuple. In `requiresIf` the
-expected value takes the source parser's type. In `requiresValue` it takes
-the target parser's type.
+### Requirements
+
+Use the names from the `args` tuple when declaring relations. `requires`
+requires the target when the source is supplied. `requiresIf` compares the
+source's parsed value. `requiresValue` checks source presence and compares
+the supplied target's parsed value. A comparison against a parsed array
+matches any element.
 
 ```ts
+import {
+  command,
+  flag,
+  option,
+  parsers,
+} from '@konstit/cli';
+
 const release = command('release', {
   args: [
-    flag('major'),
-    flag('minor'),
     flag('dry-run'),
-    flag('offline'),
-    flag('quiet'),
-    count('verbose'),
     option('format', parsers.enum(['text', 'json'])),
     option('schema'),
     option('token'),
   ],
-  conflicts: [['major', 'minor']],
   requires: [['token', 'dry-run']],
   requiresIf: [['format', 'json', 'schema']],
   requiresValue: [['schema', 'format', 'json']],
-  requiredIfAny: [{
-    conditions: [['format', 'json'], ['dry-run', true]],
-    target: 'schema',
-  }],
-  requiredIfAll: [{
-    conditions: [['format', 'json'], ['offline', true]],
-    target: 'token',
-  }],
-  requiredUnlessPresent: [{ alternatives: ['offline'], target: 'token' }],
-  requiredUnlessAll: [{
-    alternatives: ['offline', 'dry-run'],
-    target: 'schema',
-  }],
-  overrides: [['quiet', 'verbose']],
-  exclusive: ['offline'],
-  groups: [{
-    name: 'level',
-    members: ['major', 'minor'],
-    required: true,
-    requires: ['format'],
-    conflicts: ['quiet'],
-  }],
 });
+
+console.log(release.tryParse(['--format=json', '--schema=schema.json'])); // Success
+console.log(release.tryParse(['--format=json'])); // MissingDependency for --schema
+console.log(release.tryParse(['--schema=schema.json', '--format=text'])); // MissingDependency for --format
+console.log(release.tryParse(['--token=example'])); // MissingDependency for --dry-run
 ```
 
-Each conflict entry makes its members mutually exclusive. Each `exclusive`
-argument conflicts with every other supplied argument. A group allows one
-member by default. Set `multiple: true` to allow more than one. Group
-`requires` and `conflicts` activate when any member is present.
+CLI, environment, and configuration inputs count as supplied. For each
+conditional requirement, the target must be supplied. Use
+`requirementConditionInput: 'supplied'` to check supplied sources across
+`requiresIf`, `requiredIfAny`, and `requiredIfAll`. Use `'resolved'` to consider
+defaults as well. When this setting is omitted, `requiresIf` checks resolved
+values and `requiredIfAny` and `requiredIfAll` check supplied sources.
 
-In the example, `--format json` requires `--schema`, and supplying
-`--schema` requires `--format json`. Supplying `--schema` with a missing
-format or with `--format text` produces a `MissingDependency` error.
-As with `requires`, CLI, environment,
-and config values count as supplied. Defaults alone neither activate the
-source nor satisfy the target. The comparison uses the parsed target after
-overrides. For an array, any matching element satisfies the rule.
+```ts
+import {
+  command,
+  flag,
+  option,
+} from '@konstit/cli';
 
-`overrides` evaluates source presence from a snapshot of the arguments supplied
-on the CLI before any target is cleared. Every override relation uses that same
-snapshot, so a chain such as `a -> b` and `b -> c` clears both targets in either
-declaration order. Environment, configuration, and default values do not make
-an override source explicit.
+const sync = command('sync', {
+  args: [
+    flag('remote'),
+    flag('batch'),
+    flag('interactive'),
+    option('log'),
+    option('token'),
+    option('profile'),
+    option('region'),
+  ],
+  requirementConditionInput: 'supplied',
+  requiredIfAny: [{
+    conditions: [['remote', true], ['batch', true]],
+    target: 'log',
+  }],
+  requiredIfAll: [{
+    conditions: [['remote', true], ['batch', true]],
+    target: 'token',
+  }],
+  requiredUnlessPresent: [{ alternatives: ['interactive'], target: 'profile' }],
+  requiredUnlessAll: [{
+    alternatives: ['interactive', 'profile'],
+    target: 'region',
+  }],
+});
+
+console.log(sync.tryParse(['--interactive', '--profile=dev'])); // Success
+console.log(sync.tryParse(['--interactive', '--profile=dev', '--batch'])); // MissingDependency for --log
+console.log(
+  sync.tryParse([
+    '--interactive',
+    '--profile=dev',
+    '--batch',
+    '--remote',
+    '--log=sync.log',
+  ]),
+); // MissingDependency for --token
+console.log(sync.tryParse(['--interactive'])); // MissingRequiredArgument for --region
+```
 
 A `requiresIf` tuple can include a fourth element with a count constraint for a
 repeatable target option. The count covers all parsed values across occurrences.
 
 ```ts
+import {
+  command,
+  option,
+  parsers,
+} from '@konstit/cli';
+
 const exportCommand = command('export', {
   args: [
     option('mode', parsers.enum(['pair', 'batch', 'any'])),
@@ -1091,6 +1123,11 @@ const exportCommand = command('export', {
     ['mode', 'batch', 'input', { minValues: 2, maxValues: 5 }],
   ],
 });
+
+console.log(
+  exportCommand.tryParse(['--mode=pair', '--input=one', '--input=two']),
+); // Success
+console.log(exportCommand.tryParse(['--mode=pair', '--input=one'])); // TooFewValues
 ```
 
 Use `minValues` or `maxValues` alone for a one-sided constraint. Bounds are
@@ -1098,6 +1135,119 @@ inclusive, and all counts must be non-negative safe integers. Use `exactValues`
 on its own. A matching rule always requires the target to be supplied. An absent
 target produces `MissingDependency`. A supplied target outside the constraint
 produces `TooFewValues` or `TooManyValues`.
+
+### Conflicts and exclusivity
+
+Each `conflicts` entry allows at most one listed argument to be supplied.
+Each `exclusive` argument conflicts with every other supplied argument
+declared on the same command. A subcommand and arguments declared on another
+command, including inherited globals, fall outside that scope. An exclusive
+argument still needs to satisfy the command's requirements.
+
+Enable `strictRelations` to catch direct contradictions when creating a
+command. For example, a dependency and a conflict between the same two
+arguments make the dependency's source unusable.
+
+```ts
+import {
+  command,
+  flag,
+  option,
+} from '@konstit/cli';
+
+const read = command('read', {
+  args: [option('file'), option('url'), flag('stdin')],
+  conflicts: [['file', 'url']],
+  exclusive: ['stdin'],
+  strictRelations: true,
+});
+
+console.log(read.tryParse(['--stdin'])); // Success
+console.log(read.tryParse(['--file=data.txt'])); // Success
+console.log(read.tryParse(['--stdin', '--file=data.txt'])); // ArgumentConflict
+console.log(read.tryParse(['--file=data.txt', '--url=https://example.com'])); // ArgumentConflict
+```
+
+Adding `requires: [['file', 'url']]` to this definition would throw a
+`TypeError` during construction because `--file` and `--url` conflict.
+
+### Overrides
+
+An override fires when its source is supplied on the CLI. All rules use the
+same original CLI input, so `a -> b` and `b -> c` clear both targets when both
+sources are supplied, in either declaration order. An overridden target
+returns to its ordinary default or absent value, regardless of token order.
+Conditional defaults run on the resulting values, and overridden targets
+keep their reset values.
+
+```ts
+import {
+  command,
+  flag,
+  option,
+  parsers,
+} from '@konstit/cli';
+
+const build = command('build', {
+  args: [
+    flag('reset'),
+    option('profile', parsers.enum(['dev', 'prod']), { default: 'dev' }),
+    option('mode'),
+  ],
+  overrides: [['reset', 'profile']],
+  defaultIf: [{
+    source: 'profile',
+    equals: 'prod',
+    target: 'mode',
+    value: 'live',
+  }],
+});
+
+console.log(build.tryParse(['--profile=prod'])); // profile is prod and mode is live
+console.log(build.tryParse(['--profile=prod', '--reset'])); // profile is dev and mode is undefined
+console.log(build.tryParse(['--profile=unknown', '--reset'])); // InvalidValue
+```
+
+### Argument groups
+
+A group accepts at most one member by default. Set `required: true` to require
+one, or set `multiple: true` to allow several. Group `requires` and `conflicts`
+apply whenever any member is supplied. Use `requiresGroup` when supplying an
+argument should require at least one member of a named group.
+
+```ts
+import {
+  command,
+  flag,
+  option,
+} from '@konstit/cli';
+
+const publish = command('publish', {
+  args: [
+    flag('upload'),
+    option('file'),
+    option('url'),
+    option('format'),
+    flag('preview'),
+  ],
+  requiresGroup: [['upload', 'destination']],
+  groups: [{
+    name: 'destination',
+    members: ['file', 'url'],
+    requires: ['format'],
+    conflicts: ['preview'],
+  }],
+});
+
+console.log(
+  publish.tryParse(['--upload', '--file=report.txt', '--format=text']),
+); // Success
+console.log(publish.tryParse(['--upload'])); // MissingDependency for the destination group
+console.log(
+  publish.tryParse(['--file=report.txt', '--format=text', '--preview']),
+); // ArgumentConflict
+console.log(publish.tryParse(['--help'])); // Shows the group alternatives
+```
 
 ### Cross-argument validation
 

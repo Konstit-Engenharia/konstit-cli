@@ -24,6 +24,7 @@ export type {
   HandlerContext,
   HandlerResult,
   Infer,
+  RequirementConditionInput,
   RunOptions,
   RunParsedOptions,
 } from './command/types.js';
@@ -50,6 +51,7 @@ export type {
   ConditionalRequirementMetadata,
   ConditionalSetRequirementMetadata,
   GroupMetadata,
+  GroupRequirementMetadata,
   MetadataValue,
   ParserMetadata,
   RequiredUnlessMetadata,

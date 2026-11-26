@@ -31,7 +31,10 @@ import type {
 } from './types.js';
 import { validateCommandName } from './validation/definition.js';
 import { validateCommandOptions } from './validation/options.js';
-import { validateCommandRelations } from './validation/relations.js';
+import {
+  validateCommandRelations,
+  validateRelationConsistency,
+} from './validation/relations.js';
 
 function emptyCommand<const Name extends string>(
   name: Name,
@@ -182,6 +185,14 @@ export function command(
   }
 
   validateCommandRelations(options, getCommandDefinition(configured));
+  if (options.requirementConditionInput !== undefined || options.requiresGroup !== undefined) {
+    configured = new Command(copyCommand(getCommandDefinition(configured), {
+      ...(options.requirementConditionInput === undefined ? {} : { requirementConditionInput: options.requirementConditionInput }),
+      ...(options.requiresGroup === undefined ? {} : {
+        groupRequirements: Object.freeze(options.requiresGroup.map(([source, group,]) => Object.freeze({ source, group }))),
+      }),
+    }));
+  }
   if (options.requiresValue !== undefined) {
     configured = new Command(copyCommand(getCommandDefinition(configured), {
       requiresValue: options.requiresValue.map(([source, target, expected,]) => ({ source, target, expected })),
@@ -278,6 +289,9 @@ export function command(
         ...rest as never,
       );
     }
+  }
+  if (options.strictRelations === true) {
+    validateRelationConsistency(getCommandDefinition(configured));
   }
   if (options.examples !== undefined && options.examples.length > 0) {
     const definition = getCommandDefinition(configured);

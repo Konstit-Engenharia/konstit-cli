@@ -46,8 +46,8 @@ import {
   type WordState,
 } from './recognition.js';
 import {
-  applyConditionalDefaults,
-  applyOverrides,
+  applyValueRelations,
+  collectOverrideTargets,
 } from './relations.js';
 import {
   acceptsOptionLookingPositional,
@@ -413,15 +413,16 @@ function parseDefinition(
     tokenIndex: suppliedArgument(state, conflictingArgument.name)?.tokenIndex,
   };
   const inheritedArguments = inheritedGlobals.map(({ argument }) => argument);
+  const overriddenTargets = collectOverrideTargets(definition, state);
   applyEnvironmentFallbacks(
     definition,
     state,
     path,
     inheritedArguments,
+    overriddenTargets,
   );
   applyConfigValues(definition, config, path, state, inheritedGlobals);
-  applyConditionalDefaults(definition, state, session.env);
-  applyOverrides(definition, state, session.env);
+  applyValueRelations(definition, state, session.env, overriddenTargets);
   refreshInheritedSources(state.subcommand, localGlobals);
   validateParsedValues(
     definition,

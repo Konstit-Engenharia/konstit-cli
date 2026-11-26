@@ -38,9 +38,13 @@ export function applyConditionalDefaults(
   definition: CommandDefinition,
   state: RelationState,
   env: Environment,
+  overriddenTargets?: ReadonlySet<string>,
 ): void {
   const rulesByTarget = new Map<string, typeof definition.defaultIf[number][]>();
   for (const rule of definition.defaultIf) {
+    if (overriddenTargets?.has(rule.target)) {
+      continue;
+    }
     const rules = rulesByTarget.get(rule.target) ?? [];
     rules.push(rule);
     rulesByTarget.set(rule.target, rules);
@@ -100,14 +104,23 @@ export function applyConditionalDefaults(
   }
 }
 
-export function applyOverrides(
+export function collectOverrideTargets(
+  definition: CommandDefinition,
+  state: ArgumentValues,
+): ReadonlySet<string> {
+  // Chained overrides use the same CLI snapshot even when a source is also a target.
+  return new Set(
+    definition.overrides.filter(({ source }) => hasCommandLineInput(state, source)).map(({ target }) => target),
+  );
+}
+
+export function applyValueRelations(
   definition: CommandDefinition,
   state: RelationState,
   env: Environment,
+  overriddenTargets: ReadonlySet<string>,
 ): void {
-  // Resolve every source before clearing any targets so chained rules see the same input.
-  const overrides = definition.overrides.filter(({ source }) => hasCommandLineInput(state, source));
-  for (const { target } of overrides) {
+  for (const target of overriddenTargets) {
     const argument = definition.arguments.find(({ name }) => name === target);
     if (argument === undefined) {
       continue;
@@ -127,6 +140,7 @@ export function applyOverrides(
       }
     }
   }
+  applyConditionalDefaults(definition, state, env, overriddenTargets);
 }
 
 function matchesRelationValue(actual: unknown, expected: unknown): boolean {
@@ -160,6 +174,24 @@ export function validateRelations(
       );
     }
   }
+  for (const { source, group: groupName } of definition.groupRequirements ?? []) {
+    if (!isSupplied(source)) {
+      continue;
+    }
+    const group = definition.groups.find(({ name }) => name === groupName);
+    if (group === undefined || group.members.some(isSupplied)) {
+      continue;
+    }
+    const members = group.members.map((name) => displayName(definition, name)).join(', ');
+    throw commandError(
+      ErrorKind.MissingDependency,
+      `argument '${displayName(definition, source)}' requires one of ${members} from group '${groupName}'`,
+      definition,
+      path,
+      inheritedArguments,
+      { argumentName: source, relatedArguments: group.members },
+    );
+  }
   for (const { source, target, expected } of definition.requiresValue) {
     if (
       isSupplied(source)
@@ -177,8 +209,9 @@ export function validateRelations(
       );
     }
   }
+  const conditionInput = definition.requirementConditionInput;
   for (const { source, expected, target, valueCount } of definition.conditionalRequirements) {
-    if (!matchesRelationValue(state.values[source], expected)) {
+    if ((conditionInput === 'supplied' && !isSupplied(source)) || !matchesRelationValue(state.values[source], expected)) {
       continue;
     }
     const supplied = suppliedArgument(state, target);
@@ -215,7 +248,7 @@ export function validateRelations(
   }
   for (const requirement of definition.conditionalSetRequirements) {
     const matches = requirement.conditions.map(({ source, expected }) =>
-      isSupplied(source)
+      (conditionInput === 'resolved' || isSupplied(source))
       && matchesRelationValue(state.values[source], expected)
     );
     const matched = requirement.match === 'any'
@@ -283,7 +316,7 @@ export function validateRelations(
         ErrorKind.ArgumentConflict,
         `argument '${displayName(definition, exclusive)}' cannot be used with ${
           others.map((name) => `'${displayName(definition, name)}'`).join(' and ')
-        }`,
+        } on this command`,
         definition,
         path,
         inheritedArguments,

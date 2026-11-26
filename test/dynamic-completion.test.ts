@@ -416,9 +416,11 @@ describe('dynamic completion', () => {
     const cli = command('tool', {
       args: [
         option('format', parsers.string, { default: 'text', global: true }),
+        option('schema'),
         flag('reset', { global: true }),
       ],
       overrides: [['reset', 'format']],
+      defaultIf: [{ source: 'format', equals: 'json', target: 'schema', value: 'schema.json' }],
       subcommands: [command('run', {
         args: [positional('query', parsers.string, {
           complete: (context) => {
@@ -430,8 +432,12 @@ describe('dynamic completion', () => {
     });
 
     await resolveDynamicCompletion(cli, ['run', '--format', 'json', '--reset', '']);
-    expect(received?.values).toMatchObject({ format: 'text', reset: true });
+    expect(received?.values).toMatchObject({ format: 'text', reset: true, schema: undefined });
     expect(received?.rawValues.format).toEqual(['json']);
+    expect(cli.tryParse(['run', '--format', 'json', '--reset'])).toMatchObject({
+      type: 'value',
+      value: { format: 'text', reset: true, schema: undefined },
+    });
   });
 
   test('distinguishes invalid CLI and environment input when resolving relations', async () => {

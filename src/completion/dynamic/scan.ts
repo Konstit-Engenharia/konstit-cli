@@ -31,8 +31,8 @@ import {
   type OptionValueState,
 } from '../../command/parsing/recognition.js';
 import {
-  applyConditionalDefaults,
-  applyOverrides,
+  applyValueRelations,
+  collectOverrideTargets,
 } from '../../command/parsing/relations.js';
 import type { CommandDefinition } from '../../command/schema.js';
 import type {
@@ -118,11 +118,7 @@ function finalizeScope(
   config: CommandConfig | undefined,
   inheritedGlobals: readonly ArgumentDefinition[],
 ): void {
-  const overriddenTargets = new Set(
-    definition.overrides
-      .filter(({ source }) => hasCommandLineInput(target, source))
-      .map(({ target: name }) => name),
-  );
+  const overriddenTargets = collectOverrideTargets(definition, target);
   for (const argument of definition.arguments) {
     if (
       argument.env === undefined
@@ -138,8 +134,7 @@ function finalizeScope(
     }
   }
   applyConfigValues(definition, config, target, state, inheritedGlobals, overriddenTargets);
-  applyConditionalDefaults(definition, target, state.env);
-  applyOverrides(definition, target, state.env);
+  applyValueRelations(definition, target, state.env, overriddenTargets);
 }
 
 function applyEnvironmentValue(

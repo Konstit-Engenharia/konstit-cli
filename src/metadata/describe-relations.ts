@@ -13,6 +13,8 @@ export function describeRelations(
 ): Pick<
   CommandMetadata,
   | 'requirements'
+  | 'groupRequirements'
+  | 'requirementConditionInput'
   | 'conditionalRequirements'
   | 'requiresValue'
   | 'defaultIf'
@@ -117,8 +119,14 @@ export function describeRelations(
       });
     })
     .filter((group): group is NonNullable<typeof group> => group !== undefined);
+  const visibleGroups = new Set(groups.map(({ name }) => name));
+  const groupRequirements = definition.groupRequirements?.filter(({ source, group }) => isVisible(source) && visibleGroups.has(group));
   return {
     requirements: Object.freeze(requirements),
+    ...(groupRequirements === undefined || groupRequirements.length === 0
+      ? {}
+      : { groupRequirements: Object.freeze(groupRequirements) }),
+    ...(definition.requirementConditionInput === undefined ? {} : { requirementConditionInput: definition.requirementConditionInput }),
     defaultIf: Object.freeze(defaultIf),
     conditionalRequirements: describeExpectedValues(definition.conditionalRequirements, 'source'),
     requiresValue: describeExpectedValues(definition.requiresValue, 'target'),
