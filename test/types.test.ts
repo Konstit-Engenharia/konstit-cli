@@ -188,6 +188,7 @@ const advancedConfiguredCli = command('advanced-configured', {
     }),
     option('mode', parsers.enum(['fast', 'safe']), { defaultMissing: 'safe' }),
     positional('command', parsers.string, { trailingVarArg: true }),
+    flag('debug'),
   ],
   handler: ({ pair, points, values, maybe, mode, command }) => {
     const typedPair: readonly [string, string] = pair;
@@ -215,6 +216,7 @@ type AdvancedConfiguredExpected = {
   readonly maybe: string | undefined;
   readonly mode: 'fast' | 'safe' | undefined;
   readonly command: readonly string[];
+  readonly debug: boolean;
 };
 type _AdvancedConfiguredArgumentsAreExact = Expect<
   Equal<AdvancedConfiguredActual, AdvancedConfiguredExpected>
@@ -372,6 +374,15 @@ void (() => {
   command('duplicate-initial-arguments', {
     // @ts-expect-error duplicate argument names are rejected in initializer tuples
     args: [flag('verbose'), flag('verbose')],
+  });
+  const trailing = positional('tail', parsers.string, { trailingVarArg: true });
+  command('positional-after-trailing', {
+    // @ts-expect-error another positional cannot follow a trailing positional
+    args: [trailing, flag('verbose'), positional('input')],
+  });
+  command('two-trailing-positionals', {
+    // @ts-expect-error at most one positional can be trailing
+    args: [trailing, positional('other', parsers.string, { trailingVarArg: true })],
   });
   command('duplicate-initial-subcommands', {
     // @ts-expect-error duplicate subcommand names are rejected in initializer tuples

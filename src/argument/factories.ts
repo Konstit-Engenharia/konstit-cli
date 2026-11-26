@@ -30,6 +30,7 @@ import {
 import type {
   ArgumentType,
   RequiredArgumentFromOptions,
+  TrailingPositionalFromOptions,
 } from './types.js';
 
 /** Creates a named option that accepts one string value. */
@@ -109,7 +110,8 @@ export function positional<
     ConfiguredCardinality<Options>,
     false
   >
-  & RequiredArgumentFromOptions<Options>;
+  & RequiredArgumentFromOptions<Options>
+  & TrailingPositionalFromOptions<Options>;
 export function positional(
   name: string,
   parser: ValueParser<unknown> = parsers.string,

@@ -5,7 +5,10 @@ import type {
   ArgumentOutput,
   ArgumentType,
 } from '../argument/index.js';
-import type { RequiredArgument } from '../argument/types.js';
+import type {
+  RequiredArgument,
+  TrailingPositional,
+} from '../argument/types.js';
 import type { ParseOptions } from '../configuration/shape.js';
 import type { DeprecationWarning } from '../result/deprecation.js';
 import type {
@@ -342,6 +345,18 @@ type UniqueArguments<
     : unknown
   : unknown;
 
+type CheckedTrailingPositionals<
+  Arguments extends readonly AnyArgument[],
+  HasFollowingPositional extends boolean = false,
+> = Arguments extends readonly [
+  ...infer Rest extends readonly AnyArgument[],
+  infer Last extends AnyArgument,
+]
+  ? [HasFollowingPositional, Last] extends [true, TrailingPositional]
+    ? CommandConfigurationError<`Trailing positional '${ArgumentName<Last>}' must be the last positional`>
+  : CheckedTrailingPositionals<Rest, [Last] extends [ArgumentType<string, unknown, unknown, 'positional'>] ? true : HasFollowingPositional>
+  : unknown;
+
 type UniqueSubcommands<
   Subcommands extends readonly AnyCommand[],
   Seen extends string = never,
@@ -535,7 +550,7 @@ export interface CommandOptions<
   >;
 }
 
-/** Command options with compile-time checks for uniqueness and group membership. */
+/** Command options with compile-time checks for layout, uniqueness, and group membership. */
 export type CheckedCommandOptions<
   Arguments extends readonly AnyArgument[],
   Subcommands extends readonly AnyCommand[],
@@ -553,8 +568,11 @@ export type CheckedCommandOptions<
     : unknown
     : unknown)
   & {
-    /** Arguments in declaration order, with unique names. */
-    readonly args?: Arguments & UniqueArguments<Arguments>;
+    /** Arguments in declaration order, with unique names and any trailing positional last among positionals. */
+    readonly args?:
+      & Arguments
+      & UniqueArguments<Arguments>
+      & (Extract<Arguments[number], TrailingPositional> extends never ? unknown : CheckedTrailingPositionals<Arguments>);
     /** Subcommands in declaration order, with unique names. */
     readonly subcommands?: Subcommands & UniqueSubcommands<Subcommands>;
     /** Requires selecting one of the configured subcommands. */

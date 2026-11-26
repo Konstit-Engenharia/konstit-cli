@@ -844,6 +844,9 @@ const run = command('run', {
 - `--config=file.json` is accepted. `--config file.json` is rejected.
 - `--color` uses `auto`; `--color=always` uses `always`.
 - A trailing positional captures tokens such as `--inspect` without `--`.
+  It must be the last positional. Named arguments can appear after it in `args`.
+  TypeScript checks literal argument tuples, and runtime validation also checks
+  widened arrays and JavaScript input.
 
 ## Parsers
 

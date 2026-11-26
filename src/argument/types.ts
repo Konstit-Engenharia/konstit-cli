@@ -131,3 +131,11 @@ export interface RequiredArgument {
 
 export type RequiredArgumentFromOptions<Options> = [Options] extends [{ readonly required: true; }] ? RequiredArgument
   : unknown;
+
+declare const trailingPositionalKey: unique symbol;
+export interface TrailingPositional {
+  readonly [trailingPositionalKey]: true;
+}
+
+export type TrailingPositionalFromOptions<Options> = [Options] extends [{ readonly trailingVarArg: true; }] ? TrailingPositional
+  : unknown;

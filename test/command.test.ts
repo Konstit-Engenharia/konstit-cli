@@ -610,6 +610,8 @@ describe('validation and errors', () => {
       })
     )
       .toThrow('No positional can follow repeatable');
+    const args = [positional('tail', parsers.string, { trailingVarArg: true }), positional('last')];
+    expect(() => command('app', { args })).toThrow('No positional can follow repeatable or unbounded \'tail\'');
     expect(() => command('app', { args: [flag('one', { aliases: ['one'] })] }))
       .toThrow('duplicate long options');
   });
