@@ -228,6 +228,29 @@ describe('dynamic completion coverage', () => {
     expect(context?.values).toMatchObject({ verbose: true, program: 'node', args: ['--config', '--'] });
   });
 
+  test('passes completed words of a joined trailing positional to the provider as one value', async () => {
+    let context: DynamicCompletionContext | undefined;
+    const cli = command('wrap', {
+      args: [
+        positional('program'),
+        positional('path', parsers.path({ kind: 'file' }), {
+          trailingVarArg: true,
+          literal: true,
+          joinWith: ' ',
+          valueDelimiter: ',',
+          complete: (received) => {
+            context = received;
+            return ['new,file.txt'];
+          },
+        }),
+      ],
+    });
+    const result = await resolveDynamicCompletion(cli, ['read', 'My', 'Documents', 'new,']);
+    expect(context?.rawValues.path).toEqual(['My Documents']);
+    expect(context?.values.path).toEqual(['My Documents']);
+    expect(result.candidates).toEqual([{ value: 'new,file.txt' }]);
+  });
+
   test('handles the option terminator with and without a positional', async () => {
     const positionalCli = command('literal', {
       args: [positional('value', parsers.string, { valueHint: 'directory' })],

@@ -73,6 +73,8 @@ export interface ArgumentDefinition {
   readonly trailingVarArg: boolean;
   /** Whether this trailing positional captures tokens before option and subcommand recognition. */
   readonly literal?: true;
+  /** The separator used to join all CLI tokens of a literal trailing positional before parsing. */
+  readonly joinWith?: string;
   /** Whether the argument is inherited by descendant commands. */
   readonly global: boolean;
   /** Whether to omit the argument from help and completion. */

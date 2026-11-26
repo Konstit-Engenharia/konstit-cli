@@ -39,7 +39,7 @@ export function storePositionalValue(
   state: ParseState,
   inheritedArguments: readonly ArgumentDefinition[],
 ): void {
-  const values = splitRawValue(argument, raw);
+  const values = argument.joinWith === undefined ? splitRawValue(argument, raw) : [raw];
   const previous = suppliedArgument(state, argument.name);
   const currentCount = previous?.source === 'cli' ? previous.valueCount : 0;
   if (

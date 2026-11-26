@@ -378,6 +378,35 @@ describe('command parsing', () => {
       'option \'literal\' must be a boolean',
     );
   });
+
+  test('joins literal CLI tokens once and applies regular splitting to fallbacks', () => {
+    const cli = command('wrap', {
+      args: [positional('args', parsers.string, {
+        trailingVarArg: true,
+        literal: true,
+        joinWith: '',
+        valueDelimiter: ',',
+        env: 'TEST_JOINED_ARGS',
+      })],
+    });
+    const result = cli.parse(['--', 'one,', '--help'], { env: {} });
+    expect(result).toMatchObject({ type: 'value', value: { args: ['--one,--help'] } });
+    if (result.type === 'value') {
+      expect(Object.isFrozen(result.value.args)).toBe(true);
+    }
+    expect(cli.parse([], { env: {} })).toMatchObject({ type: 'value', value: { args: [] } });
+    expect(cli.parse([], { env: { TEST_JOINED_ARGS: 'one,two' } })).toMatchObject({ type: 'value', value: { args: ['one', 'two'] } });
+    expect(cli.parse([], { env: {}, config: { values: { args: ['one', 'two'] } } })).toMatchObject({
+      type: 'value',
+      value: { args: ['one', 'two'] },
+    });
+    expect(() => positional('args', parsers.string, { trailingVarArg: true, joinWith: ' ' } as never)).toThrow(
+      'joinWith requires a literal trailing positional',
+    );
+    expect(() => positional('args', parsers.string, { trailingVarArg: true, literal: true, joinWith: 1 } as never)).toThrow(
+      'option \'joinWith\' must be a string',
+    );
+  });
 });
 
 describe('subcommands', () => {

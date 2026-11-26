@@ -722,7 +722,7 @@ Value options and positionals accept:
 | `allowNegativeNumbers` | Accept negative numeric values while preserving option parsing. |
 
 Options also accept `defaultMissing`, `requireEquals`, and `unique`. Positionals also
-accept `trailingVarArg` and `literal`. Flags accept `negated`. Counters use their occurrence
+accept `trailingVarArg`, `literal`, and `joinWith`. Flags accept `negated`. Counters use their occurrence
 count as the output value. `colorFlag()` provides the paired color policy.
 
 ```ts
@@ -866,6 +866,27 @@ const wrap = command('wrap', {
 `wrap -v node --help -v` sets `verbose` to `true`, `program` to `node`, and
 `args` to `['--help', '-v']`. When the literal tail is the only positional, it
 captures from the first token of that command.
+
+Use `joinWith: ' '` on a literal trailing positional when the rest of the command
+line represents one value, such as a path with spaces.
+
+```ts
+const open = command('open-file', {
+  args: [
+    positional('path', parsers.path({ kind: 'file', mustExist: true }), {
+      trailingVarArg: true,
+      literal: true,
+      joinWith: ' ',
+    }),
+  ],
+});
+```
+
+`open-file My Documents/a.txt` joins the two tokens and passes
+`My Documents/a.txt` to the path parser once. The result is a readonly array
+containing one path. `joinWith` applies to CLI input and takes precedence over
+`valueDelimiter` for those tokens. Environment and config values use their usual
+parsing rules. Quote the path when the exact whitespace matters.
 
 ## Parsers
 

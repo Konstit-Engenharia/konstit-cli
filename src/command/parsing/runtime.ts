@@ -377,15 +377,19 @@ function parseDefinition(
       path,
       positionalArgument.name,
     );
+    const { joinWith } = positionalArgument;
     storePositionalValue(
       positionalArgument,
-      token,
+      joinWith === undefined ? token : argv.slice(index).join(joinWith),
       argvOffset + index,
       definition,
       path,
       state,
       inheritedGlobals.map(({ argument }) => argument),
     );
+    if (joinWith !== undefined) {
+      break;
+    }
     const count = suppliedArgument(state, positionalArgument.name)?.valueCount ?? 0;
     if (
       !positionalArgument.repeatable

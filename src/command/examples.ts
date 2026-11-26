@@ -48,6 +48,9 @@ function exampleValues(definition: CommandDefinition, argument: ArgumentDefiniti
     throw exampleError(definition, `'${argument.name}' requires ${collectsValues ? 'an array' : 'one value'}`);
   }
   const values: readonly unknown[] = isArray ? Array.from(input) : [input];
+  if (argument.joinWith !== undefined && values.length > 1) {
+    throw exampleError(definition, `'${argument.name}' accepts at most one joined value`);
+  }
   return values.flatMap((value) => {
     if (
       typeof value !== 'string' && typeof value !== 'boolean' && typeof value !== 'bigint'
@@ -59,7 +62,8 @@ function exampleValues(definition: CommandDefinition, argument: ArgumentDefiniti
     if (/[\p{Cc}\p{Cf}]/u.test(raw)) {
       throw exampleError(definition, `'${argument.name}' requires printable scalar values`);
     }
-    return splitArgumentValue(argument, raw).map((token) => ({ token, value: token === raw ? value : token }));
+    const tokens = argument.joinWith === undefined ? splitArgumentValue(argument, raw) : [raw];
+    return tokens.map((token) => ({ token, value: token === raw ? value : token }));
   });
 }
 

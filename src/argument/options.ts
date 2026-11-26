@@ -101,6 +101,8 @@ export type PositionalOptions<Value> = ValueMetadataOptions<Value> & {
   readonly trailingVarArg?: boolean;
   /** Starts capturing as soon as this trailing positional is next, even for the first option-looking token. */
   readonly literal?: boolean;
+  /** Joins the remaining CLI tokens with this separator and parses them as one value. Requires literal trailing capture. */
+  readonly joinWith?: string;
 };
 
 /** Settings accepted by flag(). */
@@ -219,6 +221,9 @@ export type CheckedOptionOptions<Value, Options> = 'trailingVarArg' extends keyo
 export type CheckedPositionalOptions<Options> = 'global' extends keyof Options ? ConfigurationError<'Positional arguments cannot be global'>
   : 'defaultMissing' extends keyof Options ? ConfigurationError<'Positional arguments cannot configure defaultMissing'>
   : 'requireEquals' extends keyof Options ? ConfigurationError<'Positional arguments cannot require equals-form values'>
+  : Options extends { readonly joinWith: string; }
+    ? [true, true] extends [Field<Options, 'trailingVarArg'>, Field<Options, 'literal'>] ? unknown
+    : ConfigurationError<'joinWith requires a literal trailing positional'>
   : Options extends { readonly literal: true; } ? true extends Field<Options, 'trailingVarArg'> ? unknown
     : ConfigurationError<'literal requires a trailing positional'>
   : unknown;
@@ -319,6 +324,7 @@ export interface RuntimeValueOptions<Value> extends ValueMetadataOptions<Value> 
   readonly unique?: boolean;
   readonly trailingVarArg?: boolean;
   readonly literal?: boolean;
+  readonly joinWith?: string;
 }
 
 export interface RuntimeOptionOptions<Value> extends NamedArgumentOptions, RuntimeValueOptions<Value> {}

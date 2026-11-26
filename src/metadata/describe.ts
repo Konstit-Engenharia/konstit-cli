@@ -152,6 +152,7 @@ function describeArgument(argument: ArgumentDefinition, includeHidden: boolean):
     allowNegativeNumbers: argument.allowNegativeNumbers,
     trailingVarArg: argument.trailingVarArg,
     ...(argument.literal === true ? { literal: true as const } : {}),
+    ...(argument.joinWith === undefined ? {} : { joinWith: argument.joinWith }),
     global: argument.global,
     hidden: argument.hidden,
     ...(argument.sensitive ? { sensitive: true as const } : {}),

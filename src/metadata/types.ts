@@ -103,6 +103,8 @@ export interface ArgumentMetadata {
   readonly trailingVarArg: boolean;
   /** Present when a trailing positional takes precedence over options and subcommands. */
   readonly literal?: true;
+  /** The separator used to join CLI tokens into one value. */
+  readonly joinWith?: string;
   /** Whether the argument is inherited by descendant commands. */
   readonly global: boolean;
   /** Whether the argument is omitted from help and completion. */

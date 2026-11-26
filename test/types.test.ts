@@ -446,6 +446,10 @@ void (() => {
   positional('args', parsers.string, { literal: true });
   // @ts-expect-error named options cannot start literal capture
   option('args', parsers.string, { literal: true });
+  // @ts-expect-error joining requires literal capture
+  positional('args', parsers.string, { trailingVarArg: true, joinWith: ' ' });
+  // @ts-expect-error joining is a positional setting
+  option('args', parsers.string, { joinWith: ' ' });
   // @ts-expect-error flags cannot be repeatable
   flag('value-flag', {
     describe: 'Invalid value configuration',

@@ -267,7 +267,7 @@ function initializeArguments(
 
 export function scanWords(state: ScanState, words: readonly string[]): void {
   const isSubcommand = (word: string): boolean => resolveSubcommand(state.active.command, word) !== undefined;
-  for (const word of words) {
+  for (const [index, word,] of words.entries()) {
     if (word === undefined) {
       break;
     }
@@ -290,6 +290,10 @@ export function scanWords(state: ScanState, words: readonly string[]): void {
     if (positional?.literal === true) {
       state.active.argvState = literalWords;
       argvState = literalWords;
+      if (positional.joinWith !== undefined) {
+        storeArgumentValues(positional, [words.slice(index).join(positional.joinWith)], state);
+        break;
+      }
     }
     const consumeAsPositional = argvState.kind === 'command' && acceptsOptionLookingPositional(state, word, positional);
     const kind = recognizeWord(argvState, word, consumeAsPositional);
@@ -712,7 +716,7 @@ function valueTarget(
   current: string,
   outputPrefix: string,
 ): ValueTarget {
-  if (argument.valueDelimiter === undefined) {
+  if (argument.valueDelimiter === undefined || argument.joinWith !== undefined) {
     return { argument, current, outputPrefix };
   }
   const delimiterIndex = current.lastIndexOf(argument.valueDelimiter);

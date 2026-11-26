@@ -190,6 +190,24 @@ test('renders structured examples with wrapper flags before a literal trailing p
   expect(describeCommand(cli).arguments.at(-1)?.literal).toBe(true);
 });
 
+test('renders a joined trailing value as one quoted argument in structured examples', () => {
+  const args = [positional('path', parsers.path({ kind: 'file' }), {
+    trailingVarArg: true,
+    literal: true,
+    joinWith: ' ',
+    valueDelimiter: ',',
+  })] as const;
+  const cli = command('wrap', {
+    args,
+    examples: [{ args: { path: ['My Documents/a,b.txt'] }, description: '' }],
+  });
+  expect(cli.renderHelp()).toEndWith('  $ wrap \'My Documents/a,b.txt\'\n');
+  expect(describeCommand(cli).arguments[0]?.joinWith).toBe(' ');
+  expect(() => command('wrap', { args, examples: [{ args: { path: ['one', 'two'] }, description: '' }] })).toThrow(
+    'accepts at most one joined value',
+  );
+});
+
 test('uses an option terminator before the next structured flag', () => {
   const cli = command('tool', {
     args: [

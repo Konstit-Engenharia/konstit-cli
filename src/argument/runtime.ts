@@ -226,6 +226,9 @@ export function validateConfiguredValueOptions(
   if (options.literal === true && options.trailingVarArg !== true) {
     throw new TypeError('literal requires a trailing positional');
   }
+  if (options.joinWith !== undefined && options.literal !== true) {
+    throw new TypeError('joinWith requires a literal trailing positional');
+  }
   if (hasDefaultValues) {
     if (!Array.isArray(options.defaultValues)) {
       throw new TypeError('Argument defaultValues must be an array');
@@ -367,7 +370,7 @@ export function validateArgumentOptionKeys(
       ]
       : []),
     ...(kind === 'option' ? ['defaultMissing', 'requireEquals', 'unique'] : []),
-    ...(kind === 'positional' ? ['trailingVarArg', 'literal'] : []),
+    ...(kind === 'positional' ? ['trailingVarArg', 'literal', 'joinWith'] : []),
     ...(kind === 'flag' ? ['negated'] : []),
   ];
   const deferredUnsupported = kind === 'option'
@@ -393,6 +396,7 @@ export function validateArgumentOptionKeys(
       'valueName',
       'valueDelimiter',
       'valueTerminator',
+      'joinWith',
     ]
   ) {
     if (configured[key] !== undefined && typeof configured[key] !== 'string') {
@@ -600,6 +604,7 @@ export function applyValueArgumentOptions(
       maxValues: null,
       trailingVarArg: true,
       ...(options.literal === true ? { literal: true } : {}),
+      ...(options.joinWith === undefined ? {} : { joinWith: options.joinWith }),
       allowHyphenValues: true,
     });
   }

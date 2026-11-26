@@ -50,6 +50,39 @@ test('path parsers check existing kinds and allow missing paths unless required'
   }
 });
 
+test('joins an unquoted literal trailing path before checking that it exists', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'konstit-cli-joined-path-'));
+  try {
+    const file = join(directory, 'input file.txt');
+    await writeFile(file, 'input');
+    const cli = command('tool', {
+      args: [
+        option('mode'),
+        positional('program', parsers.string, { required: true }),
+        positional('path', parsers.path({ kind: 'file', mustExist: true }), {
+          trailingVarArg: true,
+          literal: true,
+          joinWith: ' ',
+          required: true,
+        }),
+      ],
+    });
+    for (const tokens of [[join(directory, 'input'), 'file.txt'], [file]]) {
+      expect(cli.parse(['--mode', 'safe', 'read', ...tokens])).toEqual({
+        ok: true,
+        type: 'value',
+        value: { mode: 'safe', program: 'read', path: [file] },
+      });
+    }
+    expect(cli.tryParse(['read', join(directory, 'missing'), 'file.txt'])).toMatchObject({
+      type: 'error',
+      error: { kind: ErrorKind.InvalidValue, argumentName: 'path', tokenIndex: 1 },
+    });
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 test('path parsers reject malformed paths and options', () => {
   const file = parsers.path({ kind: 'file' });
   expect(() => file.parse('')).toThrow('expected a non-empty path');
