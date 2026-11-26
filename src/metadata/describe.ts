@@ -141,6 +141,7 @@ function describeArgument(argument: ArgumentDefinition, includeHidden: boolean):
     ...(defaultMissingValue === undefined ? {} : { defaultMissingValue }),
     hasDefaultMissingValue: argument.hasDefaultMissingValue,
     repeatable: argument.repeatable,
+    ...(argument.unique === true ? { unique: true as const } : {}),
     minValues: argument.minValues,
     maxValues: argument.maxValues,
     arity: Object.freeze({ min: argument.minValues, max: argument.maxValues }),

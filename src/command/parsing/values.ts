@@ -439,4 +439,19 @@ export function validateParsedValues(
       },
     );
   }
+  for (const argument of definition.arguments) {
+    if (argument.unique !== true) {
+      continue;
+    }
+    const values = state.values[argument.name];
+    if (Array.isArray(values) && values.length > 1 && new Set(values).size !== values.length) {
+      reportValidationIssue(
+        { argumentName: argument.name, message: 'values must be unique' },
+        definition,
+        path,
+        state,
+        inheritedArguments,
+      );
+    }
+  }
 }

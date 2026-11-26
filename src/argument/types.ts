@@ -53,6 +53,8 @@ export interface ArgumentDefinition {
   readonly hasDefaultMissingValue: boolean;
   /** Whether values are collected across repeated occurrences. */
   readonly repeatable: boolean;
+  /** Whether duplicate parsed values are rejected. */
+  readonly unique?: true;
   /** The minimum number of values accepted per occurrence. */
   readonly minValues: number;
   /** The maximum number of values accepted per occurrence, or null if unbounded. */

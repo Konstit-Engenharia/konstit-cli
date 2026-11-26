@@ -721,7 +721,7 @@ Value options and positionals accept:
 | `allowHyphenValues`    | Accept values that begin with `-`.                              |
 | `allowNegativeNumbers` | Accept negative numeric values while preserving option parsing. |
 
-Options also accept `defaultMissing` and `requireEquals`. Positionals also
+Options also accept `defaultMissing`, `requireEquals`, and `unique`. Positionals also
 accept `trailingVarArg`. Flags accept `negated`. Counters use their occurrence
 count as the output value. `colorFlag()` provides the paired color policy.
 
@@ -759,6 +759,22 @@ const verbosity = count('verbose', { short: 'v' });
 Defaults belong to the argument, not its parser. A default must match the
 parser output. Use an explicit `parsers.string` when a string option or
 positional needs configuration.
+
+Set `unique: true` on a repeatable option to reject duplicate parsed values.
+The option still returns a readonly array in input order. Enum aliases and
+case-insensitive spellings that resolve to the same canonical value count as
+duplicates. The check applies to CLI input, environment variables, config,
+and defaults. It uses JavaScript `Set` equality, so objects compare by reference.
+TypeScript also checks repeated string literals in `defaultValues` tuples with
+up to 128 entries, including canonical enum values.
+
+```ts
+const mode = option('mode', parsers.enum(['fast', 'safe']), {
+  repeatable: true,
+  unique: true,
+  defaultValues: ['safe'],
+}); // readonly ('fast' | 'safe')[]
+```
 
 Use `defaultValues` for repeatable arguments or arguments that collect multiple
 values. The values must match the parser output and configured arity. `default`

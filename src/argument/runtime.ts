@@ -220,6 +220,9 @@ export function validateConfiguredValueOptions(
   const hasDefaultMissing = Object.hasOwn(options, 'defaultMissing');
   const hasNumArgs = Object.hasOwn(options, 'numArgs');
 
+  if (options.unique === true && options.repeatable !== true) {
+    throw new TypeError('unique requires a repeatable option');
+  }
   if (hasDefaultValues) {
     if (!Array.isArray(options.defaultValues)) {
       throw new TypeError('Argument defaultValues must be an array');
@@ -360,7 +363,7 @@ export function validateArgumentOptionKeys(
         'allowNegativeNumbers',
       ]
       : []),
-    ...(kind === 'option' ? ['defaultMissing', 'requireEquals'] : []),
+    ...(kind === 'option' ? ['defaultMissing', 'requireEquals', 'unique'] : []),
     ...(kind === 'positional' ? ['trailingVarArg'] : []),
     ...(kind === 'flag' ? ['negated'] : []),
   ];
@@ -406,6 +409,7 @@ export function validateArgumentOptionKeys(
       'global',
       'required',
       'repeatable',
+      'unique',
       'requireEquals',
       'allowHyphenValues',
       'allowNegativeNumbers',
@@ -544,6 +548,7 @@ export function applyValueArgumentOptions(
     configured = copyDefinition(configured, {
       action: ArgumentAction.Append,
       repeatable: true,
+      ...(options.unique === true ? { unique: true } : {}),
       presence: configured.presence === 'required'
         ? 'required'
         : configured.presence === 'default'

@@ -91,6 +91,8 @@ export type OptionOptions<Value> =
     readonly defaultMissing?: NoInfer<Value>;
     /** Requires the --option=value form. */
     readonly requireEquals?: boolean;
+    /** Rejects duplicate parsed values when repeatable is enabled. */
+    readonly unique?: boolean;
   };
 
 /** Settings accepted by positional(). */
@@ -187,9 +189,30 @@ type CheckedDefaultMissingOptions<Value, Options> = Options extends { readonly d
   : { readonly defaultMissing: NoInfer<Value>; }
   : unknown;
 
+// Only a single concrete string can prove equality between two tuple entries.
+type StringLiteral<Item, Whole = Item> = Item extends string
+  ? [Whole] extends [Item] ? Record<never, never> extends Record<Item, never> ? never : Item
+  : never
+  : never;
+
+// Long tuples use the runtime check to bound TypeScript's instantiation work.
+type HasDuplicateStringValues<Values, Seen extends string = never> = Values extends { readonly 128: unknown; } ? false
+  : Values extends readonly [infer First, ...infer Rest] ? [StringLiteral<First>] extends [never] ? HasDuplicateStringValues<Rest, Seen>
+    : StringLiteral<First> extends Seen ? true
+    : HasDuplicateStringValues<Rest, Seen | StringLiteral<First>>
+  : false;
+
+type CheckedUniqueOptions<Options> = Options extends { readonly unique: true; }
+  ? true extends Field<Options, 'repeatable'>
+    ? HasDuplicateStringValues<ConfiguredField<Options, 'defaultValues'>> extends true
+      ? ConfigurationError<'Argument defaultValues cannot contain duplicate values when unique is enabled'>
+    : unknown
+  : ConfigurationError<'unique requires a repeatable option'>
+  : unknown;
+
 export type CheckedOptionOptions<Value, Options> = 'trailingVarArg' extends keyof Options
   ? ConfigurationError<'Options cannot be trailing positional arguments'>
-  : CheckedDefaultMissingOptions<Value, Options>;
+  : CheckedDefaultMissingOptions<Value, Options> & CheckedUniqueOptions<Options>;
 
 export type CheckedPositionalOptions<Options> = 'global' extends keyof Options ? ConfigurationError<'Positional arguments cannot be global'>
   : 'defaultMissing' extends keyof Options ? ConfigurationError<'Positional arguments cannot configure defaultMissing'>
@@ -289,6 +312,7 @@ export interface RuntimeValueOptions<Value> extends ValueMetadataOptions<Value> 
   readonly defaultValues?: readonly Value[];
   readonly defaultMissing?: Value;
   readonly requireEquals?: boolean;
+  readonly unique?: boolean;
   readonly trailingVarArg?: boolean;
 }
 

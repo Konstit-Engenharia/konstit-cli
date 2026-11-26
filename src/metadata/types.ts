@@ -81,6 +81,8 @@ export interface ArgumentMetadata {
   readonly hasDefaultMissingValue: boolean;
   /** Whether values are collected across repeated occurrences. */
   readonly repeatable: boolean;
+  /** Present when the option rejects duplicate parsed values. */
+  readonly unique?: true;
   /** The minimum number of values accepted per occurrence. */
   readonly minValues: number;
   /** The maximum number of values accepted per occurrence, or null if unbounded. */
