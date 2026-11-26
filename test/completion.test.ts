@@ -557,6 +557,15 @@ printf 'AFTER_TERMINATOR:%s\n' "\${COMPREPLY[*]}"
       positional('final', parsers.enum(['final'])),
     ],
   });
+  const positionalTerminatorCli = command('argv-state', {
+    args: [
+      positional('revisions', parsers.enum(['HEAD', 'HEAD~1']), {
+        numArgs: { min: 0, max: 2 },
+        valueTerminator: '--',
+      }),
+      positional('paths', parsers.enum(['src/']), { trailingVarArg: true }),
+    ],
+  });
   const trailingPositionalCli = command('argv-state', {
     subcommands: [command('delegate', {
       args: [positional('rest', parsers.enum(['payload', 'run', 'tail']), { trailingVarArg: true })],
@@ -612,6 +621,16 @@ printf 'AFTER_TERMINATOR:%s\n' "\${COMPREPLY[*]}"
         expect(result.stderr).toBe('');
         expect(result.exitCode).toBe(0);
         expect(result.stdout.trim()).toBe('final');
+      }
+    }, { timeout: 20_000 });
+
+    shellTest(`${shell} advances a positional with a double-dash value terminator`, () => {
+      const script = generateCompletion(positionalTerminatorCli, shell);
+      for (const revisions of [[], ['HEAD'], ['HEAD', 'HEAD~1']]) {
+        const result = completeStaticShell(shell, script, [...revisions, '--']);
+        expect(result.stderr).toBe('');
+        expect(result.exitCode).toBe(0);
+        expect(result.stdout.trim()).toBe('src/');
       }
     }, { timeout: 20_000 });
 

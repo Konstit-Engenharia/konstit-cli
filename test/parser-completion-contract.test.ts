@@ -223,6 +223,35 @@ describe('parser and completion scanner contract', () => {
     });
   }
 
+  test('[shared rule] double dash ends options and terminates the active positional', async () => {
+    const diff = command('diff', {
+      args: [
+        positional('revisions', parsers.string, {
+          numArgs: { min: 0, max: 2 },
+          valueName: 'REV',
+          valueTerminator: '--',
+        }),
+        positional('paths', parsers.string, {
+          trailingVarArg: true,
+          valueName: 'PATH',
+          valueHint: 'file',
+        }),
+      ],
+    });
+
+    expect(diff.renderHelp()).toContain('Usage: diff [REV] [REV] [--] [PATH]...');
+    for (const revisions of [[], ['HEAD'], ['HEAD', 'HEAD~1']]) {
+      expect(diff.tryParse([...revisions, '--', 'src/', '--help'])).toEqual({
+        ok: true,
+        type: 'value',
+        value: { revisions: revisions.length === 0 ? undefined : revisions, paths: ['src/', '--help'] },
+      });
+      const completion = await resolveDynamicCompletion(diff, [...revisions, '--', 'src']);
+      expect(completion.argument?.name).toBe('paths');
+      expect(completion.valueHint).toBe('file');
+    }
+  });
+
   test('[shared rule] a unique inferred subcommand selects the same child', async () => {
     let observed: DynamicCompletionContext | undefined;
     const cli = command('contract', {

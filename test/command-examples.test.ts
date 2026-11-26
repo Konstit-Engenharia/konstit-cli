@@ -178,6 +178,22 @@ test('allows documentation values without running custom parsers or validators',
   expect(cli.renderHelp()).toEndWith('  $ tool \';\' sample --input example.txt -- one\n');
 });
 
+test('uses the positional double dash in structured examples', () => {
+  const diff = command('diff', {
+    args: [
+      flag('stat'),
+      positional('revisions', parsers.string, { numArgs: { min: 0, max: 2 }, valueTerminator: '--' }),
+      positional('paths', parsers.string, { trailingVarArg: true }),
+    ],
+    examples: [
+      { args: { revisions: ['HEAD'], paths: ['src/'] } },
+      { args: { stat: true, paths: ['--help'] } },
+    ],
+  });
+
+  expect(diff.renderHelp()).toEndWith('  $ diff HEAD -- src/\n  $ diff --stat -- --help\n');
+});
+
 test('renders structured examples with wrapper flags before a literal trailing positional', () => {
   const cli = command('wrap', {
     args: [

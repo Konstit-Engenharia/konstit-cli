@@ -110,7 +110,7 @@
   local pending_option="" pending_delimiter="__NONE__" pending_delimiter_hex positional_key maximum cluster short attached output_prefix attached_present
   local scan_state=command pending_terminator="" pending_terminator_hex positional_trailing
   local positional_delimiter="__NONE__" positional_delimiter_hex positional_terminator="" positional_terminator_hex positional_spec
-  local index short_index pending_min=0 pending_max=0 pending_consumed=0 pending_require_equals=0
+  local index short_index end_options pending_min=0 pending_max=0 pending_consumed=0 pending_require_equals=0
   local pending_allow_hyphen=0 pending_allow_negative=0 pending_single_raw=0 pending_raw_count=0
   local positional_handled=1 positional_index=0 positional_remaining=0 stop_pending=0 consume_as_positional=0 positional_allow_hyphen=0 positional_allow_negative=0 positional_repeatable=0
   COMPREPLY=()
@@ -138,7 +138,11 @@
       scan_state=command
     fi
     if [[ "$scan_state" == command ]] && {{NAME}}_literal_positional "$context" "$positional_index"; then scan_state=literal; fi
-    if [[ "$scan_state" == command && "$word" == "--" ]]; then scan_state=literal; continue; fi
+    end_options=0
+    if [[ "$scan_state" == command && "$word" == "--" ]]; then
+      scan_state=literal
+      end_options=1
+    fi
     consume_as_positional=0
     if [[ "$scan_state" == command && "$word" == -?* && "$word" != -- ]]; then
       if positional_spec="$({{NAME}}_positional_spec "$context" "$positional_index")"; then
@@ -227,6 +231,7 @@
       positional_remaining="$maximum"
     fi
     if [[ -n "$positional_terminator" && "$word" == "$positional_terminator" ]]; then ((positional_index++)); positional_remaining=0; continue; fi
+    if (( end_options )); then continue; fi
     if (( positional_trailing )); then scan_state=literal; fi
     {{NAME}}_value_count "$word" "$positional_delimiter"
     if (( positional_remaining > 0 )); then

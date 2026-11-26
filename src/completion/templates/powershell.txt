@@ -142,7 +142,8 @@ Register-ArgumentCompleter -Native -CommandName {{EXECUTABLE_QUOTED}} -ScriptBlo
       $scanState = 'command'
     }
     if ($scanState -eq 'command' -and (& $isLiteralPositional $context $positionalIndex)) { $scanState = 'literal' }
-    if ($scanState -eq 'command' -and $word -eq '--') { $scanState = 'literal'; continue }
+    $endOptions = $scanState -eq 'command' -and $word -eq '--'
+    if ($endOptions) { $scanState = 'literal' }
     $consumeAsPositional = $false
     if ($scanState -eq 'command' -and $word -ne '-' -and $word.StartsWith('-')) {
       if ($positionalRemaining -eq 0) {
@@ -236,6 +237,7 @@ Register-ArgumentCompleter -Native -CommandName {{EXECUTABLE_QUOTED}} -ScriptBlo
       $positionalTerminator = ''
       continue
     }
+    if ($endOptions) { continue }
     if ($positionalSpec.Trailing) { $scanState = 'literal' }
     if ($positionalRemaining -gt 0) {
       $positionalRemaining -= & $valueCount $word $positionalDelimiter

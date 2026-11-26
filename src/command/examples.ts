@@ -144,6 +144,8 @@ function compileExampleArgs(definition: CommandDefinition, args: Readonly<Record
     && args[name] !== undefined && !(Array.isArray(args[name]) && args[name].length === 0)
   );
   const hasLiteralTail = definition.arguments.some(({ literal }) => literal === true);
+  const canEscapePositionals = definition.arguments.find(({ kind }) => kind === 'positional')?.valueTerminator !== '--';
+  let endOptionsIndex: number | undefined;
   let literalPositionals = false;
   const argumentsForValidation = definition.arguments.map((argument, index) => {
     const input = Object.hasOwn(args, argument.name) ? args[argument.name] : undefined;
@@ -154,7 +156,7 @@ function compileExampleArgs(definition: CommandDefinition, args: Readonly<Record
       const destination = argument.trailingVarArg ? trailing : positionals;
       if (tokens.length > 0) {
         supplied.add(argument.name);
-        literalPositionals ||= argument.literal !== true
+        literalPositionals ||= canEscapePositionals && endOptionsIndex === undefined && argument.literal !== true
           && tokens.some((token) => token.startsWith('-') || token === 'help' || matchSubcommand(definition, token).kind !== 'none');
         destination.push(...tokens);
       }
@@ -162,6 +164,9 @@ function compileExampleArgs(definition: CommandDefinition, args: Readonly<Record
         index < lastPositional && argument.valueTerminator !== undefined
         && (argument.maxValues === null || tokens.length < argument.maxValues)
       ) {
+        if (argument.valueTerminator === '--') {
+          endOptionsIndex ??= positionals.length;
+        }
         destination.push(argument.valueTerminator);
       }
     } else if (input !== undefined) {
@@ -192,10 +197,10 @@ function compileExampleArgs(definition: CommandDefinition, args: Readonly<Record
     };
   });
 
-  const argv = hasLiteralTail
+  const argv = hasLiteralTail || literalPositionals
     ? [...options, ...(literalPositionals ? ['--'] : []), ...positionals, ...trailing]
-    : literalPositionals
-    ? [...options, '--', ...positionals, ...trailing]
+    : endOptionsIndex !== undefined
+    ? [...positionals.slice(0, endOptionsIndex), ...options, ...positionals.slice(endOptionsIndex), ...trailing]
     : [...positionals, ...options, ...(trailing.length === 0 ? [] : ['--', ...trailing])];
   const subcommands = definition.subcommands.map(({ validate: _validate, ...child }) => ({ ...child, arguments: [], subcommands: [] }));
   const result = tryParseConfigured<Record<string, unknown>>(

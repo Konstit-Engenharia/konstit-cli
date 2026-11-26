@@ -78,9 +78,10 @@ function {{NAME}} --argument-names target
         if test "$scan_state" = command; and {{NAME}}_literal_positional "$context" "$positional_index"
             set scan_state literal
         end
+        set -l end_options 0
         if test "$scan_state" = command; and test "$word" = --
             set scan_state literal
-            continue
+            set end_options 1
         end
         set -l consume_as_positional 0
         if test "$scan_state" = command; and string match -qr '^-.+' -- "$word"
@@ -184,6 +185,7 @@ function {{NAME}} --argument-names target
         string match -qr '^-' -- "$word"; and test "$scan_state" = command; and test $consume_as_positional -eq 0; and continue
         if test $positional_remaining -eq 0
             set positional_trailing 0
+            set positional_terminator_hex -
             switch "$context:$positional_index"
 {{POSITIONAL_SPEC_CASES}}
             end
@@ -195,6 +197,7 @@ function {{NAME}} --argument-names target
             set positional_remaining 0
             continue
         end
+        test $end_options -eq 1; and continue
         if test $positional_trailing -eq 1
             set scan_state literal
         end

@@ -5,7 +5,7 @@ import {
 import {
   describeRequiredValueCount,
   renderEqualsValueCount,
-  renderPositionalCount,
+  renderPositionalUsage,
   renderValueCount,
 } from '../help/value-syntax.js';
 import type {
@@ -96,7 +96,7 @@ export function usageText(command: CommandMetadata): string {
 function argumentSyntax(argument: ArgumentMetadata): string {
   const label = argument.valueName ?? argument.parser?.label ?? argument.name.toUpperCase();
   if (argument.kind === 'positional') {
-    return renderPositionalCount(argument, label);
+    return renderPositionalUsage(argument, label);
   }
   const name = argument.long === undefined
     ? argument.short === undefined ? argument.name : `-${argument.short}`

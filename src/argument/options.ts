@@ -74,7 +74,7 @@ export interface ValueMetadataOptions<Value> extends ArgumentOptions {
   readonly numArgs?: number | ValueCountRange;
   /** Splits each raw value before parsing. */
   readonly valueDelimiter?: string;
-  /** Stops collecting values when this token is encountered. */
+  /** Stops collecting values at this token. For positionals, `--` also ends option parsing. */
   readonly valueTerminator?: string;
   /** Allows values that begin with a hyphen. */
   readonly allowHyphenValues?: boolean;

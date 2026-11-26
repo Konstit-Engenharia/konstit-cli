@@ -5,7 +5,7 @@ import type {
 } from '../command/schema.js';
 import {
   renderEqualsValueCount as renderSyntaxEqualsValueCount,
-  renderPositionalCount,
+  renderPositionalUsage,
   renderValueCount as renderSyntaxValueCount,
 } from './value-syntax.js';
 
@@ -67,7 +67,7 @@ export function renderUsageText(
   });
   const positionalUsage = definition.arguments
     .filter(({ kind, hidden }) => kind === 'positional' && !hidden)
-    .map((argument) => renderPositionalCount(argument, positionalValueName(argument)));
+    .map((argument) => renderPositionalUsage(argument, positionalValueName(argument)));
   return [
     path.join(' '),
     ...(options ? ['[options]'] : []),

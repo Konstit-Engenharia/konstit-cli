@@ -871,6 +871,31 @@ const wrap = command('wrap', {
 `args` to `['--help', '-v']`. When the literal tail is the only positional, it
 captures from the first token of that command.
 
+Set `valueTerminator: '--'` on a positional to advance to the next positional
+when `--` ends option parsing. This lets a variadic positional leave slots
+unfilled before the delimiter.
+
+```ts
+const diff = command('diff', {
+  args: [
+    positional('revisions', parsers.string, {
+      numArgs: { min: 0, max: 2 },
+      valueName: 'REV',
+      valueTerminator: '--',
+    }),
+    positional('paths', parsers.string, {
+      trailingVarArg: true,
+      valueName: 'PATH',
+      valueHint: 'file',
+    }),
+  ],
+});
+```
+
+`diff HEAD -- src/` returns `revisions: ['HEAD']` and `paths: ['src/']`.
+Generated usage shows `[--]`, and completion after the delimiter targets
+`paths`.
+
 #### Joined file paths
 
 Use `joinWith: ' '` on a literal trailing positional when the rest of the command

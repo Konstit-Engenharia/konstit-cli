@@ -298,7 +298,9 @@ export function scanWords(state: ScanState, words: readonly string[]): void {
     const kind = recognizeWord(argvState, word, consumeAsPositional);
     if (kind === 'end-options') {
       state.active.argvState = literalWords;
-      continue;
+      if (positional?.valueTerminator !== word) {
+        continue;
+      }
     }
     if (kind === 'long-option') {
       scanLongOption(state, word);

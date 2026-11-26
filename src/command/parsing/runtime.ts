@@ -250,8 +250,10 @@ function parseDefinition(
     const kind = recognizeWord(wordState, token, consumeAsPositional);
     if (kind === 'end-options') {
       wordState = literalWords;
-      index += 1;
-      continue;
+      if (positionalArgument?.valueTerminator !== token) {
+        index += 1;
+        continue;
+      }
     }
     if (kind === 'long-option') {
       index = parseLongOption(

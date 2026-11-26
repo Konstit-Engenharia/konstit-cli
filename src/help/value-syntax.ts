@@ -102,3 +102,11 @@ export function renderPositionalCount(
   const repeated = argument.repeatable ? '...' : '';
   return `${[...required, ...optional].join(' ')}${repeated}`;
 }
+
+export function renderPositionalUsage(
+  argument: PositionalCountSyntax & { readonly valueTerminator?: string; },
+  name: string,
+): string {
+  const values = renderPositionalCount(argument, name);
+  return argument.valueTerminator === '--' ? `${values} [--]` : values;
+}
