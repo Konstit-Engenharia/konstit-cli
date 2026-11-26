@@ -334,8 +334,11 @@ export function validateParsedValues(
   inheritedArguments: readonly ArgumentDefinition[],
   subcommandConflict: SubcommandConflict | undefined,
 ): void {
+  const directInvocation = state.subcommand === undefined && !definition.subcommandRequired;
   const missingArguments = definition.arguments.filter(
-    (argument) => argument.presence === 'required' && suppliedArgument(state, argument.name) === undefined,
+    (argument) =>
+      (argument.presence === 'required' || (argument.presence === 'without-subcommand' && directInvocation))
+      && suppliedArgument(state, argument.name) === undefined,
   );
   const firstMissing = missingArguments[0];
   if (firstMissing !== undefined) {

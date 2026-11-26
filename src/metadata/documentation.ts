@@ -128,6 +128,9 @@ export function argumentDescription(argument: ArgumentMetadata): string {
   if (argument.help !== undefined) {
     details.push(argument.help);
   }
+  if (argument.presence === 'without-subcommand') {
+    details.push('required without a subcommand');
+  }
   details.push(`arity ${formatArity(argument.arity)}`);
   if (argument.parser !== undefined) {
     details.push(`parser ${argument.parser.label}`);

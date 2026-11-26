@@ -7,6 +7,7 @@ import type {
 } from '../argument/index.js';
 import type {
   RequiredArgument,
+  RequiredWithoutSubcommand,
   TrailingPositional,
 } from '../argument/types.js';
 import type { ParseOptions } from '../configuration/shape.js';
@@ -134,7 +135,25 @@ export type CommandArguments<
   Fields extends object,
   Subcommands extends Record<string, unknown>,
   Required extends boolean,
-> = Simplify<Readonly<Fields> & SubcommandField<Subcommands, Required>>;
+  DirectFields extends object = EmptyObject,
+> = [keyof DirectFields] extends [never] ? Simplify<Readonly<Fields> & SubcommandField<Subcommands, Required>>
+  : StringKeyOf<Subcommands> extends never ? DirectCommandArguments<Fields, Subcommands, DirectFields>
+  :
+    | (Required extends true ? never : DirectCommandArguments<Fields, Subcommands, DirectFields>)
+    | Simplify<Readonly<Fields> & SubcommandField<Subcommands, true>>;
+
+type DirectCommandArguments<Fields extends object, Subcommands extends Record<string, unknown>, DirectFields extends object> = Simplify<
+  & { readonly [Name in keyof Fields]: Name extends keyof DirectFields ? DirectFields[Name] : Fields[Name]; }
+  & (StringKeyOf<Subcommands> extends never ? EmptyObject : { readonly subcommand: undefined; })
+>;
+
+type HandlerArguments<
+  Fields extends object,
+  Subcommands extends Record<string, unknown>,
+  Required extends boolean,
+  DirectFields extends object,
+> = [keyof DirectFields] extends [never] ? CommandArguments<Fields, Subcommands, Required>
+  : DirectCommandArguments<Fields, Subcommands, DirectFields>;
 
 export declare const commandTypeKey: unique symbol;
 
@@ -145,6 +164,7 @@ export interface CommandType<
   out Subcommands extends Record<string, unknown> = Record<string, unknown>,
   out SubcommandRequired extends boolean = boolean,
   out Groups extends string = string,
+  out DirectFields extends object = EmptyObject,
 > {
   /** Carries the command's inferred schema types. */
   readonly [commandTypeKey]: readonly [
@@ -153,6 +173,7 @@ export interface CommandType<
     Subcommands,
     SubcommandRequired,
     Groups,
+    DirectFields,
   ];
 }
 
@@ -166,7 +187,8 @@ export interface HandledCommand<
   out Subcommands extends Record<string, unknown> = Record<string, unknown>,
   out SubcommandRequired extends boolean = boolean,
   out Groups extends string = string,
-> extends CommandType<Name, Fields, Subcommands, SubcommandRequired, Groups> {
+  out DirectFields extends object = EmptyObject,
+> extends CommandType<Name, Fields, Subcommands, SubcommandRequired, Groups, DirectFields> {
   /** Parses explicit argv. User-facing failures throw CliError. */
   parse(argv: readonly string[], options?: ParseOptions): ParseOutcome<Infer<this>>;
   /** Parses argv without exceptions for expected CLI outcomes. */
@@ -189,8 +211,9 @@ export type Infer<ConfiguredCommand extends AnyCommand> = ConfiguredCommand exte
   infer Fields,
   infer Subcommands,
   infer Required,
-  infer _Groups
-> ? CommandArguments<Fields, Subcommands, Required>
+  infer _Groups,
+  infer DirectFields
+> ? CommandArguments<Fields, Subcommands, Required, DirectFields>
   : never;
 
 export type FieldsFromArguments<Arguments extends readonly AnyArgument[]> = Simplify<
@@ -198,6 +221,14 @@ export type FieldsFromArguments<Arguments extends readonly AnyArgument[]> = Simp
     [Value in Arguments[number] as ArgumentName<Value>]: ArgumentOutput<Value>;
   }
 >;
+
+type DirectOutput<Argument> = [Argument] extends [RequiredWithoutSubcommand<infer Output>] ? Output : ArgumentOutput<Argument>;
+
+export type DirectFieldsFromArguments<Arguments extends readonly AnyArgument[]> = number extends Arguments['length'] ? EmptyObject : {
+  [Name in ArgumentName<Extract<Arguments[number], RequiredWithoutSubcommand>>]: DirectOutput<
+    Extract<Arguments[number], ArgumentType<Name>>
+  >;
+};
 
 type ExampleScalar<Value> = Value extends string | number | boolean | bigint ? Value : string;
 
@@ -557,15 +588,21 @@ export interface CommandOptions<
   readonly strictRelations?: boolean;
   /** Validates resolved arguments after defaults, overrides, and built-in relations. */
   readonly validate?: CommandValidator<
-    CommandArguments<FieldsFromArguments<Arguments>, SubcommandsFromTuple<Subcommands>, SubcommandRequired>,
+    CommandArguments<
+      FieldsFromArguments<Arguments>,
+      SubcommandsFromTuple<Subcommands>,
+      SubcommandRequired,
+      DirectFieldsFromArguments<Arguments>
+    >,
     StringKeyOf<FieldsFromArguments<Arguments>>
   >;
   /** Attaches a callback with the exact configured argument type. */
   readonly handler?: CommandHandler<
-    CommandArguments<
+    HandlerArguments<
       FieldsFromArguments<Arguments>,
       SubcommandsFromTuple<Subcommands>,
-      SubcommandRequired
+      SubcommandRequired,
+      DirectFieldsFromArguments<Arguments>
     >
   >;
 }

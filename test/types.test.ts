@@ -60,6 +60,62 @@ type Expected = {
 
 type _ResultIsExact = Expect<Equal<Actual, Expected>>;
 
+void (() => {
+  const profile = option('profile', parsers.string, { global: true, required: true });
+  const input = option('input', parsers.string, { required: 'without-subcommand' });
+  const bounds = option('bounds', parsers.integer, { required: 'without-subcommand', numArgs: 2 });
+  const label = option('label', parsers.string, { required: 'without-subcommand', numArgs: { min: 0, max: 1 } });
+  const child = command('clean', {
+    handler: (_args, ctx) => {
+      const global = ctx.global(profile);
+      type _GlobalIsRequired = Expect<Equal<typeof global, string>>;
+    },
+  });
+  const cli = command('tool', {
+    args: [profile, input, bounds, label],
+    subcommands: [child],
+    handler: ({ input, bounds, label, subcommand }) => {
+      type _DirectInput = Expect<Equal<typeof input, string>>;
+      type _DirectTuple = Expect<Equal<typeof bounds, readonly [number, number]>>;
+      type _DirectValueIsOptional = Expect<Equal<typeof label, string | undefined>>;
+      type _NoSubcommand = Expect<Equal<typeof subcommand, undefined>>;
+    },
+    validate: (value) => {
+      if (value.subcommand === undefined) {
+        type _DirectInput = Expect<Equal<typeof value.input, string>>;
+      } else {
+        type _ChildInput = Expect<Equal<typeof value.input, string | undefined>>;
+        type _ChildGlobal = Expect<Equal<typeof value.profile, string>>;
+      }
+    },
+  });
+  const result = cli.tryParse([]);
+  if (result.type === 'value') {
+    const { value } = result;
+    type _GlobalAcrossBranches = Expect<Equal<typeof value.profile, string>>;
+    if (value.subcommand === undefined) {
+      type _DirectInput = Expect<Equal<typeof value.input, string>>;
+      type _DirectTuple = Expect<Equal<typeof value.bounds, readonly [number, number]>>;
+    } else {
+      type _ChildInput = Expect<Equal<typeof value.input, string | undefined>>;
+      type _ChildTuple = Expect<Equal<typeof value.bounds, readonly [number, number] | undefined>>;
+      type _Subcommand = Expect<Equal<typeof value.subcommand.name, 'clean'>>;
+    }
+  }
+  const leaf = command('leaf', { args: [input] });
+  type _LeafInput = Expect<Equal<Infer<typeof leaf>['input'], string>>;
+  const nested = command('nested', { subcommands: [cli], subcommandRequired: true });
+  type _NestedInput = Expect<Equal<Infer<typeof nested>['subcommand']['args'], Infer<typeof cli>>>;
+  const forwarding = command('forwarding', { args: [input], subcommands: [child], subcommandRequired: true });
+  type _SubcommandAlwaysSelected = Expect<Equal<Infer<typeof forwarding>['subcommand']['name'], 'clean'>>;
+  type _ForwardingInput = Expect<Equal<Infer<typeof forwarding>['input'], string | undefined>>;
+
+  // @ts-expect-error globals are required independently of subcommand selection
+  option('scoped-global', parsers.string, { global: true, required: 'without-subcommand' });
+  // @ts-expect-error required arguments cannot declare a fallback
+  option('scoped-default', parsers.string, { default: 'fallback', required: 'without-subcommand' });
+});
+
 const initializedCli = command('release', {
   version: '1.0.0',
   about: 'Create a release',

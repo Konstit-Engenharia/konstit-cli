@@ -30,6 +30,7 @@ import {
 import type {
   ArgumentType,
   RequiredArgumentFromOptions,
+  RequiredWithoutSubcommandFromOptions,
   TrailingPositionalFromOptions,
 } from './types.js';
 
@@ -65,7 +66,8 @@ export function option<
     ConfiguredCardinality<Options>,
     ConfiguredGlobal<Options>
   >
-  & RequiredArgumentFromOptions<Options>;
+  & RequiredArgumentFromOptions<Options>
+  & RequiredWithoutSubcommandFromOptions<Value, Options>;
 export function option(
   name: string,
   parser: ValueParser<unknown> = parsers.string,
@@ -111,6 +113,7 @@ export function positional<
     false
   >
   & RequiredArgumentFromOptions<Options>
+  & RequiredWithoutSubcommandFromOptions<Value, Options>
   & TrailingPositionalFromOptions<Options>;
 export function positional(
   name: string,

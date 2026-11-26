@@ -108,6 +108,7 @@ export class Command<
     Subcommands,
     SubcommandRequired,
     Groups,
+    EmptyObject,
   ];
 
   constructor(definition: CommandDefinition) {

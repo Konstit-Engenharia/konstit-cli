@@ -323,6 +323,9 @@ function annotateHelp(argument: ArgumentDefinition): string {
   if (argument.help !== undefined) {
     annotations.push(argument.help);
   }
+  if (argument.presence === 'without-subcommand') {
+    annotations.push('[required without a subcommand]');
+  }
   if (argument.env !== undefined) {
     annotations.push(`[env: ${argument.env}]`);
   }

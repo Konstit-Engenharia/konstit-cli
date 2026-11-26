@@ -7,6 +7,7 @@ import type {
   ArgumentCardinality,
   ArgumentKind,
   ArgumentPresence,
+  ConfiguredValueOutput,
   NamedArgumentKind,
 } from './options.js';
 import type { ArgumentAction } from './runtime.js';
@@ -135,7 +136,17 @@ export interface RequiredArgument {
   readonly [requiredArgumentKey]: true;
 }
 
-export type RequiredArgumentFromOptions<Options> = [Options] extends [{ readonly required: true; }] ? RequiredArgument
+export type RequiredArgumentFromOptions<Options> = [Options] extends [{ readonly required: true | 'without-subcommand'; }]
+  ? RequiredArgument
+  : unknown;
+
+declare const requiredWithoutSubcommandKey: unique symbol;
+export interface RequiredWithoutSubcommand<out Output = unknown> {
+  readonly [requiredWithoutSubcommandKey]: Output;
+}
+
+export type RequiredWithoutSubcommandFromOptions<Value, Options> = [Options] extends [{ readonly required: 'without-subcommand'; }]
+  ? RequiredWithoutSubcommand<ConfiguredValueOutput<Value, Options, 'defaultMissing' extends keyof Options ? Value | undefined : Value>>
   : unknown;
 
 declare const trailingPositionalKey: unique symbol;

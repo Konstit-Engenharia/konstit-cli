@@ -225,6 +225,7 @@ export function validateConfiguredValueOptions(
   const hasDefaultValues = Object.hasOwn(options, 'defaultValues');
   const hasDefaultMissing = Object.hasOwn(options, 'defaultMissing');
   const hasNumArgs = Object.hasOwn(options, 'numArgs');
+  const required = options.required === true || options.required === 'without-subcommand';
 
   if (options.unique === true && options.repeatable !== true) {
     throw new TypeError('unique requires a repeatable option');
@@ -250,7 +251,7 @@ export function validateConfiguredValueOptions(
     if (hasDefault) {
       throw new TypeError('An argument cannot configure both default and defaultValues');
     }
-    if (options.required === true) {
+    if (required) {
       throw new TypeError('An argument cannot be required and have default values');
     }
     const numArgsCollectsValues = options.numArgs === undefined
@@ -313,7 +314,7 @@ export function validateConfiguredValueOptions(
       throw new TypeError('Positional arguments cannot require equals-form values');
     }
   }
-  if (hasDefault && options.required === true) {
+  if (hasDefault && required) {
     throw new TypeError('An argument configuration cannot be required and have a default');
   }
   if (hasDefault && options.repeatable === true) {
@@ -418,6 +419,13 @@ export function validateArgumentOptionKeys(
   if (configured.output !== undefined && configured.output !== 'scalar') {
     throw new TypeError(`${kind} argument option 'output' must be 'scalar'`);
   }
+  if (
+    configured.required !== undefined
+    && typeof configured.required !== 'boolean'
+    && configured.required !== 'without-subcommand'
+  ) {
+    throw new TypeError(`${kind} argument option 'required' must be a boolean or 'without-subcommand'`);
+  }
   if (typeof configured.helpHeading === 'string' && /[\r\n]/u.test(configured.helpHeading)) {
     throw new TypeError(`${kind} argument option 'helpHeading' cannot contain line breaks`);
   }
@@ -426,7 +434,6 @@ export function validateArgumentOptionKeys(
       'hide',
       'sensitive',
       'global',
-      'required',
       'repeatable',
       'unique',
       'requireEquals',
@@ -564,16 +571,17 @@ export function applyValueArgumentOptions(
   if (options.required === true) {
     configured = copyDefinition(configured, { presence: 'required' });
   }
+  if (options.required === 'without-subcommand') {
+    if (configured.global) {
+      throw new TypeError('An argument required without a subcommand cannot be global');
+    }
+    configured = copyDefinition(configured, { presence: 'without-subcommand' });
+  }
   if (options.repeatable === true) {
     configured = copyDefinition(configured, {
       action: ArgumentAction.Append,
       repeatable: true,
       ...(options.unique === true ? { unique: true } : {}),
-      presence: configured.presence === 'required'
-        ? 'required'
-        : configured.presence === 'default'
-        ? 'default'
-        : 'optional',
       defaultValue: undefined,
     });
   }
@@ -612,7 +620,7 @@ export function applyValueArgumentOptions(
   }
   if (options.trailingVarArg === true) {
     configured = copyDefinition(configured, {
-      minValues: configured.presence === 'required' ? 1 : 0,
+      minValues: configured.presence === 'required' || configured.presence === 'without-subcommand' ? 1 : 0,
       maxValues: options.output === 'scalar' ? 1 : null,
       trailingVarArg: true,
       ...(options.literal === true ? { literal: true } : {}),

@@ -7,7 +7,7 @@ export type ValueArgumentKind = Extract<ArgumentKind, 'option' | 'positional'>;
 /** Argument kinds invoked by a named option or switch. */
 export type NamedArgumentKind = Exclude<ArgumentKind, 'positional'>;
 /** Whether an argument is optional, required, or backed by a configured default. */
-export type ArgumentPresence = 'optional' | 'required' | 'default';
+export type ArgumentPresence = 'optional' | 'required' | 'without-subcommand' | 'default';
 /** Whether an argument yields a scalar, an optional scalar, or a collection. */
 export type ArgumentCardinality = 'one' | 'optional' | 'many';
 
@@ -62,8 +62,8 @@ export interface ValueMetadataOptions<Value> extends ArgumentOptions {
   readonly valueHint?: CompletionValueHint;
   /** Computes value completions from the active command line. */
   readonly complete?: DynamicCompletionProvider;
-  /** Requires a value when no default is configured. */
-  readonly required?: boolean;
+  /** Requires the argument on every invocation or only when its command selects no subcommand. */
+  readonly required?: boolean | 'without-subcommand';
   /** Supplies a value when the user omits the argument. */
   readonly default?: NoInfer<Value>;
   /** Supplies parsed values when a collection argument is omitted. */
@@ -149,9 +149,13 @@ type TrailingCollectionEnabled<Options> = Options extends { readonly output: 'sc
   : 'scalar' extends Field<Options, 'output'> ? ConfiguredField<Options, 'trailingVarArg'> | false
   : ConfiguredField<Options, 'trailingVarArg'>;
 
+type HasRequiredSetting<Options> = true extends Field<Options, 'required'> ? true
+  : 'without-subcommand' extends Field<Options, 'required'> ? true
+  : false;
+
 type CheckedDefaultOptions<Value, Options> = Options extends { readonly default: infer Default; }
   ? [Default] extends [Value]
-    ? true extends Field<Options, 'required'> ? ConfigurationError<'An argument cannot be required and have a default'>
+    ? HasRequiredSetting<Options> extends true ? ConfigurationError<'An argument cannot be required and have a default'>
     : true extends Field<Options, 'repeatable'> ? ConfigurationError<'A repeatable argument cannot have a scalar default'>
     : true extends TrailingCollectionEnabled<Options> ? ConfigurationError<'A trailing argument cannot have a scalar default'>
     : NumArgsAllowsScalarDefault<Options> extends true ? unknown
@@ -173,7 +177,7 @@ type CheckedDefaultValuesOptions<Value, Options> = Options extends {
 }
   ? [DefaultValues] extends [readonly NoInfer<Value>[]]
     ? HasCollectionShape<Options> extends true
-      ? true extends Field<Options, 'required'> ? ConfigurationError<'An argument cannot be required and have default values'>
+      ? HasRequiredSetting<Options> extends true ? ConfigurationError<'An argument cannot be required and have default values'>
       : 'default' extends keyof Options ? ConfigurationError<'An argument cannot configure both default and defaultValues'>
       : unknown
     : ConfigurationError<'defaultValues requires a collection argument'>
@@ -222,6 +226,8 @@ type CheckedUniqueOptions<Options> = Options extends { readonly unique: true; }
 
 export type CheckedOptionOptions<Value, Options> = 'trailingVarArg' extends keyof Options
   ? ConfigurationError<'Options cannot be trailing positional arguments'>
+  : Options extends { readonly required: 'without-subcommand'; readonly global: true; }
+    ? ConfigurationError<'An argument required without a subcommand cannot be global'>
   : CheckedDefaultMissingOptions<Value, Options> & CheckedUniqueOptions<Options>;
 
 export type CheckedPositionalOptions<Options> = 'global' extends keyof Options ? ConfigurationError<'Positional arguments cannot be global'>
@@ -277,13 +283,13 @@ type ConfiguredNumArgsOutput<
 
 type CollectionOutput<Value, Output, Enabled> = Enabled extends true ? readonly Value[] : Output;
 
-export type ConfiguredValueOutput<Value, Options> = CollectionOutput<
+export type ConfiguredValueOutput<Value, Options, Scalar = ConfiguredScalarOutput<Value, Options>> = CollectionOutput<
   Value,
   CollectionOutput<
     Value,
     ConfiguredNumArgsOutput<
       Value,
-      ConfiguredScalarOutput<Value, Options>,
+      Scalar,
       ConfiguredField<Options, 'numArgs'>,
       Options
     >,

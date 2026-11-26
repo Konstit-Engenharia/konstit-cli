@@ -10,6 +10,7 @@ clap. It is not a source port.
 
 - Value parsers determine the returned TypeScript type.
 - `required: true` removes `undefined` when the configured arity guarantees a value.
+- `required: 'without-subcommand'` narrows the value in direct invocations.
 - `default` keeps a value present.
 - `defaultValues` keeps a collection present, preserving fixed tuple types.
 - `repeatable: true` returns `readonly Value[]`.
@@ -645,10 +646,43 @@ normal display behavior.
 `parse()` throws a `CliError` with `ErrorKind.ArgumentConflict`; `tryParse()`
 returns that error, and `run()` reports it and returns exit code `2` by default
 without calling a handler. Existing required-argument and relation checks still run.
-In particular, this setting does not waive a parent's required local arguments:
-if one must be supplied on the CLI, a subcommand invocation cannot satisfy both
-rules. Use this constraint with local arguments that can be absent for
-subcommand invocations.
+Use `required: 'without-subcommand'` for local arguments that are required
+only when their command runs directly.
+
+### Arguments required for direct invocations
+
+```ts
+const profile = option('profile', parsers.string, {
+  global: true,
+  required: true,
+});
+
+const tool = command('tool', {
+  args: [
+    profile,
+    option('input', parsers.string, { required: 'without-subcommand' }),
+  ],
+  handler: ({ input }, ctx) => {
+    ctx.output.log(input); // input is string
+  },
+  subcommands: [command('clean', {
+    handler: (_args, ctx) => {
+      ctx.output.log(ctx.global(profile)); // profile is string
+    },
+  })],
+});
+```
+
+`tool --profile dev --input data.csv` runs the parent handler, and
+`tool clean --profile dev` runs the child with the required global.
+When a child is selected, a local argument with this setting can be absent.
+Supplied values and argument relations still apply. This setting is for local
+options and positionals. Use `required: true` on required globals.
+
+In a successful parse and in `validate`, checking for
+`subcommand === undefined` narrows `input` to `string`. The subcommand branch
+allows `string | undefined`. The parent handler receives the direct-invocation
+shape.
 
 ## Arguments
 

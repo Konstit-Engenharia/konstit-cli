@@ -1,3 +1,4 @@
+import type { ArgumentPresence } from '../argument/index.js';
 import type { RequiresIfValueCount } from '../command/types.js';
 
 export interface ValueCountSyntax {
@@ -7,7 +8,7 @@ export interface ValueCountSyntax {
 }
 
 export interface PositionalCountSyntax extends ValueCountSyntax {
-  readonly presence: 'optional' | 'required' | 'default';
+  readonly presence: ArgumentPresence;
   readonly trailingVarArg: boolean;
 }
 

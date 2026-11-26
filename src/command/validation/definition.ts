@@ -46,8 +46,8 @@ export function validateArgument(
       );
     }
     if (
-      argument.presence === 'required'
-      && positionals.some(({ presence }) => presence !== 'required')
+      (argument.presence === 'required' || argument.presence === 'without-subcommand')
+      && positionals.some(({ presence }) => presence === 'optional' || presence === 'default')
     ) {
       throw new TypeError('A required positional cannot follow an optional positional');
     }

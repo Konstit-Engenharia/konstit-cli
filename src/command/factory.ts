@@ -20,6 +20,7 @@ import type {
   CommandGroupOptions,
   CommandOptions,
   CommandType,
+  DirectFieldsFromArguments,
   EmptyObject,
   FieldsFromArguments,
   GroupNamesFromTuple,
@@ -96,7 +97,8 @@ export function command<
   FieldsFromArguments<Arguments>,
   SubcommandsFromTuple<Subcommands>,
   SubcommandRequired,
-  GroupNamesFromTuple<Groups>
+  GroupNamesFromTuple<Groups>,
+  DirectFieldsFromArguments<Arguments>
 >;
 export function command(
   name: string,
