@@ -24,10 +24,10 @@ const integerRangeCli = command('bounded', {
 });
 type _IntegerRangeOutputIsExact = Expect<Equal<Infer<typeof integerRangeCli>['port'], number>>;
 
-void (() => {
+function _checkIntegerRangeOptions() {
   // @ts-expect-error integer mode accepts only a boolean
   parsers.range(1, 10, { integer: 'true' });
-});
+}
 
 const typedCli = command('deploy', {
   args: [
@@ -60,7 +60,7 @@ type Expected = {
 
 type _ResultIsExact = Expect<Equal<Actual, Expected>>;
 
-void (() => {
+function _checkConditionalRequiredArguments() {
   const profile = option('profile', parsers.string, { global: true, required: true });
   const input = option('input', parsers.string, { required: 'without-subcommand' });
   const bounds = option('bounds', parsers.integer, { required: 'without-subcommand', numArgs: 2 });
@@ -114,7 +114,7 @@ void (() => {
   option('scoped-global', parsers.string, { global: true, required: 'without-subcommand' });
   // @ts-expect-error required arguments cannot declare a fallback
   option('scoped-default', parsers.string, { default: 'fallback', required: 'without-subcommand' });
-});
+}
 
 const initializedCli = command('release', {
   version: '1.0.0',
@@ -132,10 +132,9 @@ const initializedCli = command('release', {
   ],
   defaultToHelp: true,
   handler: ({ port, dryRun, subcommand }) => {
-    const typedPort: number = port;
-    const typedDryRun: boolean = dryRun;
-    const typedSubcommand: InitializedExpected['subcommand'] = subcommand;
-    void [typedPort, typedDryRun, typedSubcommand];
+    const _typedPort: number = port;
+    const _typedDryRun: boolean = dryRun;
+    const _typedSubcommand: InitializedExpected['subcommand'] = subcommand;
   },
 });
 
@@ -165,9 +164,8 @@ const requiredSubcommandHandler = command('required-handler', {
         }
       >
     >;
-    const childName: 'child' = subcommand.name;
-    const force: boolean = subcommand.args.force;
-    void [childName, force];
+    const _childName: 'child' = subcommand.name;
+    const _force: boolean = subcommand.args.force;
   },
 });
 type _RequiredHandlerResultIsExact = Expect<
@@ -201,11 +199,10 @@ const configuredArgumentsCli = command('configured-arguments', {
     option('fallback', colorParser),
   ],
   handler: ({ color, fallback }, context) => {
-    const typedColor: 'auto' | 'always' | 'never' = color;
-    const typedFallback: 'auto' | 'always' | 'never' | undefined = fallback;
-    const typedVerbose: number = context.global(configuredVerbose);
-    const typedOutputColor: boolean = context.global(configuredOutputColor);
-    void [typedColor, typedFallback, typedVerbose, typedOutputColor];
+    const _typedColor: 'auto' | 'always' | 'never' = color;
+    const _typedFallback: 'auto' | 'always' | 'never' | undefined = fallback;
+    const _typedVerbose: number = context.global(configuredVerbose);
+    const _typedOutputColor: boolean = context.global(configuredOutputColor);
   },
 });
 
@@ -247,20 +244,12 @@ const advancedConfiguredCli = command('advanced-configured', {
     flag('debug'),
   ],
   handler: ({ pair, points, values, maybe, mode, command }) => {
-    const typedPair: readonly [string, string] = pair;
-    const typedPoints: readonly number[] = points;
-    const typedValues: readonly number[] | undefined = values;
-    const typedMaybe: string | undefined = maybe;
-    const typedMode: 'fast' | 'safe' | undefined = mode;
-    const typedCommand: readonly string[] = command;
-    void [
-      typedPair,
-      typedPoints,
-      typedValues,
-      typedMaybe,
-      typedMode,
-      typedCommand,
-    ];
+    const _typedPair: readonly [string, string] = pair;
+    const _typedPoints: readonly number[] = points;
+    const _typedValues: readonly number[] | undefined = values;
+    const _typedMaybe: string | undefined = maybe;
+    const _typedMode: 'fast' | 'safe' | undefined = mode;
+    const _typedCommand: readonly string[] = command;
   },
 });
 
@@ -320,27 +309,23 @@ if (parsedOutcome.type !== 'value') {
   throw new Error('expected parsed arguments');
 }
 const parsed = parsedOutcome.value;
-const port: number = parsed.port;
-const mode: 'dev' | 'prod' = parsed.mode;
-const labels: readonly string[] = parsed.labels;
-void [port, mode, labels];
+const _port: number = parsed.port;
+const _mode: 'dev' | 'prod' = parsed.mode;
+const _labels: readonly string[] = parsed.labels;
 
 switch (parsed.subcommand.name) {
   case 'init': {
-    const bare: boolean = parsed.subcommand.args.bare;
-    void bare;
+    const _bare: boolean = parsed.subcommand.args.bare;
     break;
   }
   case 'remote': {
-    const url: string = parsed.subcommand.args.url;
-    void url;
+    const _url: string = parsed.subcommand.args.url;
     break;
   }
 }
 
 const shell: CompletionShell = completionShells[0];
-const completionScript: string = generateCompletion(typedCli, shell);
-void completionScript;
+const _completionScript: string = generateCompletion(typedCli, shell);
 
 const advanced = command('advanced', {
   args: [
@@ -360,12 +345,11 @@ if (advancedOutcome.type !== 'value') {
   throw new Error('expected parsed arguments');
 }
 const advancedResult = advancedOutcome.value;
-const pair: readonly [string, string] = advancedResult.pair;
-const points: readonly number[] = advancedResult.points;
-const values: readonly number[] | undefined = advancedResult.values;
-const advancedMode: 'fast' | 'safe' | undefined = advancedResult.mode;
-const trailingCommand: readonly string[] = advancedResult.command;
-void [pair, points, values, advancedMode, trailingCommand];
+const _pair: readonly [string, string] = advancedResult.pair;
+const _points: readonly number[] = advancedResult.points;
+const _values: readonly number[] | undefined = advancedResult.values;
+const _advancedMode: 'fast' | 'safe' | undefined = advancedResult.mode;
+const _trailingCommand: readonly string[] = advancedResult.command;
 
 type HandlerArguments = {
   readonly port: number;
@@ -381,10 +365,9 @@ const handlerCommand = command('handler', {
   handler: (args) => {
     type _HandlerArgsAreExact = Expect<Equal<typeof args, HandlerArguments>>;
     const { port, mode, verbose } = args;
-    const typedPort: number = port;
-    const typedMode: 'dev' | 'prod' = mode;
-    const typedVerbose: boolean = verbose;
-    void [typedPort, typedMode, typedVerbose];
+    const _typedPort: number = port;
+    const _typedMode: 'dev' | 'prod' = mode;
+    const _typedVerbose: boolean = verbose;
     return 4;
   },
 });
@@ -400,25 +383,22 @@ const asyncHandlerCommand = command('async-handler', {
 const nestedHandler = command('serve', {
   args: [option('port', parsers.integer, { required: true })],
   handler: ({ port }) => {
-    const typedPort: number = port;
-    void typedPort;
+    const _typedPort: number = port;
   },
 });
 const handlerRoot = command('tool', {
   args: [flag('verbose')],
   subcommands: [nestedHandler],
   handler: ({ verbose }) => {
-    const typedVerbose: boolean = verbose;
-    void typedVerbose;
+    const _typedVerbose: boolean = verbose;
   },
 });
 
-void (() => {
-  const defaultArgvExitCode: Promise<number> = handlerCommand.run();
-  const syncExitCode: Promise<number> = handlerCommand.run(['--port', '3000']);
-  const asyncExitCode: Promise<number> = asyncHandlerCommand.run(['ok']);
-  const nestedExitCode: Promise<number> = handlerRoot.run(['serve', '--port', '3000']);
-  void [defaultArgvExitCode, syncExitCode, asyncExitCode, nestedExitCode];
+function _checkCommandConfigurationAndRunTypes() {
+  const _defaultArgvExitCode: Promise<number> = handlerCommand.run();
+  const _syncExitCode: Promise<number> = handlerCommand.run(['--port', '3000']);
+  const _asyncExitCode: Promise<number> = asyncHandlerCommand.run(['ok']);
+  const _nestedExitCode: Promise<number> = handlerRoot.run(['serve', '--port', '3000']);
   // @ts-expect-error parse requires explicit argv
   typedCli.parse();
   // @ts-expect-error tryParse requires explicit argv
@@ -618,4 +598,4 @@ void (() => {
   command('export', { args: countArgs, requiresIf: [['mode', 'pair', 'input', { exactValues: 2, maxValues: 3 }]] });
   // @ts-expect-error the fourth tuple element must specify at least one count
   command('export', { args: countArgs, requiresIf: [['mode', 'pair', 'input', {}]] });
-});
+}

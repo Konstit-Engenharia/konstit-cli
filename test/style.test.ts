@@ -65,15 +65,14 @@ test('rejects invalid link targets and raw terminal control characters', () => {
   expect(() => style.link('https://example.com/\x9c', { stream: 'stderr' })).toThrow('Link URL contains control characters');
 });
 
-void (() => {
+function _checkStyleTypes() {
   const typed: Style = style;
-  const file: string = typed.file('file.csv', { stats: { mode: 0o100644, nlink: 1 } });
-  const path: string = typed.path('file.csv');
+  const _file: string = typed.file('file.csv', { stats: { mode: 0o100644, nlink: 1 } });
+  const _path: string = typed.path('file.csv');
   // @ts-expect-error stream names are a closed union
   typed('text', { stream: 'log' });
   // @ts-expect-error styles are supplied through the options object
   typed('text', 'red');
   // @ts-expect-error file metadata uses numeric stat values
   typed.file('file', { stats: { mode: 1n } });
-  void [file, path];
-});
+}

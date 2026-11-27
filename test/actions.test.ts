@@ -164,7 +164,7 @@ describe('optional value arity', () => {
   });
 });
 
-void (() => {
+function _checkArgumentActionTypes() {
   const acceptsGlobal = <Global extends AnyGlobalArgument>(argument: Global): Global => argument;
   acceptsGlobal(option('profile', parsers.string, { global: true }));
   acceptsGlobal(option('profile', parsers.string, {
@@ -183,4 +183,4 @@ void (() => {
   flag('enabled', { repeatable: true });
   // @ts-expect-error flags have factory-defined defaults
   flag('enabled', { default: true });
-});
+}

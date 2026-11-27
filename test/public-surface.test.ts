@@ -153,16 +153,16 @@ test('hides runtime definitions and type carriers from factory values', () => {
     'renderUsage',
   ]);
 
-  void (() => {
+  function _checkInternalPropertiesArePrivate() {
     // @ts-expect-error internal runtime definitions are not public properties
-    void argument.definition;
+    const _argumentDefinition = argument.definition;
     // @ts-expect-error type-level argument carriers are inaccessible
-    void argument.$output;
+    const _argumentOutput = argument.$output;
     // @ts-expect-error internal runtime definitions are not public properties
-    void cli.definition;
+    const _commandDefinition = cli.definition;
     // @ts-expect-error type-level command carriers are inaccessible
-    void cli.$fields;
-  });
+    const _commandFields = cli.$fields;
+  }
 });
 
 test('rejects objects that did not come from the command factory', () => {

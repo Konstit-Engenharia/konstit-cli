@@ -879,10 +879,10 @@ describe('command coverage', () => {
   });
 });
 
-void (() => {
+function _checkRequiredSubcommandTypes() {
   // @ts-expect-error required subcommands need a non-empty literal tuple
   command('empty-required', {
     subcommands: [],
     subcommandRequired: true,
   });
-});
+}

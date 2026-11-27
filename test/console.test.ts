@@ -112,21 +112,19 @@ test('default console sinks finish partial byte writes on both descriptors', asy
   }
 });
 
-void (() => {
+function _checkConsoleWriterTypes() {
   const chunks: string[] = [];
   const writer: SyncOutputWriter = (text) => chunks.push(text);
   const writers: ConsoleWriters = { stdout: writer, stderr: () => {} };
   // @ts-expect-error synchronous sinks reject promises
-  const asyncWriter: SyncOutputWriter = async (_text: string) => {};
+  const _asyncWriter: SyncOutputWriter = async (_text: string) => {};
   void command('tool', {
     handler: async (_args, context) => {
       const output: HandlerConsole = context.output;
       // biome-ignore lint/suspicious/noConfusingVoidType: Assert the public synchronous return type.
-      const logged: void = output.log('line');
+      const _logged: void = output.log('line');
       const written: Promise<void> = context.stdout('chunk');
-      void [logged];
       await written;
     },
   }).run({ output: writers });
-  void asyncWriter;
-});
+}

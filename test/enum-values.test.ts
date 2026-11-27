@@ -33,9 +33,8 @@ type _StringValuesRemainCanonical = Expect<
   Equal<typeof stringParser, ValueParser<'dev' | 'prod'>>
 >;
 
-const descriptor: EnumValue<'fast'> = { value: 'fast', aliases: ['f'] };
-const enumOptions: EnumParserOptions = { ignoreCase: true };
-void [descriptor, enumOptions];
+const _descriptor: EnumValue<'fast'> = { value: 'fast', aliases: ['f'] };
+const _enumOptions: EnumParserOptions = { ignoreCase: true };
 
 describe('enum value parsers', () => {
   test('lists visible choices in help when the value label uses a name', () => {

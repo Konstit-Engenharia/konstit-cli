@@ -144,7 +144,7 @@ test('rejects invalid validator definitions and results', () => {
   }
 });
 
-void (() => {
+function _checkCommandValidatorTypes() {
   command('tool', {
     args: [option('limit', parsers.integer)],
     // @ts-expect-error issue names must refer to declared arguments
@@ -155,4 +155,4 @@ void (() => {
     // @ts-expect-error validators must return synchronously
     validate: async () => {},
   });
-});
+}

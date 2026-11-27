@@ -405,11 +405,10 @@ test('run resolves completion with the supplied environment', async () => {
   expect(stdout.mock.calls).toEqual([[`${Buffer.from('test').toString('hex')}\t\n`]]);
 });
 
-void (() => {
+function _checkRunParsedTypes() {
   const cli = command('tool', { args: [option('value', parsers.integer, { required: true })] });
   const other = command('other', { args: [option('value', parsers.string, { required: true })] });
-  const result: Promise<number> = cli.runParsed(cli.tryParse(['--value', '1']));
-  void result;
+  const _result: Promise<number> = cli.runParsed(cli.tryParse(['--value', '1']));
   // @ts-expect-error incompatible parsed value types cannot be executed
   void cli.runParsed(other.parse(['--value', 'text']));
   // @ts-expect-error runParsed accepts an outcome, not bare argument values
@@ -420,4 +419,4 @@ void (() => {
   void cli.run({ parseErrorExitCode: '1' });
   // @ts-expect-error stdin streams must supply bytes
   void cli.run({ stdin: new ReadableStream<string>() });
-});
+}

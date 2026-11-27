@@ -120,9 +120,9 @@ type Expected = {
 };
 type _InferContract = Expect<Equal<Actual, Expected>>;
 
-const parser: ValueParser<number> = parsers.custom('PORT', Number);
+const _parser: ValueParser<number> = parsers.custom('PORT', Number);
 const pathParserOptions: PathParserOptions = { kind: 'file', mustExist: true };
-const pathParser: ValueParser<string> = parsers.path(pathParserOptions);
+const _pathParser: ValueParser<string> = parsers.path(pathParserOptions);
 const outcome: ParseOutcome<Actual> = cli.parse([
   '--config',
   'tool.json',
@@ -131,17 +131,17 @@ const outcome: ParseOutcome<Actual> = cli.parse([
   'us',
 ]);
 const completionOptions: CompletionOptions = { dynamic: true };
-const provider: DynamicCompletionProvider<Actual> = ({ values }) => {
+const _provider: DynamicCompletionProvider<Actual> = ({ values }) => {
   return values.config === 'tool.json' ? ['us', 'eu'] : [];
 };
-const script: string = generateCompletion(
+const _script: string = generateCompletion(
   cli,
   completionShells[0],
   completionOptions,
 );
-const errorType: typeof CliError = CliError;
+const _errorType: typeof CliError = CliError;
 
-void (() => {
+function _checkConsumerRunTypes() {
   const chunks: string[] = [];
   const stderr: OutputWriter = (text) => Promise.resolve(chunks.push(text));
   const syncWriter: SyncOutputWriter = (text) => chunks.push(text);
@@ -151,14 +151,13 @@ void (() => {
   const parseOptions: ParseOptions = { env: { PROFILE: 'test' } };
   const options: RunParsedOptions = { ...consoleOptions, parseErrorExitCode: 1, color: false, stdin, stderr };
   const runOptions: RunOptions = { ...options, ...parseOptions, argv: [] };
-  const executed: Promise<number> = cli.runParsed(outcome, options);
-  const attempted: Promise<number> = cli.runParsed(cli.tryParse([], parseOptions), options);
-  const run: Promise<number> = cli.run(runOptions);
+  const _executed: Promise<number> = cli.runParsed(outcome, options);
+  const _attempted: Promise<number> = cli.runParsed(cli.tryParse([], parseOptions), options);
+  const _run: Promise<number> = cli.run(runOptions);
   const invokeOptions: InvokeOptions = { ...parseOptions, stdin };
-  const invocation: Promise<InvokeResult> = invoke(cli, ['--config', 'tool.json', 'deploy', '--region', 'us'], invokeOptions);
-  const configSchema: CommandConfigSchema = generateConfigSchema(cli);
-  const loadedConfig: Promise<CommandConfig> = loadConfig('tool.json');
-  void [executed, attempted, run, invocation, configSchema, loadedConfig];
+  const _invocation: Promise<InvokeResult> = invoke(cli, ['--config', 'tool.json', 'deploy', '--region', 'us'], invokeOptions);
+  const _configSchema: CommandConfigSchema = generateConfigSchema(cli);
+  const _loadedConfig: Promise<CommandConfig> = loadConfig('tool.json');
   // @ts-expect-error a child parse result cannot replace the root result
   void cli.runParsed(child.parse(['--region', 'us']));
   // @ts-expect-error runParsed cannot take argv
@@ -167,9 +166,9 @@ void (() => {
   void cli.run({ output: { stdout: async (_text: string) => {} } });
   // @ts-expect-error synchronous output sinks reject promised byte counts
   void cli.runParsed(outcome, { output: { stderr: (text) => Promise.resolve(text.length) } });
-});
+}
 
-void (() => {
+function _checkConsumerConsoleTypes() {
   const app = command('styled', {
     handler: async (_args, context) => {
       const style: Style = context.style;
@@ -198,47 +197,42 @@ void (() => {
     },
   });
   void app.run({ lsColors: false });
-});
+}
 
-void (() => {
+function _checkConsumerMetadataTypes() {
   const port = parsers.refine(parsers.integer, (value) => value > 0, 'Expected a positive port');
-  const label: ValueParser<string> = parsers.map(port, (value) => `port:${value}`);
+  const _label: ValueParser<string> = parsers.map(port, (value) => `port:${value}`);
   const app = command('serve', {
     args: [option('port', port, {
       aliases: ['listen'],
       deprecatedAliases: { listen: 'Use --port.' },
       default: 3000,
     })],
-    handler: ({ port }) => {
-      void port;
-    },
+    handler: ({ port: _port }) => {},
   });
   const config: CommandConfig = { $schema: './serve.schema.json', values: { port: '8080' } };
   const result = app.tryParse([], { config });
-  const warnings: readonly DeprecationWarning[] = getWarnings(result);
+  const _warnings: readonly DeprecationWarning[] = getWarnings(result);
   if (result.type === 'value') {
-    const source: ValueSource | undefined = getValueSource(result.value, 'port');
-    void source;
+    const _source: ValueSource | undefined = getValueSource(result.value, 'port');
     // @ts-expect-error source lookup requires a declared argument name
     getValueSource(result.value, 'unknown');
   } else if (result.type === 'error') {
-    const position: number | undefined = result.error.tokenIndex;
-    const path: readonly string[] = result.error.commandPath;
-    void [position, path];
+    const _position: number | undefined = result.error.tokenIndex;
+    const _path: readonly string[] = result.error.commandPath;
   }
-  const metadata: CommandMetadata = describeCommand(app);
-  const markdown: string = renderMarkdown(app);
-  const man: string = renderManPage(app, { section: '1', date: '2026-10-18' });
-  const run: Promise<number> = app.run({
+  const _metadata: CommandMetadata = describeCommand(app);
+  const _markdown: string = renderMarkdown(app);
+  const _man: string = renderManPage(app, { section: '1', date: '2026-10-18' });
+  const _run: Promise<number> = app.run({
     config,
     onWarning: (warning) => {
-      void warning.message;
+      const _message = warning.message;
     },
   });
-  void [label, warnings, metadata, markdown, man, run];
-});
+}
 
-void (() => {
+function _checkConsumerDefaultTypes() {
   const choice: EnumValue<'production'> = {
     value: 'production',
     aliases: ['prod'],
@@ -263,8 +257,7 @@ void (() => {
     readonly pair: readonly [number, number];
   };
   type _DefaultsContract = Expect<Equal<Infer<typeof app>, ExpectedDefaults>>;
-  const rule: ConditionalDefaultMetadata | undefined = describeCommand(app).defaultIf[0];
-  void rule;
+  const _rule: ConditionalDefaultMetadata | undefined = describeCommand(app).defaultIf[0];
   command('invalid-condition', {
     args: [option('mode', mode), option('port', parsers.integer)],
     // @ts-expect-error conditions compare canonical values, not enum aliases
@@ -275,15 +268,7 @@ void (() => {
     // @ts-expect-error conditional values must match the target parser output
     defaultIf: [{ source: 'mode', target: 'port', value: '443' }],
   });
-});
+}
 
-void [
-  parser,
-  pathParser,
-  outcome,
-  provider,
-  script,
-  errorType,
-  dynamicCompletionEnvironment,
-  resolveDynamicCompletion(cli, ['deploy', '--region', '']),
-];
+const _completionEnvironment = dynamicCompletionEnvironment;
+void resolveDynamicCompletion(cli, ['deploy', '--region', '']);

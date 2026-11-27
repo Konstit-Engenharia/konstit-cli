@@ -28,7 +28,7 @@ type Equal<Left, Right> = (<T>() => T extends Left ? 1 : 2) extends (<T>() => T 
 type Expect<Value extends true> = Value;
 type _UniqueModeIsReadonlyArray = Expect<Equal<Infer<typeof cli>['mode'], readonly ('fast' | 'safe')[]>>;
 
-void ((first: 'fast' | 'safe', second: 'fast' | 'safe') => {
+function _checkUniqueOptionTypes(first: 'fast' | 'safe', second: 'fast' | 'safe') {
   // @ts-expect-error unique options must be repeatable
   option('mode', modeParser, { unique: true });
   // @ts-expect-error unique is an option setting
@@ -37,7 +37,7 @@ void ((first: 'fast' | 'safe', second: 'fast' | 'safe') => {
   option('mode', modeParser, { repeatable: true, unique: true, defaultValues: ['fast', 'safe', 'fast'] });
   option('mode', modeParser, { repeatable: true, unique: true, defaultValues: ['safe', 'fast'] });
   option('mode', modeParser, { repeatable: true, unique: true, defaultValues: [first, second] });
-});
+}
 
 test('returns unique canonical values in input order as a frozen array', () => {
   const parsed = cli.parse(['--mode', 'SAFE', '-m', 'F'], { env: {} });

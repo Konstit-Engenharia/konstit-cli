@@ -76,7 +76,7 @@ describe('typed handler globals', () => {
   });
 });
 
-void (() => {
+function _checkHandlerGlobalArgumentTypes() {
   const local = option('local');
   const explicitlyLocal = option('explicitlyLocal', parsers.string, {
     global: false,
@@ -89,4 +89,4 @@ void (() => {
       context.global(explicitlyLocal);
     },
   });
-});
+}

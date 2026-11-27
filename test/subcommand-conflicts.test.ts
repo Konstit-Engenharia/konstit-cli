@@ -379,7 +379,7 @@ describe('argsConflictWithSubcommands', () => {
   });
 });
 
-void (() => {
+function _checkSubcommandConflictOption() {
   // @ts-expect-error the conflict constraint accepts only a boolean
   command('demo', { argsConflictWithSubcommands: 'yes' });
-});
+}

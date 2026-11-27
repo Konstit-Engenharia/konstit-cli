@@ -17,7 +17,7 @@ import {
 } from '../src';
 import { invoke } from '../src/testing';
 
-void (() => {
+function _checkCommandExampleTypes() {
   const args = [
     positional('input', parsers.string, { required: true }),
     option('mode', parsers.enum(['fast', 'safe'])),
@@ -37,7 +37,7 @@ void (() => {
   command('tool', { args, examples: [{ args: { input: '.', dryRun: 1 }, description: '' }] });
   // @ts-expect-error a command without arguments has no accepted keys
   command('tool', { examples: [{ args: { input: '.' }, description: '' }] });
-});
+}
 
 test('renders command examples in order and keeps them local to the selected help command', async () => {
   const first = { command: 'tool run', description: 'Run with defaults.' };
@@ -233,12 +233,13 @@ const requiredScalarPath = command('open-file', {
 });
 const optionalScalarPath = command('open-file', { args: [positional('path', scalarPath, scalarPathOptions)] });
 
-void (() => {
-  const checkOutputs = (
+function _checkScalarPathExamples() {
+  function _checkOutputs(
     required: Infer<typeof requiredScalarPath>['path'],
     optional: Infer<typeof optionalScalarPath>['path'],
-  ): [string, string | undefined] => [required, optional];
-  void checkOutputs;
+  ): [string, string | undefined] {
+    return [required, optional];
+  }
   command('open-file', {
     args: [positional('path', scalarPath, scalarPathOptions)],
     // @ts-expect-error a scalar positional example accepts a single value
@@ -248,7 +249,7 @@ void (() => {
   positional('path', scalarPath, { trailingVarArg: true, literal: true, output: 'scalar' });
   // @ts-expect-error scalar positionals use default instead of defaultValues
   positional('path', scalarPath, { ...scalarPathOptions, defaultValues: ['one.txt', 'two.txt'] });
-});
+}
 
 test('uses scalar path types and help examples', () => {
   const required: Infer<typeof requiredScalarPath>['path'] = 'My Documents/a.txt';

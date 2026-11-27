@@ -366,7 +366,7 @@ describe('advanced argument relations', () => {
   });
 });
 
-void (() => {
+function _checkRelationTypes() {
   command('bad-value', {
     args: [
       option('mode', parsers.enum(['dev', 'prod'])),
@@ -410,4 +410,4 @@ void (() => {
       conflicts: ['missing'],
     }],
   });
-});
+}

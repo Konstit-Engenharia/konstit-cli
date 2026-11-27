@@ -204,14 +204,12 @@ describe('default and external subcommands', () => {
       externalSubcommand: (name) => name === 'remote' ? remote : undefined,
       validate: (value) => {
         if (value.subcommand?.name === 'remote') {
-          const verbose: boolean = value.subcommand.args.verbose;
-          void verbose;
+          const _verbose: boolean = value.subcommand.args.verbose;
         }
       },
       handler: (value) => {
         if (value.subcommand?.name === 'remote') {
-          const verbose: boolean = value.subcommand.args.verbose;
-          void verbose;
+          const _verbose: boolean = value.subcommand.args.verbose;
         }
       },
     });

@@ -68,7 +68,7 @@ type _ConditionalDefaultTargetIsTyped = Expect<
   Equal<Infer<typeof conditionalTyped>['tags'], readonly string[]>
 >;
 
-void (() => {
+function _checkDefaultValueTypes() {
   // @ts-expect-error defaultValues requires a collection argument
   option('scalar', parsers.string, { defaultValues: ['value'] });
   // @ts-expect-error defaultValues cannot be combined with required
@@ -87,7 +87,7 @@ void (() => {
     // @ts-expect-error conditional defaults must target a declared argument
     defaultIf: [{ source: 'mode', target: 'missing', value: 'value' }],
   });
-});
+}
 
 function parse<Value>(
   configured: { parse(argv: readonly string[], options?: ParseOptions): ParseOutcome<Value>; },
