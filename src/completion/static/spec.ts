@@ -1,5 +1,19 @@
 import type { ArgumentDefinition } from '../../argument/types.js';
 import { shellQuote } from '../quotes.js';
+import { bourneDefaultRouting } from '../templates.js';
+import {
+  defaultSubcommandEntries,
+  type CompletionNode,
+} from './model.js';
+
+export function bourneDefaultReplacements(nodes: readonly CompletionNode[]): Readonly<Record<string, string>> {
+  const entries = defaultSubcommandEntries(nodes);
+  return {
+    HAS_DEFAULT_SUBCOMMANDS: entries.length === 0 ? '0' : '1',
+    DEFAULT_ROUTING: entries.length === 0 ? '' : bourneDefaultRouting,
+    DEFAULT_SUBCOMMAND_CASES: entries.map(([id, child,]) => `    ${shellQuote(id)}) printf '%s\\n' ${shellQuote(child)} ;;`).join('\n'),
+  };
+}
 
 export function shellMaximum(argument: ArgumentDefinition): number {
   return argument.trailingVarArg ? -1 : argument.maxValues ?? -1;

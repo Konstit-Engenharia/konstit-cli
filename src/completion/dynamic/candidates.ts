@@ -1,5 +1,12 @@
 import type { ArgumentDefinition } from '../../argument/types.js';
-import { activeArguments } from './scan.js';
+import {
+  builtinOptions,
+  defaultOptions,
+} from '../default-subcommand.js';
+import {
+  activeArguments,
+  currentPositional,
+} from './scan.js';
 import type {
   DynamicCompletionCandidate,
   DynamicCompletionCandidateInput,
@@ -160,7 +167,8 @@ function normalizeCandidates(
 }
 
 export function namedCandidates(state: ScanState): readonly DynamicCompletionCandidate[] {
-  const candidates = activeArguments(state)
+  const args = activeArguments(state);
+  const candidates = args
     .filter(({ hidden, kind }) => !hidden && kind !== 'positional')
     .flatMap((argument) =>
       [
@@ -173,18 +181,12 @@ export function namedCandidates(state: ScanState): readonly DynamicCompletionCan
         ...(argument.help === undefined ? {} : { description: argument.help }),
       }))
     );
-  if (!state.active.command.disableHelpFlag) {
-    candidates.push({ value: '-h', description: 'Print help' });
-    candidates.push({ value: '--help', description: 'Print help' });
-  }
-  if (state.active.command.version !== undefined && !state.active.command.disableVersionFlag) {
-    candidates.push({ value: '-V', description: 'Print version' });
-    candidates.push({ value: '--version', description: 'Print version' });
-  }
-  if (state.active.command.enableJsonFlag) {
-    candidates.push({ value: '--json', description: 'Print handler result as JSON' });
-  }
-  return candidates;
+  return [
+    ...candidates,
+    ...builtinOptions(state.active.command),
+    ...defaultOptions(state.active.command, args, currentPositional(state))
+      .map(({ value, description }) => ({ value, ...(description === undefined ? {} : { description }) })),
+  ];
 }
 
 export function subcommandCandidates(

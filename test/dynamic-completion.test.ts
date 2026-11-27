@@ -18,6 +18,93 @@ import {
 } from '../src/completion/dynamic';
 
 describe('dynamic completion', () => {
+  test('completes an implicit default command while preserving parent options and explicit children', async () => {
+    const profile = option('profile', parsers.string, { global: true });
+    const cli = command('tool', {
+      args: [profile, flag('verbose', { short: 'v', global: true }), option('format', parsers.enum(['parent']))],
+      defaultSubcommand: 'run',
+      subcommands: [
+        command('run', {
+          version: '1.0',
+          args: [
+            option('mode', parsers.enum(['json', 'text']), { short: 'm', aliases: ['format'], describe: 'Output mode' }),
+            option('query', parsers.string, {
+              complete: ({ commandPath, values }) => [`${commandPath.join('/')}:${String(values.profile)}:${String(values.mode)}`],
+            }),
+            flag('secret', { hide: true }),
+            positional('destination', parsers.enum(['north', 'south'])),
+          ],
+        }),
+        command('status', { args: [flag('summary')] }),
+      ],
+    });
+    const names = (result: Awaited<ReturnType<typeof resolveDynamicCompletion>>) => result.candidates.map(({ value }) => value);
+    const initial = await resolveDynamicCompletion(cli, ['']);
+    expect(initial.candidates).toContainEqual({ value: '--mode', description: 'Output mode' });
+    expect(names(initial)).toEqual(expect.arrayContaining(['--format', '--profile', '--version', 'status', 'north']));
+    expect(names(initial)).not.toContain('--secret');
+    expect(names(initial).filter((name) => name === '--format')).toEqual(['--format']);
+    expect(names(await resolveDynamicCompletion(cli, ['--format=p']))).toEqual(['--format=parent']);
+    expect(names(await resolveDynamicCompletion(cli, ['--mode=j']))).toEqual(['--mode=json']);
+    expect(names(await resolveDynamicCompletion(cli, ['-vmj']))).toEqual(['-vmjson']);
+    expect(names(await resolveDynamicCompletion(cli, ['--mode', 'j']))).toEqual(['json']);
+    expect(names(await resolveDynamicCompletion(cli, ['n']))).toEqual(['north']);
+    expect(names(await resolveDynamicCompletion(cli, ['--', 's']))).toEqual(['south']);
+    expect(names(await resolveDynamicCompletion(cli, ['st']))).toEqual(['status']);
+    expect(await resolveDynamicCompletion(cli, ['stauts'])).toMatchObject({ commandPath: ['tool'], candidates: [] });
+    expect(names(await resolveDynamicCompletion(cli, ['status', '--s']))).toEqual(['--summary']);
+    expect(names(await resolveDynamicCompletion(cli, ['--']))).toContain('--mode');
+    expect(await resolveDynamicCompletion(cli, ['--profile', 'status', '--mode', 'text', '--query', ''])).toMatchObject({
+      commandPath: ['tool', 'run'],
+      candidates: [{ value: 'tool/run:status:text' }],
+    });
+  });
+
+  test('follows nested defaults without exposing hidden commands or bypassing positional policies', async () => {
+    const cli = command('tool', {
+      defaultSubcommand: 'group',
+      subcommands: [command('group', {
+        defaultSubcommand: 'leaf',
+        subcommands: [command('leaf', { args: [option('mode', parsers.enum(['json', 'text']))] })],
+      })],
+    });
+    expect(await resolveDynamicCompletion(cli, ['--mode', 'j'])).toMatchObject({
+      commandPath: ['tool', 'group', 'leaf'],
+      candidates: [{ value: 'json' }],
+    });
+    const hidden = command('tool', {
+      defaultSubcommand: 'internal',
+      subcommands: [command('internal', { hide: true, args: [flag('secret')] })],
+    });
+    expect((await resolveDynamicCompletion(hidden, ['--sec'])).candidates).toEqual([]);
+
+    const literal = command('tool', {
+      defaultSubcommand: 'delegate',
+      subcommands: [command('delegate', {
+        args: [flag('internal'), positional('args', parsers.enum(['--payload']), { trailingVarArg: true, literal: true })],
+      })],
+    });
+    expect((await resolveDynamicCompletion(literal, ['--p'])).candidates).toEqual([{ value: '--payload' }]);
+    expect((await resolveDynamicCompletion(literal, ['--i'])).candidates).toEqual([]);
+
+    const argumentFirst = command('tool', {
+      args: [positional('input', parsers.enum(['--literal']), { allowHyphenValues: true })],
+      defaultSubcommand: 'run',
+      subcommands: [command('run', { args: [flag('launch')] })],
+    });
+    expect((await resolveDynamicCompletion(argumentFirst, ['--l'])).candidates).toEqual([{ value: '--literal' }]);
+
+    const literalParent = command('tool', {
+      args: [positional('input', parsers.enum(['--literal']), { trailingVarArg: true, literal: true })],
+      defaultSubcommand: 'run',
+      subcommands: [command('run', { args: [flag('launch')] })],
+    });
+    expect(await resolveDynamicCompletion(literalParent, ['--literal', ''])).toMatchObject({
+      commandPath: ['tool'],
+      candidates: [{ value: '--literal' }],
+    });
+  });
+
   test('uses config values after CLI and environment values for provider context', async () => {
     const received: DynamicCompletionContext[] = [];
     const envName = 'KONSTIT_COMPLETION_CONFIG_ENV';

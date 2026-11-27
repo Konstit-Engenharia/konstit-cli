@@ -1,0 +1,41 @@
+{{NAME}}_default_subcommand() {
+  case "$1" in
+{{DEFAULT_SUBCOMMAND_CASES}}
+    *) return 1 ;;
+  esac
+}
+
+{{NAME}}_default_context() {
+  local context="$1" position="$2" token="$3" child spec maximum delimiter allow_hyphen allow_negative rest short
+  while child="$({{NAME}}_default_subcommand "$context")"; do
+    {{NAME}}_literal_positional "$context" "$position" && break
+    spec="$({{NAME}}_positional_spec "$context" "$position")" || spec=""
+    if [[ "$token" == -- ]]; then
+      [[ -n "$spec" ]] && break
+    elif [[ "$token" == --* || "$token" == -?* ]]; then
+      if [[ "$token" == --* || "$token" == -? ]]; then
+        {{NAME}}_declared_option "$context" "$token" && break
+      else
+        rest="${token#-}"
+        while [[ -n "$rest" ]]; do
+          short="-${rest%"${rest#?}"}"
+          {{NAME}}_bound_option "$context" "$short" || break
+          {{NAME}}_option_spec "$context" "$short" >/dev/null && break 2
+          rest="${rest#?}"
+        done
+        [[ -z "$rest" ]] && break
+      fi
+      if [[ -n "$spec" ]] && ! {{NAME}}_declared_option "$context" "$token"; then
+        IFS=$'\t' read -r maximum delimiter allow_hyphen allow_negative rest <<< "$spec"
+        if (( allow_hyphen )) || { (( allow_negative )) && [[ "$token" =~ ^-([0-9]|\.[0-9]) ]]; }; then break; fi
+      fi
+    else
+      [[ -n "$spec" || "$token" == help ]] && break
+      {{NAME}}_subcommand "$context" "$token" >/dev/null && break
+      {{NAME}}_positional_spec "$child" 0 >/dev/null || break
+    fi
+    context="$child"
+    position=0
+  done
+  printf '%s\n' "$context"
+}

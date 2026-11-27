@@ -11,6 +11,7 @@ import {
   subcommandCandidates,
 } from './candidates.js';
 import {
+  advanceDefaultSubcommands,
   createScanState,
   currentPositional,
   finalizeRelations,
@@ -55,10 +56,10 @@ export async function resolveCompletion(
   const state = createScanState(definition, env, options.config);
   scanWords(state, options.argumentFiles === true ? expandArgumentFiles(definition, precedingWords).tokens : precedingWords);
   resolvePendingWordBoundary(state, currentWord);
-  finalizeRelations(state);
 
   const target = findValueTarget(state, currentWord);
   if (target !== undefined) {
+    finalizeRelations(state);
     return completeArgument(
       state,
       target,
@@ -69,36 +70,38 @@ export async function resolveCompletion(
   }
 
   const candidates: DynamicCompletionCandidate[] = [];
+  const commandPath = state.active.commandPath;
   if (state.active.argvState.kind !== 'literal' && (currentWord.length === 0 || currentWord.startsWith('-'))) {
     candidates.push(...namedCandidates(state));
   }
   if (state.active.argvState.kind !== 'literal' && !currentWord.startsWith('-')) {
     candidates.push(...subcommandCandidates(state));
-    const positional = currentPositional(state);
-    if (positional !== undefined) {
-      const positionalResult = await completeArgument(
-        state,
-        { argument: positional, current: currentWord, outputPrefix: '' },
-        input,
-        cursor,
-        filter,
-      );
-      candidates.push(...positionalResult.candidates);
-      return freezeResult({
-        candidates: filterAndDedupe(candidates, currentWord, filter),
-        commandPath: state.active.commandPath,
-        current: currentWord,
-        argument: positional,
-        ...(positionalResult.valueHint === undefined
-          ? {}
-          : { valueHint: positionalResult.valueHint }),
-      });
-    }
+  }
+
+  advanceDefaultSubcommands(state, currentWord, true);
+  const implicitTarget = commandPath === state.active.commandPath ? undefined : findValueTarget(state, currentWord);
+  finalizeRelations(state);
+  if (implicitTarget !== undefined && implicitTarget.argument.kind !== 'positional') {
+    return completeArgument(state, implicitTarget, input, cursor, filter);
+  }
+  const positional = !currentWord.startsWith('-') ? currentPositional(state) : implicitTarget?.argument;
+  if (positional !== undefined) {
+    const positionalResult = await completeArgument(
+      state,
+      implicitTarget ?? { argument: positional, current: currentWord, outputPrefix: '' },
+      input,
+      cursor,
+      filter,
+    );
+    return freezeResult({
+      ...positionalResult,
+      candidates: filterAndDedupe([...candidates, ...positionalResult.candidates], currentWord, filter),
+    });
   }
 
   return freezeResult({
     candidates: filterAndDedupe(candidates, currentWord, filter),
-    commandPath: state.active.commandPath,
+    commandPath,
     current: currentWord,
   });
 }

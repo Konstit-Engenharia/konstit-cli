@@ -19,6 +19,75 @@ function {{NAME}}_literal_positional --argument-names context index
     return 1
 end
 
+function {{NAME}}_default_subcommand --argument-names context
+    switch "$context"
+{{DEFAULT_SUBCOMMAND_CASES}}
+        case '*'; return 1
+    end
+end
+
+function {{NAME}}_has_subcommand --argument-names context token
+    switch "$context:$token"
+{{SUBCOMMAND_TEST_CASES}}
+    end
+    return 1
+end
+
+function {{NAME}}_option_kind --argument-names context token
+    switch "$context:$token"
+{{OPTION_KIND_CASES}}
+    end
+end
+
+function {{NAME}}_positional_policy --argument-names context index
+    switch "$context:$index"
+{{POSITIONAL_POLICY_CASES}}
+    end
+end
+
+function {{NAME}}_default_context --argument-names context position token
+    while set -l child ({{NAME}}_default_subcommand "$context")
+        {{NAME}}_literal_positional "$context" "$position"; and break
+        set -l policy ({{NAME}}_positional_policy "$context" "$position")
+        if test "$token" = --
+            test -n "$policy"; and break
+        else if string match -qr '^-.+' -- "$token"
+            set -l option_word (string split -m 1 = -- "$token")[1]
+            if string match -qr '^-[^-].+' -- "$token"
+                set -l bound 1
+                set -l characters (string split '' -- (string sub -s 2 -- "$token"))
+                for char in $characters
+                    set -l kind ({{NAME}}_option_kind "$context" "-$char")
+                    if test -z "$kind"; or test "$kind" = builtin
+                        set bound 0
+                        break
+                    end
+                    test "$kind" = value; and break
+                end
+                test $bound -eq 1; and break
+                set option_word "-$characters[1]"
+            else
+                set -l kind ({{NAME}}_option_kind "$context" "$option_word")
+                if test -n "$kind"; and begin; test "$kind" != builtin; or test "$token" = "$option_word"; end
+                    break
+                end
+            end
+            if test -z ({{NAME}}_option_kind "$context" "$option_word" | string collect --allow-empty)
+                if string match -qr '^1' -- "$policy"; or begin; string match -qr '1$' -- "$policy"; and string match -qr '^-(?:[0-9]|\.[0-9])' -- "$token"; end
+                    break
+                end
+            end
+        else
+            test -n "$policy"; or test "$token" = help; and break
+            {{NAME}}_has_subcommand "$context" "$token"; and break
+            test -n ({{NAME}}_positional_policy "$child" 0 | string collect --allow-empty); or break
+        end
+        set context "$child"
+        set position 0
+    end
+    echo "$context"
+end
+
 function {{NAME}} --argument-names target
     set -l tokens (commandline -opc)
     set -l context 0
@@ -75,6 +144,14 @@ function {{NAME}} --argument-names target
             end
             set scan_state command
         end
+        if test {{HAS_DEFAULT_SUBCOMMANDS}} -eq 1; and test "$scan_state" = command
+            set -l routed ({{NAME}}_default_context "$context" "$positional_index" "$word")
+            if test "$routed" != "$context"
+                set context "$routed"
+                set positional_index 0
+                set positional_remaining 0
+            end
+        end
         if test "$scan_state" = command; and {{NAME}}_literal_positional "$context" "$positional_index"
             set scan_state literal
         end
@@ -86,6 +163,8 @@ function {{NAME}} --argument-names target
         set -l consume_as_positional 0
         if test "$scan_state" = command; and string match -qr '^-.+' -- "$word"
             if test $positional_remaining -eq 0
+                set positional_allow_hyphen 0
+                set positional_allow_negative 0
                 switch "$context:$positional_index"
 {{POSITIONAL_SPEC_CASES}}
                 end
@@ -213,10 +292,23 @@ function {{NAME}} --argument-names target
             set positional_remaining 0
         end
     end
+    if test {{HAS_DEFAULT_SUBCOMMANDS}} -eq 1; and test "$scan_state" = command; and test -z "$target"
+        set -l current (commandline -ct)
+        set -q current[1]; or set current ''
+        if test "$current" != --
+            set -l routed ({{NAME}}_default_context "$context" "$positional_index" "$current")
+            if test "$routed" != "$context"
+                set context "$routed"
+                set positional_index 0
+            end
+        end
+    end
     if test "$scan_state" = command; and {{NAME}}_literal_positional "$context" "$positional_index"
         set scan_state literal
     end
-    if test "$target" = named; and test "$scan_state" = literal
+    if test "$target" = default-options; and string match -qr '^1' -- ({{NAME}}_positional_policy "$context" "$positional_index" | string collect --allow-empty)
+        echo literal
+    else if test -n "$target"; and test "$scan_state" = literal
         echo literal
     else
         echo "$context:$positional_index"

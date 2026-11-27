@@ -1,5 +1,9 @@
 import type { ArgumentDefinition } from '../../argument/types.js';
 import {
+  completionDefault,
+  defaultOptions,
+} from '../default-subcommand.js';
+import {
   fishQuote,
   shellIdentifier,
 } from '../quotes.js';
@@ -10,6 +14,7 @@ import {
   childScanEntries,
   completionForArguments,
   declaredOptionTokens,
+  defaultSubcommandEntries,
   hasVisiblePositionals,
   literalPositionalKeys,
   optionTokens,
@@ -31,6 +36,8 @@ export function generateFish(
     ? `complete -p ${fishQuote(executable)}`
     : `complete -c ${fishQuote(executable)}`;
   const registrations: string[] = [];
+  const defaults = defaultSubcommandEntries(nodes);
+  const routingNodes = defaults.length === 0 ? [] : nodes;
 
   for (const node of nodes) {
     const condition = fishQuote(`string match -q '${node.id}:*' (${name} named)`);
@@ -86,8 +93,23 @@ export function generateFish(
         `${commandPrefix} -n ${condition} -l json -d ${fishQuote('Print handler result as JSON')}`,
       );
     }
+    const defaultCondition = fishQuote(`string match -q '${node.id}:*' (${name} default-options)`);
+    for (const { value, argument, description } of defaultOptions(node.definition, node.arguments)) {
+      const spelling = value.startsWith('--') ? `-l ${fishQuote(value.slice(2))}` : `-s ${fishQuote(value.slice(1))}`;
+      const parts = [commandPrefix, `-n ${defaultCondition}`, spelling];
+      if (argument?.kind === 'option' && argument.maxValues !== 0) {
+        parts.push('-r');
+      }
+      if (description !== undefined) {
+        parts.push(`-d ${fishQuote(description)}`);
+      }
+      registrations.push(...(argument === undefined ? [parts.join(' ')] : appendFishValueCompletion(parts, argument)));
+    }
     const childList = childEntries(node, nodes);
-    const disableFiles = !hasVisiblePositionals(node) ? ' -f' : '';
+    const defaultHasPositionals = completionDefault(node.definition)?.arguments.some(({ kind, hidden }) =>
+      kind === 'positional' && !hidden
+    );
+    const disableFiles = !hasVisiblePositionals(node) && !defaultHasPositionals ? ' -f' : '';
     for (const [token, child,] of childList) {
       registrations.push(
         `${commandPrefix}${disableFiles} -n ${condition} -a ${fishQuote(token)}${
@@ -122,6 +144,26 @@ export function generateFish(
     renderTemplate('fish', {
       EXECUTABLE: executable,
       NAME: name,
+      HAS_DEFAULT_SUBCOMMANDS: defaults.length === 0 ? '0' : '1',
+      DEFAULT_SUBCOMMAND_CASES: defaults.map(([id, child,]) => `        case ${fishQuote(id)}; echo ${fishQuote(child)}`).join('\n'),
+      SUBCOMMAND_TEST_CASES: routingNodes.flatMap((node) =>
+        childScanEntries(node, nodes).map(([token,]) => `        case ${fishQuote(`${node.id}:${token}`)}; return 0`)
+      ).join('\n'),
+      OPTION_KIND_CASES: routingNodes.flatMap((node) => [
+        ...builtinOptionTokens(node).map((token) => `        case ${fishQuote(`${node.id}:${token}`)}; echo builtin`),
+        ...node.arguments.flatMap((argument) =>
+          optionTokens(argument).map((token) =>
+            `        case ${fishQuote(`${node.id}:${token}`)}; echo ${argument.kind === 'option' ? 'value' : 'switch'}`
+          )
+        ),
+      ]).join('\n'),
+      POSITIONAL_POLICY_CASES: routingNodes.flatMap((node) =>
+        parsePositionals(node).map((argument, index) =>
+          `        case ${fishQuote(`${node.id}:${index}`)}; echo ${argument.allowHyphenValues ? 1 : 0}${
+            argument.allowNegativeNumbers ? 1 : 0
+          }`
+        )
+      ).join('\n'),
       OPTION_SPEC_CASES: nodes.flatMap((node) => {
         return node.arguments
           .filter(({ kind }) => kind === 'option')

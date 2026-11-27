@@ -47,11 +47,9 @@ import {
   parseShortOptions,
 } from './options.js';
 import {
-  argumentLongNames,
   commandWords,
+  hasOptionBinding,
   literalWords,
-  parseLongOptionToken,
-  parseShortOptionCluster,
   recognizeWord,
   type WordState,
 } from './recognition.js';
@@ -61,7 +59,6 @@ import {
 } from './relations.js';
 import {
   acceptsOptionLookingPositional,
-  availableArgumentBindings,
   currentPositional,
   deprecatedAliasMessage,
   initializeValues,
@@ -233,6 +230,7 @@ function parseDefinition(
   const defaultChild = definition.defaultSubcommand === undefined
     ? undefined
     : definition.subcommands.find(({ name }) => name === definition.defaultSubcommand);
+  const optionArguments = defaultChild === undefined ? [] : [...definition.arguments, ...inheritedGlobals.map(({ argument }) => argument)];
   function selectChild(child: CommandDefinition, start: number, spelling?: string): void {
     const childPath = [...path, child.name];
     collectDeprecation(
@@ -328,7 +326,7 @@ function parseDefinition(
       }
     }
     if (kind === 'long-option') {
-      if (defaultChild !== undefined && !hasOptionBinding(token, kind, definition, state, inheritedGlobals)) {
+      if (defaultChild !== undefined && !hasOptionBinding(optionArguments, token, kind)) {
         selectChild(defaultChild, index);
         break;
       }
@@ -345,7 +343,7 @@ function parseDefinition(
       continue;
     }
     if (kind === 'short-options') {
-      if (defaultChild !== undefined && !hasOptionBinding(token, kind, definition, state, inheritedGlobals)) {
+      if (defaultChild !== undefined && !hasOptionBinding(optionArguments, token, kind)) {
         selectChild(defaultChild, index);
         break;
       }
@@ -556,28 +554,4 @@ function parseDefinition(
     });
   }
   return result;
-}
-
-function hasOptionBinding(
-  token: string,
-  kind: 'long-option' | 'short-options',
-  definition: CommandDefinition,
-  state: ParseState,
-  inheritedGlobals: readonly GlobalBinding[],
-): boolean {
-  const bindings = availableArgumentBindings(definition, state, inheritedGlobals);
-  if (kind === 'long-option') {
-    const { name } = parseLongOptionToken(token);
-    return bindings.some(({ argument }) => argumentLongNames(argument).includes(name));
-  }
-  for (const short of parseShortOptionCluster(token)) {
-    const binding = bindings.find(({ argument }) => argument.short === short);
-    if (binding === undefined) {
-      return false;
-    }
-    if (binding.argument.kind === 'option') {
-      return true;
-    }
-  }
-  return true;
 }

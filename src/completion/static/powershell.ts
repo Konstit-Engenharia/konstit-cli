@@ -9,6 +9,7 @@ import {
   childScanEntries,
   completionForArguments,
   declaredOptionTokens,
+  defaultSubcommandEntries,
   literalPositionalKeys,
   optionTokens,
   parsePositionals,
@@ -34,6 +35,7 @@ export function generatePowerShell(
   const valueModeCases: string[] = [];
   const staticValueCases: string[] = [];
   const candidateCases: string[] = [];
+  const defaults = defaultSubcommandEntries(nodes);
 
   for (const node of nodes) {
     for (const token of valueOptionTokens(node)) {
@@ -113,6 +115,10 @@ export function generatePowerShell(
     EXECUTABLE: executable,
     ARGV_WORD: powerShellArgvWord,
     EXECUTABLE_QUOTED: powerShellQuote(executable),
+    HAS_DEFAULT_SUBCOMMANDS: defaults.length === 0 ? '$false' : '$true',
+    DEFAULT_SUBCOMMAND_CASES: defaults.map(([id, child,]) => `      ${powerShellQuote(id)} { return ${powerShellQuote(child)} }`).join(
+      '\n',
+    ),
     TAKES_VALUE_CASES: takesValueCases.join('\n'),
     OPTION_SPEC_CASES: optionSpecCases.join('\n'),
     POSITIONAL_SPEC_CASES: positionalSpecCases.join('\n'),

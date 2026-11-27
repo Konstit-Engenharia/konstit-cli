@@ -59,11 +59,17 @@
   esac
   [[ "$token" == --*=* ]] && token="${token%%=*}"
   [[ "$token" == -?* && "$token" != --* ]] && token="${token[1,2]}"
-  case "$1:$token" in
+  {{NAME}}_bound_option "$1" "$token"
+}
+
+{{NAME}}_bound_option() {
+  case "$1:$2" in
 {{DECLARED_OPTION_CASES}}
     *) return 1 ;;
   esac
 }
+
+{{DEFAULT_ROUTING}}
 
 {{NAME}}_subcommand() {
   case "$1:$2" in
@@ -111,6 +117,7 @@
 
 {{NAME}}() {
   local context="0" word child current previous option suffix prefix="" spec
+  local candidate_context routed_context offer_subcommands=0
   local pending_option="" pending_delimiter="__NONE__" pending_delimiter_hex positional_key maximum cluster short attached output_prefix attached_present
   local scan_state=command pending_terminator="" pending_terminator_hex positional_trailing
   local positional_delimiter="__NONE__" positional_delimiter_hex positional_terminator="" positional_terminator_hex positional_spec
@@ -138,6 +145,10 @@
         continue
       fi
       scan_state=command
+    fi
+    if (( {{HAS_DEFAULT_SUBCOMMANDS}} )) && [[ "$scan_state" == command ]]; then
+      routed_context="$({{NAME}}_default_context "$context" "$positional_index" "$word")"
+      if [[ "$routed_context" != "$context" ]]; then context="$routed_context"; positional_index=0; positional_remaining=0; fi
     fi
     if [[ "$scan_state" == command ]] && {{NAME}}_literal_positional "$context" "$positional_index"; then scan_state=literal; fi
     end_options=0
@@ -262,6 +273,12 @@
     fi
     scan_state=command
   fi
+  candidate_context="$context"
+  if (( {{HAS_DEFAULT_SUBCOMMANDS}} )) && [[ "$scan_state" == command && "$current" != -- ]] && ! {{NAME}}_literal_positional "$context" "$positional_index"; then
+    if [[ "$current" != -* ]] && {{NAME}}_default_subcommand "$context" >/dev/null; then offer_subcommands=1; fi
+    routed_context="$({{NAME}}_default_context "$context" "$positional_index" "$current")"
+    if [[ "$routed_context" != "$context" ]]; then context="$routed_context"; positional_index=0; fi
+  fi
   if [[ "$scan_state" == command ]] && {{NAME}}_literal_positional "$context" "$positional_index"; then scan_state=literal; fi
   consume_as_positional=0
   if [[ "$scan_state" == literal || "$current" != -* ]]; then
@@ -308,8 +325,8 @@
     {{NAME}}_complete_value "$context" "$positional_key" "$current" ""
     positional_handled=$?
   fi
-  if [[ "$scan_state" == command ]] && (( consume_as_positional == 0 )); then
-    {{NAME}}_candidates "$context"
+  if (( offer_subcommands )) || { [[ "$scan_state" == command ]] && (( consume_as_positional == 0 )); }; then
+    {{NAME}}_candidates "$candidate_context"
     (( ${#reply[@]} )) && compadd -Q -- "${reply[@]}"
   fi
   if (( positional_handled != 0 && consume_as_positional )) && {{NAME}}_allows_files "$context:$positional_index"; then

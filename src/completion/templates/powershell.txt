@@ -58,6 +58,48 @@ Register-ArgumentCompleter -Native -CommandName {{EXECUTABLE_QUOTED}} -ScriptBlo
     }
   }
 
+  $getDefaultSubcommand = {
+    param([string]$context)
+    switch ($context) {
+{{DEFAULT_SUBCOMMAND_CASES}}
+      default { return $null }
+    }
+  }
+
+  $routeDefault = {
+    param([string]$context, [int]$position, [string]$token)
+    while ($null -ne ($child = & $getDefaultSubcommand $context)) {
+      if (& $isLiteralPositional $context $position) { break }
+      $positionSpec = & $getPositionalSpec $context $position
+      if ($token -eq '--') {
+        if ($null -ne $positionSpec) { break }
+      } elseif ($token.Length -gt 1 -and $token.StartsWith('-')) {
+        if (& $isBuiltinOption $context $token) { break }
+        $option = $token.Split('=', 2)[0]
+        if ($token.StartsWith('--')) {
+          if (& $isDeclaredOption $context $option) { break }
+        } else {
+          $option = $token.Substring(0, 2)
+          $bound = $true
+          foreach ($letter in $token.Substring(1).ToCharArray()) {
+            $short = "-$letter"
+            if (-not (& $isDeclaredOption $context $short)) { $bound = $false; break }
+            if ($null -ne (& $getOptionSpec $context $short)) { break }
+          }
+          if ($bound) { break }
+        }
+        if ($null -ne $positionSpec -and -not (& $isDeclaredOption $context $option) -and
+            ($positionSpec.AllowHyphen -or ($positionSpec.AllowNegative -and $token -match '^-(?:[0-9]|\.[0-9])'))) { break }
+      } else {
+        if ($null -ne $positionSpec -or $token -ceq 'help' -or $null -ne (& $getSubcommand $context $token) -or
+            $null -eq (& $getPositionalSpec $child 0)) { break }
+      }
+      $context = $child
+      $position = 0
+    }
+    return $context
+  }
+
   $getValueMode = {
     param([string]$context, [string]$token)
     switch ("$context`:$token") {
@@ -140,6 +182,15 @@ Register-ArgumentCompleter -Native -CommandName {{EXECUTABLE_QUOTED}} -ScriptBlo
         continue
       }
       $scanState = 'command'
+    }
+    if ({{HAS_DEFAULT_SUBCOMMANDS}} -and $scanState -eq 'command') {
+      $routed = & $routeDefault $context $positionalIndex $word
+      if ($routed -ne $context) {
+        $context = $routed
+        $positionalIndex = 0
+        $positionalRemaining = 0
+        $positionalSpec = $null
+      }
     }
     if ($scanState -eq 'command' -and (& $isLiteralPositional $context $positionalIndex)) { $scanState = 'literal' }
     $endOptions = $scanState -eq 'command' -and $word -eq '--'
@@ -301,6 +352,18 @@ Register-ArgumentCompleter -Native -CommandName {{EXECUTABLE_QUOTED}} -ScriptBlo
     }
     $scanState = 'command'
   }
+  $candidateContext = $context
+  $offerSubcommands = $false
+  if ({{HAS_DEFAULT_SUBCOMMANDS}} -and $scanState -eq 'command' -and $wordToComplete -ne '--' -and -not (& $isLiteralPositional $context $positionalIndex)) {
+    $offerSubcommands = -not $wordToComplete.StartsWith('-') -and $null -ne (& $getDefaultSubcommand $context)
+    $routed = & $routeDefault $context $positionalIndex $wordToComplete
+    if ($routed -ne $context) {
+      $context = $routed
+      $positionalIndex = 0
+      $positionalRemaining = 0
+      $positionalSpec = $null
+    }
+  }
   if ($scanState -eq 'command' -and (& $isLiteralPositional $context $positionalIndex)) { $scanState = 'literal' }
   $consumeAsPositional = $scanState -eq 'literal' -or -not $wordToComplete.StartsWith('-')
   if (-not $consumeAsPositional -and $wordToComplete -ne '--') {
@@ -345,8 +408,8 @@ Register-ArgumentCompleter -Native -CommandName {{EXECUTABLE_QUOTED}} -ScriptBlo
     if ($null -ne $mode) { & $completeValue $mode $positional $wordToComplete }
     elseif (& $allowsFiles "$context`:$positionalIndex") { & $completeValue 'file' $positional $wordToComplete }
   }
-  if ($scanState -eq 'command' -and -not $consumeAsPositional) {
-    foreach ($candidate in @(& $getCandidates $context)) {
+  if ($offerSubcommands -or ($scanState -eq 'command' -and -not $consumeAsPositional)) {
+    foreach ($candidate in @(& $getCandidates $candidateContext)) {
       & $emit $candidate.Value $candidate.Description
     }
   }

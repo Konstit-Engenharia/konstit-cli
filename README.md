@@ -670,7 +670,9 @@ Set `defaultSubcommand` to the canonical name of a declared child. Explicit
 subcommand names, aliases, and inferred subcommand prefixes still select their
 matching child. Parent options work before the implicit child starts.
 `tool --help` still shows the parent's help, which marks the default child.
-Use the explicit child name to get its shell completion candidates.
+Standalone scripts and dynamic completion offer the default child's options
+and values when its name is omitted. Explicit subcommands remain available
+as completion candidates.
 
 Set `externalSubcommand` to a synchronous `(name, argv)` resolver that returns
 a command created by `command()`. The resolver receives the unrecognized

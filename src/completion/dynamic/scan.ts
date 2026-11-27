@@ -19,6 +19,7 @@ import {
 import {
   argumentLongNames,
   commandWords,
+  hasOptionBinding,
   isNegativeNumberToken,
   literalWords,
   matchSubcommand,
@@ -40,6 +41,11 @@ import type {
   ConfigValue,
 } from '../../configuration/shape.js';
 import { prepareConfigValue } from '../../configuration/value.js';
+import { suggestTokenCandidates } from '../../help/diagnostics.js';
+import {
+  builtinOptions,
+  completionDefault,
+} from '../default-subcommand.js';
 import type {
   ScanState,
   ValueTarget,
@@ -285,6 +291,9 @@ export function scanWords(state: ScanState, words: readonly string[]): void {
       }
     }
 
+    if (argvState.kind === 'command') {
+      advanceDefaultSubcommands(state, word);
+    }
     const positional = currentPositional(state);
     if (positional?.literal === true) {
       state.active.argvState = literalWords;
@@ -336,6 +345,45 @@ export function scanWords(state: ScanState, words: readonly string[]): void {
         }
       }
     }
+  }
+}
+
+/** Moves to the implicit scope while leaving the triggering word for that scope to read. */
+export function advanceDefaultSubcommands(state: ScanState, word: string, atCursor = false): void {
+  while (state.active.argvState.kind === 'command') {
+    const { command, inheritedGlobals } = state.active;
+    const child = completionDefault(command);
+    if (child === undefined) {
+      return;
+    }
+    const positional = currentPositional(state);
+    if (positional?.literal === true) {
+      return;
+    }
+
+    const kind = recognizeWord(commandWords, word, acceptsOptionLookingPositional(state, word, positional));
+    if (kind === 'end-options') {
+      if (positional !== undefined || atCursor) {
+        return;
+      }
+    } else if (kind === 'long-option' || kind === 'short-options') {
+      if (builtinOptions(command).some(({ value }) => value === word) || hasOptionBinding(activeArguments(state), word, kind)) {
+        return;
+      }
+    } else if (
+      kind !== 'command-word'
+      || positional !== undefined
+      || !child.arguments.some((argument) => argument.kind === 'positional')
+      || (word === 'help' && !command.disableHelpSubcommand)
+      || (word !== '' && (
+        matchSubcommand(command, word).kind !== 'none'
+        || suggestTokenCandidates(word, command, inheritedGlobals).some((candidate) => matchSubcommand(command, candidate).kind === 'exact')
+      ))
+    ) {
+      return;
+    }
+
+    enterSubcommand(state, child);
   }
 }
 

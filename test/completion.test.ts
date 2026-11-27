@@ -546,6 +546,35 @@ printf 'AFTER_TERMINATOR:%s\n' "\${COMPREPLY[*]}"
     expect(result.stderr).toBe('');
   });
 
+  const defaultCli = command('argv-state', {
+    defaultSubcommand: 'run',
+    inferSubcommands: true,
+    args: [option('profile', parsers.string, { global: true }), flag('verbose', { short: 'v', global: true })],
+    subcommands: [
+      command('run', {
+        args: [
+          option('mode', parsers.enum(['json', 'text']), { short: 'm', describe: 'Output mode' }),
+          positional('destination', parsers.enum(['north', 'south'])),
+        ],
+      }),
+      command('status', { args: [flag('summary')] }),
+    ],
+  });
+
+  const nestedDefaultCli = command('argv-state', {
+    defaultSubcommand: 'group',
+    subcommands: [command('group', {
+      defaultSubcommand: 'run',
+      subcommands: [command('run', { args: [option('target', parsers.enum(['release', 'debug']))] })],
+    })],
+  });
+
+  const positionalBeforeDefaultCli = command('argv-state', {
+    defaultSubcommand: 'run',
+    args: [positional('input', parsers.enum(['--location']), { allowHyphenValues: true })],
+    subcommands: [command('run', { args: [flag('launch')] })],
+  });
+
   const optionTerminatorCli = command('argv-state', {
     args: [
       option('values', parsers.enum(['one', 'two']), {
@@ -617,6 +646,34 @@ printf 'AFTER_TERMINATOR:%s\n' "\${COMPREPLY[*]}"
   for (const shell of completionShells) {
     const executable = shell === 'powershell' ? 'pwsh' : shell;
     const shellTest = test.skipIf(Bun.which(executable) === null);
+    const implicitDefaultScript = generateCompletion(defaultCli, shell);
+    shellTest(`${shell} completes options, values, and positionals for an implicit default subcommand`, () => {
+      const complete = (prefix: readonly string[], current: string) => {
+        const result = completeStaticShell(shell, implicitDefaultScript, prefix, current);
+        expect(result.stderr).toBe('');
+        expect(result.exitCode).toBe(0);
+        return result.stdout.trim().split(/\r?\n/u).map((line) => line.split('\t', 1)[0]);
+      };
+      expect(complete([], '--mo')).toContain('--mode');
+      expect(complete(['--profile', 'status'], '--mo')).toContain('--mode');
+      expect(complete(['--mode'], 'j')).toContain('json');
+      expect(complete(['-vm'], 'j')).toContain('json');
+      expect(complete([], '--mode=j')).toContain('--mode=json');
+      expect(complete([], 'n')).toContain('north');
+      expect(complete(['--'], 's')).toEqual(['south']);
+      expect(complete([], 'st')).toContain('status');
+      const explicit = complete(['st'], '--s');
+      expect(explicit).toContain('--summary');
+      expect(explicit).not.toContain('--mode');
+      const nested = completeStaticShell(shell, generateCompletion(nestedDefaultCli, shell), ['--target'], 'rel');
+      expect(nested.stderr).toBe('');
+      expect(nested.exitCode).toBe(0);
+      expect(nested.stdout.trim()).toBe('release');
+      const parentPositional = completeStaticShell(shell, generateCompletion(positionalBeforeDefaultCli, shell), [], '--l');
+      expect(parentPositional.stderr).toBe('');
+      expect(parentPositional.exitCode).toBe(0);
+      expect(parentPositional.stdout).not.toContain('--launch');
+    }, { timeout: 20_000 });
     shellTest(`${shell} completes option aliases and their values`, () => {
       const script = generateCompletion(optionAliasCli, shell);
       const names = completeStaticShell(shell, script, [], '--dest');
@@ -795,7 +852,18 @@ function completeStaticShell(
         ['zsh', '-f', '-s', '--', ...words],
         [
           'compdef() { :; }',
-          'compadd() { while (( $# )) && [[ "$1" != -- ]]; do shift; done; shift; print -rl -- "$@"; }',
+          'compadd() {',
+          '  local prefix="" candidate',
+          '  while (( $# )) && [[ "$1" != -- ]]; do',
+          '    case "$1" in -p) prefix="$2"; shift ;; -d|-M) shift ;; esac',
+          '    shift',
+          '  done',
+          '  shift',
+          '  for candidate in "$@"; do',
+          `    [[ "$prefix$candidate" == "\${words[CURRENT]}"* ]] && print -r -- "$prefix$candidate"`,
+          '  done',
+          '  return 0',
+          '}',
           script,
           zshWords,
           zshCurrent,

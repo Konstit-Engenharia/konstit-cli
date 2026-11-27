@@ -84,6 +84,28 @@ export function parseShortOptionCluster(token: string): readonly string[] {
   return Array.from(token.slice(1));
 }
 
+/** Checks whether a whole option token belongs to a command scope. */
+export function hasOptionBinding(
+  args: readonly ArgumentDefinition[],
+  token: string,
+  kind: 'long-option' | 'short-options',
+): boolean {
+  if (kind === 'long-option') {
+    const { name } = parseLongOptionToken(token);
+    return args.some((argument) => argumentLongNames(argument).includes(name));
+  }
+  for (const short of parseShortOptionCluster(token)) {
+    const argument = args.find((candidate) => candidate.short === short);
+    if (argument === undefined) {
+      return false;
+    }
+    if (argument.kind === 'option') {
+      return true;
+    }
+  }
+  return true;
+}
+
 export function isNegativeNumberToken(token: string): boolean {
   return /^-(?:\d|\.\d)/.test(token);
 }

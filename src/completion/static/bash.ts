@@ -17,6 +17,7 @@ import {
   type CompletionNode,
 } from './model.js';
 import {
+  bourneDefaultReplacements,
   casePatterns,
   shellOptionSpec,
   shellPositionalSpec,
@@ -54,6 +55,7 @@ export function generateBash(
     EXECUTABLE: executable,
     EXECUTABLE_QUOTED: shellQuote(executable),
     NAME: name,
+    ...bourneDefaultReplacements(nodes),
     TAKES_VALUE_CASES: nodes.flatMap((node) => {
       const tokens = valueOptionTokens(node);
       return tokens.length === 0

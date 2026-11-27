@@ -17,6 +17,7 @@ import {
   type CompletionNode,
 } from './model.js';
 import {
+  bourneDefaultReplacements,
   casePatterns,
   shellOptionSpec,
   shellPositionalSpec,
@@ -56,6 +57,7 @@ export function generateZsh(
     NAME: name,
     NAME_QUOTED: shellQuote(name),
     AUTOLOAD_NAME_QUOTED: shellQuote(autoloadName),
+    ...bourneDefaultReplacements(nodes),
     TAKES_VALUE_CASES: nodes.flatMap((node) => {
       const tokens = valueOptionTokens(node);
       return tokens.length === 0

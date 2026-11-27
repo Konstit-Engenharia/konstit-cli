@@ -1,6 +1,11 @@
 import type { ArgumentDefinition } from '../../argument/types.js';
 import type { CommandDefinition } from '../../command/schema.js';
 import type { CompletionValueHint } from '../../parser/index.js';
+import {
+  builtinOptions,
+  completionDefault,
+  defaultOptions,
+} from '../default-subcommand.js';
 
 export interface CompletionNode {
   readonly id: string;
@@ -53,6 +58,17 @@ export function flattenCommands(root: CommandDefinition): readonly CompletionNod
 
 export function visibleArguments(node: CompletionNode): readonly ArgumentDefinition[] {
   return node.arguments.filter(({ hidden }) => !hidden);
+}
+
+export function defaultSubcommandEntries(nodes: readonly CompletionNode[]): readonly (readonly [string, string])[] {
+  return nodes.flatMap(({ id, definition }) => {
+    const child = completionDefault(definition);
+    if (child === undefined) {
+      return [];
+    }
+    const index = definition.subcommands.filter(({ hidden }) => !hidden).indexOf(child);
+    return [[id, `${id}.${index}`] as const];
+  });
 }
 
 export function childEntries(
@@ -237,11 +253,7 @@ export function declaredOptionTokens(node: CompletionNode): readonly string[] {
 }
 
 export function builtinOptionTokens(node: CompletionNode): readonly string[] {
-  return [
-    ...(node.definition.disableHelpFlag ? [] : ['-h', '--help']),
-    ...(node.definition.version === undefined || node.definition.disableVersionFlag ? [] : ['-V', '--version']),
-    ...(node.definition.enableJsonFlag ? ['--json'] : []),
-  ];
+  return builtinOptions(node.definition).map(({ value }) => value);
 }
 
 export function candidates(
@@ -257,19 +269,8 @@ export function candidates(
       result.push({ value: token, description: argument.help ?? '' });
     }
   }
-  if (!node.definition.disableHelpFlag) {
-    result.push({ value: '-h', description: 'Print help' });
-    result.push({ value: '--help', description: 'Print help' });
-  }
-  if (
-    node.definition.version !== undefined
-    && !node.definition.disableVersionFlag
-  ) {
-    result.push({ value: '-V', description: 'Print version' });
-    result.push({ value: '--version', description: 'Print version' });
-  }
-  if (node.definition.enableJsonFlag) {
-    result.push({ value: '--json', description: 'Print handler result as JSON' });
+  for (const { value, description } of [...builtinOptions(node.definition), ...defaultOptions(node.definition, node.arguments)]) {
+    result.push({ value, description: description ?? '' });
   }
   for (const [token, child,] of childEntries(node, nodes)) {
     result.push({ value: token, description: child.about ?? '' });
