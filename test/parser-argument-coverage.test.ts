@@ -246,6 +246,14 @@ describe('built-in value parsers', () => {
     expect(global.parse('value')).toBe('value');
     expect(global.parse('value')).toBe('value');
 
+    const stickyPattern = /value/y;
+    stickyPattern.lastIndex = 1;
+    const sticky = parsers.regex(stickyPattern);
+    expect(sticky.parse('value')).toBe('value');
+    expect(sticky.parse('value')).toBe('value');
+    expect(() => sticky.parse(' value')).toThrow('expected value matching /value/y');
+    expect(stickyPattern.lastIndex).toBe(1);
+
     expect(() => parsers.regex('value' as never)).toThrow(
       'A regex parser requires a RegExp',
     );

@@ -180,11 +180,11 @@ export const parsers = Object.freeze({
     if (!(expression instanceof RegExp)) {
       throw new TypeError('A regex parser requires a RegExp');
     }
-    const source = expression.source;
-    const flags = expression.flags;
-    const label = expression.toString();
+    const matcher: RegExp = structuredClone(expression);
+    const label = matcher.toString();
     return createValueParser(label, (input) => {
-      if (!new RegExp(source, flags).test(input)) {
+      matcher.lastIndex = 0;
+      if (!matcher.test(input)) {
         throw new Error(`expected value matching ${label}`);
       }
       return input;
