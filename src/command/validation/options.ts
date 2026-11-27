@@ -49,6 +49,7 @@ const commandOptionKeys = new Set([
   'groups',
   'strictRelations',
   'validate',
+  'camelCaseArgs',
   'handler',
   'setup',
   'cleanup',
@@ -95,6 +96,7 @@ const commandBooleanOptionKeys = [
   'hideStandardFlagsInSubcommandHelp',
   'hide',
   'strictRelations',
+  'camelCaseArgs',
   'enableJsonFlag',
 ] as const;
 

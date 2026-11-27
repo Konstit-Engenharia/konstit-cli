@@ -9,6 +9,7 @@ import type {
 } from '../result/error.js';
 import { Command } from './configurator.js';
 import { prepareCommandExamples } from './examples.js';
+import { validateHandlerArgumentNames } from './handler-args.js';
 import {
   copyCommand,
   getCommandDefinition,
@@ -39,6 +40,7 @@ import {
 
 function emptyCommand<const Name extends string>(
   name: Name,
+  camelCaseArgs: boolean,
 ): Command<Name> {
   validateCommandName(name);
   return new Command(Object.freeze({
@@ -68,6 +70,7 @@ function emptyCommand<const Name extends string>(
     hideStandardFlagsInSubcommandHelp: false,
     hidden: false,
     enableJsonFlag: false,
+    camelCaseArgs,
   }));
 }
 
@@ -86,6 +89,7 @@ export function command<
     StringKeyOf<FieldsFromArguments<Arguments>>
   >[] = readonly [],
   const ExternalSubcommand extends AnyCommand = never,
+  const CamelCaseArgs extends boolean = false,
 >(
   name: Name,
   options: CheckedCommandOptions<
@@ -93,7 +97,8 @@ export function command<
     Subcommands,
     SubcommandRequired,
     Groups,
-    ExternalSubcommand
+    ExternalSubcommand,
+    CamelCaseArgs
   >,
 ): HandledCommand<
   Name,
@@ -111,11 +116,12 @@ export function command(
     readonly AnyCommand[],
     boolean,
     readonly CommandGroupOptions<string, string>[],
-    AnyCommand
+    AnyCommand,
+    boolean
   > = {},
 ): HandledCommand {
   validateCommandOptions(options);
-  let configured = emptyCommand(name);
+  let configured = emptyCommand(name, options.camelCaseArgs ?? false);
   if (options.helpHeading !== undefined) {
     configured = configured.helpHeading(options.helpHeading);
   }
@@ -205,7 +211,9 @@ export function command(
     configured = configured.hide(options.hide);
   }
 
-  validateCommandRelations(options, getCommandDefinition(configured));
+  const definition = getCommandDefinition(configured);
+  validateHandlerArgumentNames(definition);
+  validateCommandRelations(options, definition);
   if (options.requirementConditionInput !== undefined || options.requiresGroup !== undefined) {
     configured = new Command(copyCommand(getCommandDefinition(configured), {
       ...(options.requirementConditionInput === undefined ? {} : { requirementConditionInput: options.requirementConditionInput }),

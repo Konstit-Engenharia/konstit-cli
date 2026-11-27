@@ -9,6 +9,7 @@ export type ValueSource = 'cli' | 'env' | 'config' | 'prompt' | 'default';
 export type TrackedValueSource = ValueSource | { readonly file: string; };
 
 const sourcesByValue = new WeakMap<object, ReadonlyMap<string, TrackedValueSource>>();
+const sourceNamesByValue = new WeakMap<object, ReadonlyMap<string, string>>();
 
 /** The string keys available on a parsed value object. */
 type ParsedArgumentName<Values extends object> = Extract<keyof Values, string>;
@@ -51,7 +52,7 @@ function lookupSource(
   argumentName: string | AnyArgument,
 ): TrackedValueSource | undefined {
   const name = typeof argumentName === 'string'
-    ? argumentName
+    ? sourceNamesByValue.get(parsedValue)?.get(argumentName) ?? argumentName
     : getArgumentDefinition(argumentName).name;
   return sourcesByValue.get(parsedValue)?.get(name);
 }
@@ -61,6 +62,19 @@ export function setValueSources(
   sources: ReadonlyMap<string, TrackedValueSource>,
 ): void {
   sourcesByValue.set(parsedValue, new Map(sources));
+}
+
+/** Retains canonical source names for declarations and resolves projected keys for string lookups. */
+export function copyValueSources(
+  source: object,
+  target: object,
+  sourceNames: ReadonlyMap<string, string>,
+): void {
+  const sources = sourcesByValue.get(source);
+  if (sources !== undefined) {
+    sourcesByValue.set(target, sources);
+  }
+  sourceNamesByValue.set(target, sourceNames);
 }
 
 export function updateValueSource(

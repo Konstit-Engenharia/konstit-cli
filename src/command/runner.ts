@@ -29,6 +29,7 @@ import {
 } from '../terminal/output.js';
 import { createStyle } from '../terminal/style.js';
 import { readEnv } from './environment.js';
+import { createHandlerArguments } from './handler-args.js';
 import {
   externalCommandDefinitions,
   jsonOutputModes,
@@ -360,7 +361,8 @@ export async function runConfiguredHandler<Args extends object>(
       await command.setup(context);
       enteredHooks.push(command);
     }
-    handlerResult = await selected.definition.handler(selected.args as never, context);
+    const args = createHandlerArguments(selected.definition, selected.args);
+    handlerResult = await selected.definition.handler(args as never, context);
   } catch (error) {
     failure = { error };
   }

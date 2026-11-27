@@ -168,6 +168,8 @@ export interface CommandDefinition {
   readonly version?: string;
   /** The callback invoked after standard parsing and relation checks complete. */
   readonly validate?: CommandValidator<never, string>;
+  /** Converts snake_case and kebab-case argument keys for the selected handler. */
+  readonly camelCaseArgs: boolean;
   /** The callback invoked by the runner when this command is selected. */
   readonly handler?: CommandHandler<never>;
   /** Runs before the selected handler after parsing has completed. */

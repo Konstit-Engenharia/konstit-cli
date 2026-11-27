@@ -238,6 +238,22 @@ type HandlerArguments<
 > = [keyof DirectFields] extends [never] ? CommandArguments<Fields, Subcommands, Required, EmptyObject, ExternalSubcommand>
   : DirectCommandArguments<Fields, Subcommands, DirectFields, ExternalSubcommand>;
 
+type CamelCaseSuffix<Name extends string, Prefix extends string> = Name extends `${infer Part}_${infer Rest}`
+  ? CamelCaseSuffix<Rest, `${Prefix}${Capitalize<Part>}`>
+  : `${Prefix}${Capitalize<Name>}`;
+
+type UnderscoreSeparated<Name extends string, Prefix extends string = ''> = Name extends `${infer Part}-${infer Rest}`
+  ? UnderscoreSeparated<Rest, `${Prefix}${Part}_`>
+  : `${Prefix}${Name}`;
+
+type CamelCaseArgumentName<Name extends string> = UnderscoreSeparated<Name> extends `${infer First}_${infer Rest}`
+  ? CamelCaseSuffix<Rest, First>
+  : Name;
+
+type CasedHandlerArguments<Arguments extends object, CamelCaseArgs extends boolean> = CamelCaseArgs extends true
+  ? { [Key in keyof Arguments as Key extends string ? CamelCaseArgumentName<Key> : Key]: Arguments[Key]; }
+  : Arguments;
+
 export declare const commandTypeKey: unique symbol;
 export declare const externalSubcommandTypeKey: unique symbol;
 
@@ -571,6 +587,7 @@ export interface CommandOptions<
     StringKeyOf<FieldsFromArguments<Arguments>>
   >[],
   ExternalSubcommand extends AnyCommand = AnyCommand,
+  CamelCaseArgs extends boolean = number extends Arguments['length'] ? boolean : false,
 > {
   /** Groups this command under a named heading in its parent's help and documentation. */
   readonly helpHeading?: string;
@@ -696,14 +713,19 @@ export interface CommandOptions<
     >,
     StringKeyOf<FieldsFromArguments<Arguments>>
   >;
+  /** Uses camelCase keys for snake_case and kebab-case argument names in this command's handler. Defaults to false. */
+  readonly camelCaseArgs?: CamelCaseArgs;
   /** Attaches a callback with the exact configured argument type. */
   readonly handler?: CommandHandler<
-    HandlerArguments<
-      FieldsFromArguments<Arguments>,
-      SubcommandsFromTuple<Subcommands>,
-      SubcommandRequired,
-      DirectFieldsFromArguments<Arguments>,
-      ExternalSubcommand
+    CasedHandlerArguments<
+      HandlerArguments<
+        FieldsFromArguments<Arguments>,
+        SubcommandsFromTuple<Subcommands>,
+        SubcommandRequired,
+        DirectFieldsFromArguments<Arguments>,
+        ExternalSubcommand
+      >,
+      NoInfer<CamelCaseArgs>
     >
   >;
   /** Runs before the selected handler after parsing has completed. */
@@ -724,8 +746,9 @@ export type CheckedCommandOptions<
     StringKeyOf<FieldsFromArguments<Arguments>>
   >[],
   ExternalSubcommand extends AnyCommand = never,
+  CamelCaseArgs extends boolean = false,
 > =
-  & CommandOptions<Arguments, Subcommands, SubcommandRequired, Groups, ExternalSubcommand>
+  & CommandOptions<Arguments, Subcommands, SubcommandRequired, Groups, ExternalSubcommand, CamelCaseArgs>
   & (SubcommandRequired extends true ? number extends Subcommands['length'] ? unknown
     : [SubcommandNames<SubcommandsFromTuple<Subcommands>, ExternalSubcommand>] extends [never] ? CommandConfigurationError<
         'A command with subcommandRequired enabled must define at least one subcommand'

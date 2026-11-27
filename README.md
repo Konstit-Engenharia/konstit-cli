@@ -128,6 +128,7 @@ options object.
 | `groups`                      | Named argument groups and their relations.                              |
 | `strictRelations`             | Reject direct contradictions between requirements and conflicts.        |
 | `validate`                    | Synchronous validation of resolved arguments.                           |
+| `camelCaseArgs`               | Use camelCase argument keys in the handler. Defaults to `false`.        |
 | `handler`                     | Synchronous or asynchronous command callback.                           |
 | `setup`, `cleanup`            | Optional lifecycle hooks for commands on the selected path.             |
 | `enableJsonFlag`              | Add `--json` to serialize a structured handler result.                  |
@@ -291,6 +292,15 @@ Prompt answers use the configured parser and validation rules.
 `getValueSource()` returns `'prompt'` for a value supplied by a prompt.
 
 ### Handler input and output
+
+Set `camelCaseArgs: true` on a command to convert snake_case and kebab-case
+argument names in its handler. For example, an argument declared as `max-value`
+or `max_value` is available as `args.maxValue`, with the inferred TypeScript
+type. CLI spellings, config keys, validation, and parse results use their usual
+names. Each subcommand controls the option for its own handler. A command
+definition that maps more than one argument to the same handler key throws.
+`getValueSource()` and `getConfigValueFile()` accept the handler's converted
+keys or the original argument declaration.
 
 Handlers can read `context.stdin` as a `ReadableStream<Uint8Array>`. It uses
 process stdin by default. Pass a byte stream in `stdin` to either `run()` or
