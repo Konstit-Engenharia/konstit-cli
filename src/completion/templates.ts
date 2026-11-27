@@ -19,7 +19,7 @@ const templatePlaceholder = /\{\{([A-Z_]+)\}\}/g;
 export const powerShellArgvWord =
   'if ($_ -is [System.Management.Automation.Language.CommandParameterAst]) { $_.Extent.Text } else { [string]$_.Value }';
 
-export const bourneDefaultRouting = bourneDefaultTemplate.trimEnd();
+export const bourneDefaultRouting = bourneDefaultTemplate.replaceAll('\r\n', '\n').trimEnd();
 
 /** Replaces generated completion sections in a shell template. */
 export function renderTemplate(
@@ -29,7 +29,7 @@ export function renderTemplate(
   const replace = (placeholder: string, name: string): string => {
     return replacements[name] ?? placeholder;
   };
-  const blocksRendered = completionTemplates[shell].replace(
+  const blocksRendered = completionTemplates[shell].replaceAll('\r\n', '\n').replace(
     blockTemplatePlaceholder,
     (placeholder, name: string) => {
       const replacement = replace(placeholder, name);

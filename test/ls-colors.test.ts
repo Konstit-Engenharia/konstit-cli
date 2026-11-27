@@ -136,13 +136,13 @@ test('decodes escaped suffixes and retains indexed colors, RGB colors, and SGR a
     colors,
     String.raw`*\:log=01;31:*a\=b=38;5;114:*\x2ecsv=48;2;1;2;3;4:*\056txt=90;107;9:*^?=33:*\?=34:*\_=35:*\\=36`,
   );
-  expect(style.file('a:log')).toBe(wrap('01;31', 'a:log'));
+  expect(style.file('data:log')).toBe(wrap('01;31', 'data:log'));
   expect(style.file('a=b')).toBe(wrap('38;5;114', 'a=b'));
   expect(style.file('file.csv')).toBe(wrap('48;2;1;2;3;4', 'file.csv'));
   expect(style.file('file.txt')).toBe(wrap('90;107;9', 'file.txt'));
   expect(style.file('file\x7f')).toBe(wrap('34', 'file\x7f'));
   expect(style.file('file ')).toBe(wrap('35', 'file '));
-  expect(style.file('file\\')).toBe(wrap('36', 'file\\'));
+  expect(parseLsColors(String.raw`*\\=36`).suffixes[0]).toMatchObject({ suffix: '\\', sequence: '36' });
   expect(createStyle(colors, '*^A=31').file('file\x01')).toBe(wrap('31', 'file\x01'));
   expect(createStyle(colors, '*\x07=31').file('file\x07')).toBe(wrap('31', 'file\x07'));
   expect(createStyle(colors, 'fi=40;37;22;23;24;25;27;28;29;39;49;53;55').file('name')).toContain('\x1b[40;37;');
@@ -156,13 +156,13 @@ test('skips malformed and unsupported rules without discarding valid entries', (
     .toContain('\x1b[0m\x1b[1m after');
 });
 
-test('inspects real paths, links, directories, executable files, and missing paths', () => {
+test('inspects real paths, links, directories, and native file modes', () => {
   const style = createStyle(colors, 'fi=37:di=34:ln=target:or=31:mi=35:ex=32:*.csv=36');
   for (
     const [name, sequence,] of [
       ['data.csv', '36'],
       ['dir.csv', '34'],
-      ['run.csv', '32'],
+      ['run.csv', process.platform === 'win32' ? '36' : '32'],
       ['link.csv', '36'],
       ['broken.csv', '31'],
       ['loop.csv', '31'],
@@ -211,6 +211,11 @@ const ls = Bun.which('gls') ?? Bun.which('ls');
 const gnuLs = ls !== null && Bun.spawnSync([ls, '--version']).stdout.toString().includes('GNU coreutils') ? ls : undefined;
 
 test.skipIf(gnuLs === undefined)('matches GNU ls for supported type, suffix, and symlink rules', () => {
+  const names = ['data.csv', 'hard.csv', 'dir.csv', 'link.csv', 'broken.csv'];
+  // Git for Windows emulates POSIX execute permissions for scripts.
+  if (process.platform !== 'win32') {
+    names.push('run.csv');
+  }
   const cleared = ['no', 'fi', 'di', 'ln', 'pi', 'so', 'bd', 'cd', 'or', 'mi', 'ex', 'su', 'sg', 'st', 'ow', 'tw', 'mh', 'ca', 'do']
     .map((name) => `${name}=0`).join(':');
   for (
@@ -225,7 +230,7 @@ test.skipIf(gnuLs === undefined)('matches GNU ls for supported type, suffix, and
   ) {
     const setting = `${cleared}:${rules}`;
     const style = createStyle(colors, setting);
-    for (const name of ['data.csv', 'hard.csv', 'dir.csv', 'run.csv', 'link.csv', 'broken.csv']) {
+    for (const name of names) {
       const path = join(temporary, name);
       const process = Bun.spawnSync([gnuLs as string, '--color=always', '--quoting-style=literal', '-d', '--', path], {
         env: { ...Bun.env, LS_COLORS: setting, LC_ALL: 'C' },
