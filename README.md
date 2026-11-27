@@ -24,9 +24,22 @@ clap. It is not a source port.
 - Widened arrays and JavaScript input receive structural runtime validation.
 - Handler contexts preserve the exact type of each global argument.
 
+## Supported behavior
+
+- Long and short options, attached values, clusters, and counters
+- Repeatable, fixed-count, ranged, delimited, and terminated values
+- Equals-only options and optional option values
+- Hyphen values, negative numbers, trailing positionals, and `--`
+- Nested subcommands, aliases, inferred prefixes, and generated help
+- Global options shared by nested subcommands
+- Environment fallbacks overridden by explicit CLI values
+- Requirements, conflicts, exclusivity, overrides, and argument groups
+- Automatic help, version, usage, and close-name suggestions
+- Static and dynamic completion for Bash, Zsh, Fish, and PowerShell
+
 ## Install
 
-Requires Bun 1.4 or newer.
+Requires Bun 1.4.5 or newer.
 
 ```sh
 bun add @konstit/cli
@@ -1707,19 +1720,6 @@ suppresses output. Help, version, and completion output do not emit warnings.
 Warnings are collected once per deprecated spelling and command path.
 Argument warnings require explicit CLI input; environment values, configuration,
 and defaults do not warn. Alias warnings apply to exact alias spellings.
-
-## Supported behavior
-
-- Long and short options, attached values, clusters, and counters
-- Repeatable, fixed-count, ranged, delimited, and terminated values
-- Equals-only options and optional option values
-- Hyphen values, negative numbers, trailing positionals, and `--`
-- Nested subcommands, aliases, inferred prefixes, and generated help
-- Global options shared by nested subcommands
-- Environment fallbacks overridden by explicit CLI values
-- Requirements, conflicts, exclusivity, overrides, and argument groups
-- Automatic help, version, usage, and close-name suggestions
-- Static and dynamic completion for Bash, Zsh, Fish, and PowerShell
 
 ## Development
 
