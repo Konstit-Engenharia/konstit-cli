@@ -38,6 +38,8 @@ export interface ArgumentDefinition {
   readonly deprecatedAliases?: Readonly<Record<string, string>>;
   /** The description shown in help. */
   readonly help?: string;
+  /** The prompt text or enabled default prompt for interactive runs. */
+  readonly prompt?: string | boolean;
   /** The heading under which this argument is rendered in generated help and documentation. */
   readonly helpHeading?: string;
   /** The value placeholder shown in usage and help. */

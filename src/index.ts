@@ -17,17 +17,24 @@ export type { CommandExample, CommandExampleInput } from './command/schema.js';
 export type {
   CommandGroupOptions,
   CommandHandler,
+  CommandHook,
   CommandOptions,
   CommandValidationIssue,
   CommandValidator,
+  ExternalSubcommandResolver,
   HandledCommand,
   HandlerContext,
   HandlerResult,
+  HookToken,
   Infer,
+  JsonValue,
+  PromptHandler,
+  PromptRequest,
   RequirementConditionInput,
   RunOptions,
   RunParsedOptions,
 } from './command/types.js';
+export { hookToken } from './command/types.js';
 export { type CompletionShell, completionShells, isCompletionShell } from './completion/shell.js';
 export { loadConfig, loadConfigs } from './configuration/load.js';
 export { type CommandConfigSchema, generateConfigSchema } from './configuration/schema.js';

@@ -505,7 +505,8 @@ function hasDeclaredOption(state: ScanState, token: string): boolean {
         !state.active.command.disableVersionFlag
         && state.active.command.version !== undefined
         && token === '--version'
-      );
+      )
+      || (state.active.command.enableJsonFlag && token === '--json');
   }
   const short = token[1];
   return short !== undefined
@@ -517,6 +518,7 @@ function hasDeclaredOption(state: ScanState, token: string): boolean {
         && state.active.command.version !== undefined
         && token === '-V'
       )
+      || (state.active.command.enableJsonFlag && token === '--json')
     );
 }
 

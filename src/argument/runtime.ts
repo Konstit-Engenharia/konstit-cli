@@ -379,7 +379,7 @@ export function validateArgumentOptionKeys(
         'allowNegativeNumbers',
       ]
       : []),
-    ...(kind === 'option' ? ['defaultMissing', 'requireEquals', 'unique'] : []),
+    ...(kind === 'option' ? ['defaultMissing', 'requireEquals', 'unique', 'prompt'] : []),
     ...(kind === 'positional' ? ['trailingVarArg', 'literal', 'joinWith', 'output'] : []),
     ...(kind === 'flag' ? ['negated'] : []),
   ];
@@ -418,6 +418,13 @@ export function validateArgumentOptionKeys(
   }
   if (configured.output !== undefined && configured.output !== 'scalar') {
     throw new TypeError(`${kind} argument option 'output' must be 'scalar'`);
+  }
+  if (
+    configured.prompt !== undefined
+    && typeof configured.prompt !== 'boolean'
+    && typeof configured.prompt !== 'string'
+  ) {
+    throw new TypeError(`${kind} argument option 'prompt' must be a boolean or string`);
   }
   if (
     configured.required !== undefined

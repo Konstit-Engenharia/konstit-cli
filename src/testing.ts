@@ -24,14 +24,17 @@ export interface InvokeResult {
   readonly writes: readonly InvokeWrite[];
 }
 
-/** Configuration, environment, input, cancellation, and diagnostics options for an in-process command invocation. */
-export type InvokeOptions = Pick<RunOptions, 'config' | 'env' | 'stdin' | 'signal' | 'diagnostics'>;
+/** Parsing and runner options for an in-process command invocation. */
+export type InvokeOptions = Pick<
+  RunOptions,
+  'argumentFiles' | 'config' | 'env' | 'stdin' | 'signal' | 'diagnostics' | 'prompt' | 'interactive'
+>;
 
 /** Runs a command in process with the supplied options and captures its output. */
 export async function invoke(
   cli: HandledCommand,
   argv: readonly string[],
-  { config, env, stdin, signal, diagnostics }: InvokeOptions = {},
+  { argumentFiles, config, env, stdin, signal, diagnostics, prompt, interactive }: InvokeOptions = {},
 ): Promise<InvokeResult> {
   const chunks: Record<OutputChannel, string[]> = { stdout: [], stderr: [] };
   const writes: InvokeWrite[] = [];
@@ -43,11 +46,14 @@ export async function invoke(
   const stderr = capture('stderr');
   const exitCode = await cli.run({
     argv,
+    ...(argumentFiles === undefined ? {} : { argumentFiles }),
     ...(config === undefined ? {} : { config }),
     ...(env === undefined ? {} : { env }),
     ...(stdin === undefined ? {} : { stdin }),
     ...(signal === undefined ? {} : { signal }),
     ...(diagnostics === undefined ? {} : { diagnostics }),
+    ...(prompt === undefined ? {} : { prompt }),
+    ...(interactive === undefined ? {} : { interactive }),
     stdout,
     stderr,
     output: { stdout, stderr },

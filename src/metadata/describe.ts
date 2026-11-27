@@ -63,6 +63,7 @@ function describeDefinition(
   return Object.freeze({
     name: definition.name,
     path: Object.freeze([...path]),
+    ...(definition.helpHeading === undefined ? {} : { helpHeading: definition.helpHeading }),
     ...(definition.deprecated === undefined ? {} : { deprecated: definition.deprecated }),
     ...(definition.deprecatedAliases === undefined
       ? {}
@@ -102,6 +103,7 @@ function describeDefinition(
     disableHelpSubcommand: definition.disableHelpSubcommand,
     disableHelpFlag: definition.disableHelpFlag,
     disableVersionFlag: definition.disableVersionFlag,
+    enableJsonFlag: definition.enableJsonFlag,
     hidden: definition.hidden,
   });
 }

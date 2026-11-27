@@ -4,7 +4,7 @@ import {
 } from '../argument/index.js';
 
 /** The source that supplied an argument's final parsed value. */
-export type ValueSource = 'cli' | 'env' | 'config' | 'default';
+export type ValueSource = 'cli' | 'env' | 'config' | 'prompt' | 'default';
 
 export type TrackedValueSource = ValueSource | { readonly file: string; };
 

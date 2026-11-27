@@ -23,6 +23,8 @@ export const ErrorKind = Object.freeze(
     TooManyValues: 'too-many-values',
     /** An invalid command or argument definition. */
     InvalidDefinition: 'invalid-definition',
+    /** An argument file could not be read or expanded. */
+    InvalidArgumentFile: 'invalid-argument-file',
   } as const,
 );
 
@@ -37,6 +39,8 @@ export interface CliErrorDetails {
   readonly commandPath?: readonly string[];
   /** The index of the offending token in the original argv, when applicable. */
   readonly tokenIndex?: number;
+  /** The file and one-based line that supplied the offending token. */
+  readonly argumentFile?: Readonly<{ path: string; line: number; }>;
   /** Machine-readable suggestions for recovering from the failure. */
   readonly suggestions?: readonly string[];
   /** Other argument names involved in a relation or conflict. */
@@ -59,6 +63,8 @@ export class CliError extends Error {
   readonly commandPath: readonly string[];
   /** The index of the offending token in the original argv, when applicable. */
   readonly tokenIndex?: number;
+  /** The file and one-based line that supplied the offending token. */
+  readonly argumentFile?: NonNullable<CliErrorDetails['argumentFile']>;
   /** Machine-readable suggestions for recovering from the failure. */
   readonly suggestions: readonly string[];
   /** Other argument names involved in the failure. */
@@ -93,6 +99,9 @@ export class CliError extends Error {
     this.commandPath = Object.freeze([...(details.commandPath ?? [])]);
     if (details.tokenIndex !== undefined) {
       this.tokenIndex = details.tokenIndex;
+    }
+    if (details.argumentFile !== undefined) {
+      this.argumentFile = Object.freeze({ ...details.argumentFile });
     }
     this.suggestions = Object.freeze([...(details.suggestions ?? [])]);
     this.relatedArguments = Object.freeze([...(details.relatedArguments ?? [])]);

@@ -53,7 +53,7 @@ const configured = cli.command('validate', {
     ),
     cli.option('tag', cli.parsers.string, { repeatable: true }),
   ],
-  subcommands: [cli.command('status', { handler: () => 4 })],
+  subcommands: [cli.command('status', { helpHeading: 'Maintenance', handler: () => 4 })],
   defaultToHelp: true,
 });
 assert.equal(Object.isFrozen(configured), true);
@@ -70,6 +70,7 @@ assert.match(bash, /# bash completion for validate/);
 assert.match(configured.renderHelp(), /Validate the built package/);
 assert.match(configured.renderHelp(), /--verbose/);
 assert.match(configured.renderHelp(), /status/);
+assert.ok(configured.renderHelp().includes('Maintenance:\n  status'));
 assert.ok(configured.renderHelp().includes('Examples:\n  Report the current status.\n  $ validate status'));
 assert.equal(configured.tryParse([]).type, 'display');
 assert.equal(configured.tryParse(['--version']).type, 'display');
@@ -91,6 +92,18 @@ assert.deepEqual(await testing.invoke(failing, []), {
   stdout: '',
   stderr: 'Package handler failed.\n',
   writes: [{ stream: 'stderr', chunk: 'Package handler failed.\n' }],
+});
+const ready = cli.hookToken<boolean>('ready');
+const structured = cli.command('structured', {
+  enableJsonFlag: true,
+  setup: ({ provide }) => provide(ready, true),
+  handler: (_args, { get }) => ({ ready: get(ready) }),
+});
+assert.deepEqual(await testing.invoke(structured, ['--json']), {
+  exitCode: 0,
+  stdout: '{"ready":true}\n',
+  stderr: '',
+  writes: [{ stream: 'stdout', chunk: '{"ready":true}\n' }],
 });
 const parsed = configured.parse(['-vv']);
 assert.equal(parsed.type, 'value');
@@ -213,8 +226,11 @@ const consumerDirectory = await mkdtemp(resolve(root, '.node-next-consumer-'));
 try {
   const configFile = resolve(consumerDirectory, 'tool.json');
   const localConfig = resolve(consumerDirectory, 'tool.local.json');
+  const argumentFile = resolve(consumerDirectory, 'tool.args');
   await writeFile(configFile, '{"values":{"verbose":2}}');
   await writeFile(localConfig, '{"values":{"verbose":3}}');
+  await writeFile(argumentFile, '-v\nstatus\n');
+  assert.equal(await configured.run({ argv: [`@${argumentFile}`], argumentFiles: true }), 4);
   assert.deepEqual(await cli.loadConfig(configFile), { values: { verbose: 2 } });
   const config = await cli.loadConfigs([configFile, localConfig]);
   assert.deepEqual(cli.validateConfig(configured, config), { valid: true, issues: [] });

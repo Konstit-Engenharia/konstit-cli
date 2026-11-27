@@ -21,6 +21,7 @@ test('keeps the runtime package exports explicit', () => {
     'getConfigValueFile',
     'getValueSource',
     'getWarnings',
+    'hookToken',
     'isCompletionShell',
     'loadConfig',
     'loadConfigs',

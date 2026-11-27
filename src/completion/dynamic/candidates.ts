@@ -181,6 +181,9 @@ export function namedCandidates(state: ScanState): readonly DynamicCompletionCan
     candidates.push({ value: '-V', description: 'Print version' });
     candidates.push({ value: '--version', description: 'Print version' });
   }
+  if (state.active.command.enableJsonFlag) {
+    candidates.push({ value: '--json', description: 'Print handler result as JSON' });
+  }
   return candidates;
 }
 

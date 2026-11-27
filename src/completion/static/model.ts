@@ -240,6 +240,7 @@ export function builtinOptionTokens(node: CompletionNode): readonly string[] {
   return [
     ...(node.definition.disableHelpFlag ? [] : ['-h', '--help']),
     ...(node.definition.version === undefined || node.definition.disableVersionFlag ? [] : ['-V', '--version']),
+    ...(node.definition.enableJsonFlag ? ['--json'] : []),
   ];
 }
 
@@ -266,6 +267,9 @@ export function candidates(
   ) {
     result.push({ value: '-V', description: 'Print version' });
     result.push({ value: '--version', description: 'Print version' });
+  }
+  if (node.definition.enableJsonFlag) {
+    result.push({ value: '--json', description: 'Print handler result as JSON' });
   }
   for (const [token, child,] of childEntries(node, nodes)) {
     result.push({ value: token, description: child.about ?? '' });

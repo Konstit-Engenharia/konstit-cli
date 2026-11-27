@@ -136,6 +136,9 @@ function renderHelpDocument(
     if (definition.version !== undefined && !definition.disableVersionFlag) {
       builtInEntries.push(['  -V, --version', 'Print version']);
     }
+    if (definition.enableJsonFlag) {
+      builtInEntries.push(['  --json', 'Print handler result as JSON']);
+    }
   }
   const argumentGroups = groupHelpArguments(
     argumentsToRender,
@@ -162,32 +165,49 @@ function renderHelpDocument(
   }
 
   const subcommands = definition.subcommands.filter(({ hidden }) => !hidden);
-  if (subcommands.length > 0) {
-    appendLine(lines, '', { kind: 'plain' });
-    appendLine(lines, 'Commands:', { kind: 'heading', section: 'Commands' });
-    const commandEntries: HelpEntry[] = subcommands.map((child) => {
-      const aliases = child.aliases
-        .filter(({ visible }) => visible)
-        .map(({ name }) => name);
-      const label = aliases.length === 0
-        ? child.name
-        : `${child.name} (aliases: ${aliases.join(', ')})`;
-      const description = [
-        child.about,
-        child.deprecated === undefined
-          ? undefined
-          : `[deprecated: ${sanitizeDiagnostic(child.deprecated)}]`,
-      ].filter((value): value is string => value !== undefined).join(' ');
-      return [`  ${label}`, description] as const;
-    });
+  if (subcommands.length > 0 || definition.externalSubcommand !== undefined) {
+    const commandGroups = groupHelpArguments(subcommands, 'Commands');
+    const builtInCommands: HelpEntry[] = [];
     if (subcommands.length > 0 && !definition.disableHelpSubcommand) {
-      commandEntries.push(['  help', 'Print help for a subcommand']);
+      builtInCommands.push(['  help', 'Print help for a subcommand']);
+    }
+    if (definition.externalSubcommand !== undefined) {
+      builtInCommands.push(['  <external-command>', 'Resolve an external subcommand']);
     }
     if (!hideStandardFlags && !definition.disableVersionFlag && subcommands.some(({ disableHelpFlag }) => !disableHelpFlag)) {
       const placeholder = '<command>';
-      commandEntries.push([`  ${placeholder} --help`, 'Print help text for command.', placeholder.length]);
+      builtInCommands.push([`  ${placeholder} --help`, 'Print help text for command.', placeholder.length]);
     }
-    pushAligned(lines, commandEntries, 'Commands');
+    const groups = builtInCommands.length > 0 && !commandGroups.some(({ heading }) => heading === 'Commands')
+      ? [...commandGroups, { heading: 'Commands', arguments: [] }]
+      : commandGroups;
+    for (const group of groups) {
+      appendLine(lines, '', { kind: 'plain' });
+      appendLine(lines, `${sanitizeDiagnostic(group.heading)}:`, {
+        kind: 'heading',
+        section: group.heading,
+      });
+      const commandEntries: HelpEntry[] = group.arguments.map((child) => {
+        const aliases = child.aliases
+          .filter(({ visible }) => visible)
+          .map(({ name }) => name);
+        const label = aliases.length === 0
+          ? child.name
+          : `${child.name} (aliases: ${aliases.join(', ')})`;
+        const description = [
+          child.about,
+          child.name === definition.defaultSubcommand ? '[default]' : undefined,
+          child.deprecated === undefined
+            ? undefined
+            : `[deprecated: ${sanitizeDiagnostic(child.deprecated)}]`,
+        ].filter((value): value is string => value !== undefined).join(' ');
+        return [`  ${label}`, description] as const;
+      });
+      if (group.heading === 'Commands') {
+        commandEntries.push(...builtInCommands);
+      }
+      pushAligned(lines, commandEntries, group.heading);
+    }
   }
 
   for (const group of optionGroups) {

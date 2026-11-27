@@ -73,7 +73,9 @@ export function renderUsageText(
     ...(options ? ['[options]'] : []),
     ...requiredOptionUsage,
     ...positionalUsage,
-    ...(definition.subcommands.some(({ hidden }) => !hidden) ? ['<command>'] : []),
+    ...(definition.subcommands.some(({ hidden }) => !hidden) || definition.externalSubcommand !== undefined
+      ? [definition.defaultSubcommand === undefined ? '<command>' : '[<command>]']
+      : []),
   ].join(' ');
 }
 

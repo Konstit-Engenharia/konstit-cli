@@ -27,9 +27,60 @@ import type {
   GroupOptions,
 } from './schema.js';
 
-/** A handler exit code from 0 to 255, or no return value for exit code 0. */
+/** A JSON-compatible value returned as the command payload when JSON mode is requested. */
+export type JsonValue =
+  | null
+  | boolean
+  | number
+  | string
+  | readonly JsonValue[]
+  | { readonly [key: string]: JsonValue; };
+
+/** A handler exit code from 0 to 255, no return value, or a structured JSON payload. */
 // biome-ignore lint/suspicious/noConfusingVoidType: Handlers intentionally support callbacks with no return value.
-export type HandlerResult = void | number;
+export type HandlerResult = void | number | readonly JsonValue[] | { readonly [key: string]: JsonValue; };
+
+declare const hookTokenBrand: unique symbol;
+
+/** A typed key used to share values from setup hooks with later hooks and handlers. */
+export interface HookToken<in out Value> {
+  readonly [hookTokenBrand]: (value: Value) => Value;
+  readonly description?: string;
+}
+
+/** Creates a typed key for a per-invocation hook value. */
+export function hookToken<Value>(description?: string): HookToken<Value> {
+  return Object.freeze(
+    description === undefined ? {} : { description },
+  ) as HookToken<Value>;
+}
+
+/**
+ * Resolves an unrecognized command name to an executable command definition.
+ * Parameterize the resolver with its concrete return command to preserve that command's
+ * parsed arguments in `Infer`; the unparameterized alias intentionally uses `AnyCommand`.
+ */
+export type ExternalSubcommandResolver<ExternalSubcommand extends AnyCommand = AnyCommand> = (
+  name: string,
+  argv: readonly string[],
+) => ExternalSubcommand | undefined;
+
+/** Details supplied to an interactive value prompt. */
+export interface PromptRequest {
+  /** The schema name of the value being requested. */
+  readonly argumentName: string;
+  /** The selected command path. */
+  readonly commandPath: readonly string[];
+  /** The configured prompt text. */
+  readonly message: string;
+  /** Whether the argument is marked sensitive. */
+  readonly sensitive: boolean;
+}
+
+/** Supplies a raw value for a configured interactive prompt. */
+export type PromptHandler = (
+  request: PromptRequest,
+) => string | undefined | PromiseLike<string | undefined>;
 
 /** Runtime data available to every command handler. */
 export interface HandlerContext {
@@ -47,6 +98,10 @@ export interface HandlerContext {
   readonly style: Style;
   /** Synchronous line-oriented output through independently configurable sinks. */
   readonly output: HandlerConsole;
+  /** Reads a value provided by a setup hook. */
+  get<Value>(this: void, token: HookToken<Value>): Value;
+  /** Provides a value for later hooks and the selected handler. */
+  provide<Value>(this: void, token: HookToken<Value>, value: Value): void;
   /** Gets a global argument declared by the selected command or an ancestor. */
   global<ArgumentType extends AnyGlobalArgument>(
     argument: ArgumentType,
@@ -58,6 +113,11 @@ export type CommandHandler<in Arguments extends object> = (
   args: Arguments,
   context: HandlerContext,
 ) => HandlerResult | PromiseLike<HandlerResult>;
+
+/** A lifecycle hook invoked around the selected command handler. */
+export type CommandHook = (
+  context: HandlerContext,
+) => void | PromiseLike<void>;
 
 export type Simplify<Value> = { [Key in keyof Value]: Value[Key]; } & {};
 export type StringKeyOf<Value> = Extract<keyof Value, string>;
@@ -119,15 +179,30 @@ type ParsedSubcommand<Subcommands extends Record<string, unknown>> = {
     : never;
 }[StringKeyOf<Subcommands>];
 
+type ExternalParsedSubcommand<ExternalSubcommand extends AnyCommand> = ExternalSubcommand extends AnyCommand ? {
+    /** The canonical name returned by an external resolver. */
+    readonly name: CommandName<ExternalSubcommand>;
+    /** The external command's parsed arguments and nested selection. */
+    readonly args: string extends CommandName<ExternalSubcommand> ? Readonly<Record<string, unknown>> : Infer<ExternalSubcommand>;
+  }
+  : never;
+
+type SubcommandNames<Subcommands extends Record<string, unknown>, ExternalSubcommand extends AnyCommand> =
+  | StringKeyOf<Subcommands>
+  | CommandName<ExternalSubcommand>;
+
 /** The selection field added to parsed values for commands with subcommands. */
 type SubcommandField<
   Subcommands extends Record<string, unknown>,
   Required extends boolean,
-> = StringKeyOf<Subcommands> extends never ? EmptyObject
+  ExternalSubcommand extends AnyCommand = never,
+> = [SubcommandNames<Subcommands, ExternalSubcommand>] extends [never] ? EmptyObject
   : {
     /** The selected subcommand, or undefined when selection is optional and absent. */
-    readonly subcommand: Required extends true ? ParsedSubcommand<Subcommands>
-      : ParsedSubcommand<Subcommands> | undefined;
+    readonly subcommand:
+      | ParsedSubcommand<Subcommands>
+      | ExternalParsedSubcommand<ExternalSubcommand>
+      | (Required extends true ? never : undefined);
   };
 
 /** Parsed argument fields combined with any subcommand selection. */
@@ -136,15 +211,22 @@ export type CommandArguments<
   Subcommands extends Record<string, unknown>,
   Required extends boolean,
   DirectFields extends object = EmptyObject,
-> = [keyof DirectFields] extends [never] ? Simplify<Readonly<Fields> & SubcommandField<Subcommands, Required>>
-  : StringKeyOf<Subcommands> extends never ? DirectCommandArguments<Fields, Subcommands, DirectFields>
+  ExternalSubcommand extends AnyCommand = never,
+> = [keyof DirectFields] extends [never] ? Simplify<Readonly<Fields> & SubcommandField<Subcommands, Required, ExternalSubcommand>>
+  : [SubcommandNames<Subcommands, ExternalSubcommand>] extends [never]
+    ? DirectCommandArguments<Fields, Subcommands, DirectFields, ExternalSubcommand>
   :
-    | (Required extends true ? never : DirectCommandArguments<Fields, Subcommands, DirectFields>)
-    | Simplify<Readonly<Fields> & SubcommandField<Subcommands, true>>;
+    | (Required extends true ? never : DirectCommandArguments<Fields, Subcommands, DirectFields, ExternalSubcommand>)
+    | Simplify<Readonly<Fields> & SubcommandField<Subcommands, true, ExternalSubcommand>>;
 
-type DirectCommandArguments<Fields extends object, Subcommands extends Record<string, unknown>, DirectFields extends object> = Simplify<
+type DirectCommandArguments<
+  Fields extends object,
+  Subcommands extends Record<string, unknown>,
+  DirectFields extends object,
+  ExternalSubcommand extends AnyCommand = never,
+> = Simplify<
   & { readonly [Name in keyof Fields]: Name extends keyof DirectFields ? DirectFields[Name] : Fields[Name]; }
-  & (StringKeyOf<Subcommands> extends never ? EmptyObject : { readonly subcommand: undefined; })
+  & ([SubcommandNames<Subcommands, ExternalSubcommand>] extends [never] ? EmptyObject : { readonly subcommand: undefined; })
 >;
 
 type HandlerArguments<
@@ -152,10 +234,12 @@ type HandlerArguments<
   Subcommands extends Record<string, unknown>,
   Required extends boolean,
   DirectFields extends object,
-> = [keyof DirectFields] extends [never] ? CommandArguments<Fields, Subcommands, Required>
-  : DirectCommandArguments<Fields, Subcommands, DirectFields>;
+  ExternalSubcommand extends AnyCommand = never,
+> = [keyof DirectFields] extends [never] ? CommandArguments<Fields, Subcommands, Required, EmptyObject, ExternalSubcommand>
+  : DirectCommandArguments<Fields, Subcommands, DirectFields, ExternalSubcommand>;
 
 export declare const commandTypeKey: unique symbol;
+export declare const externalSubcommandTypeKey: unique symbol;
 
 /** The covariant type surface used to inspect any configured command. */
 export interface CommandType<
@@ -188,7 +272,10 @@ export interface HandledCommand<
   out SubcommandRequired extends boolean = boolean,
   out Groups extends string = string,
   out DirectFields extends object = EmptyObject,
+  out ExternalSubcommand extends AnyCommand = AnyCommand,
 > extends CommandType<Name, Fields, Subcommands, SubcommandRequired, Groups, DirectFields> {
+  /** Carries the inferred external command type without adding runtime state. */
+  readonly [externalSubcommandTypeKey]?: ExternalSubcommand;
   /** Parses explicit argv. User-facing failures throw CliError. */
   parse(argv: readonly string[], options?: ParseOptions): ParseOutcome<Infer<this>>;
   /** Parses argv without exceptions for expected CLI outcomes. */
@@ -206,6 +293,11 @@ export interface HandledCommand<
 }
 
 /** Gets the parsed argument and subcommand value type for a configured command. */
+type ExternalSubcommandOf<ConfiguredCommand extends AnyCommand> = ConfiguredCommand extends {
+  readonly [externalSubcommandTypeKey]?: infer ExternalSubcommand;
+} ? ExternalSubcommand extends AnyCommand ? ExternalSubcommand : never
+  : never;
+
 export type Infer<ConfiguredCommand extends AnyCommand> = ConfiguredCommand extends CommandType<
   infer _Name,
   infer Fields,
@@ -213,7 +305,7 @@ export type Infer<ConfiguredCommand extends AnyCommand> = ConfiguredCommand exte
   infer Required,
   infer _Groups,
   infer DirectFields
-> ? CommandArguments<Fields, Subcommands, Required, DirectFields>
+> ? CommandArguments<Fields, Subcommands, Required, DirectFields, ExternalSubcommandOf<ConfiguredCommand>>
   : never;
 
 export type FieldsFromArguments<Arguments extends readonly AnyArgument[]> = Simplify<
@@ -478,7 +570,10 @@ export interface CommandOptions<
     string,
     StringKeyOf<FieldsFromArguments<Arguments>>
   >[],
+  ExternalSubcommand extends AnyCommand = AnyCommand,
 > {
+  /** Groups this command under a named heading in its parent's help and documentation. */
+  readonly helpHeading?: string;
   /** Warns when this command is invoked, with guidance for its replacement. */
   readonly deprecated?: string;
   /** Maps declared aliases to messages emitted only for exact alias invocations. */
@@ -509,6 +604,10 @@ export interface CommandOptions<
   readonly args?: Arguments;
   /** Adds subcommands in tuple order. */
   readonly subcommands?: Subcommands;
+  /** Selects the child command when no explicit subcommand is supplied. */
+  readonly defaultSubcommand?: CommandName<Subcommands[number]>;
+  /** Resolves an unrecognized command name without spawning a process; its concrete return type is included in parsed selections. */
+  readonly externalSubcommand?: ExternalSubcommandResolver<ExternalSubcommand>;
   /** Accepts an unambiguous prefix of a subcommand name or alias. */
   readonly inferSubcommands?: boolean;
   /** Makes the parsed subcommand field required. */
@@ -592,7 +691,8 @@ export interface CommandOptions<
       FieldsFromArguments<Arguments>,
       SubcommandsFromTuple<Subcommands>,
       SubcommandRequired,
-      DirectFieldsFromArguments<Arguments>
+      DirectFieldsFromArguments<Arguments>,
+      ExternalSubcommand
     >,
     StringKeyOf<FieldsFromArguments<Arguments>>
   >;
@@ -602,9 +702,16 @@ export interface CommandOptions<
       FieldsFromArguments<Arguments>,
       SubcommandsFromTuple<Subcommands>,
       SubcommandRequired,
-      DirectFieldsFromArguments<Arguments>
+      DirectFieldsFromArguments<Arguments>,
+      ExternalSubcommand
     >
   >;
+  /** Runs before the selected handler after parsing has completed. */
+  readonly setup?: CommandHook;
+  /** Runs after the selected handler, in reverse command order. */
+  readonly cleanup?: CommandHook;
+  /** Adds an opt-in `--json` flag that serializes a JSON handler result to stdout. */
+  readonly enableJsonFlag?: boolean;
 }
 
 /** Command options with compile-time checks for layout, uniqueness, and group membership. */
@@ -616,10 +723,11 @@ export type CheckedCommandOptions<
     string,
     StringKeyOf<FieldsFromArguments<Arguments>>
   >[],
+  ExternalSubcommand extends AnyCommand = never,
 > =
-  & CommandOptions<Arguments, Subcommands, SubcommandRequired, Groups>
+  & CommandOptions<Arguments, Subcommands, SubcommandRequired, Groups, ExternalSubcommand>
   & (SubcommandRequired extends true ? number extends Subcommands['length'] ? unknown
-    : Subcommands extends readonly [] ? CommandConfigurationError<
+    : [SubcommandNames<SubcommandsFromTuple<Subcommands>, ExternalSubcommand>] extends [never] ? CommandConfigurationError<
         'A command with subcommandRequired enabled must define at least one subcommand'
       >
     : unknown
@@ -664,4 +772,8 @@ export interface RunOptions extends RunParsedOptions, ParseOptions {
   readonly argv?: readonly string[];
   /** Controls ANSI styling and the automatic color-flag value. */
   readonly color?: boolean;
+  /** Enables default terminal prompts when both standard streams are TTYs. */
+  readonly interactive?: boolean;
+  /** Supplies prompted values. Providing this callback enables prompts in tests and embeddings. */
+  readonly prompt?: PromptHandler;
 }

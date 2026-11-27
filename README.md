@@ -87,6 +87,7 @@ options object.
 | ----------------------------- | ----------------------------------------------------------------------- |
 | `version`                     | Text printed by `-V` and `--version`.                                   |
 | `about`                       | Short help and completion description.                                  |
+| `helpHeading`                 | Section heading for this subcommand in its parent's help and docs.      |
 | `longAbout`                   | Extended help description.                                              |
 | `author`                      | Author line in help.                                                    |
 | `beforeHelp`                  | Text before generated help.                                             |
@@ -100,6 +101,8 @@ options object.
 | `deprecatedAliases`           | Deprecation messages keyed by declared aliases.                         |
 | `args`                        | Argument tuple in parse order.                                          |
 | `subcommands`                 | Subcommand tuple.                                                       |
+| `defaultSubcommand`           | Canonical name of the child command selected when its name is omitted.  |
+| `externalSubcommand`          | Optional resolver for an unrecognized command name.                     |
 | `inferSubcommands`            | Accept an unambiguous name or alias prefix.                             |
 | `argsOverrideSelf`            | Let the last occurrence replace a non-repeated option or ordinary flag. |
 | `subcommandRequired`          | Require a subcommand and make its result non-optional.                  |
@@ -126,6 +129,8 @@ options object.
 | `strictRelations`             | Reject direct contradictions between requirements and conflicts.        |
 | `validate`                    | Synchronous validation of resolved arguments.                           |
 | `handler`                     | Synchronous or asynchronous command callback.                           |
+| `setup`, `cleanup`            | Optional lifecycle hooks for commands on the selected path.             |
+| `enableJsonFlag`              | Add `--json` to serialize a structured handler result.                  |
 
 Each field is optional. Duplicate primary argument and subcommand names are
 checked from literal tuples. Alias collisions, invalid layouts, and widened
@@ -149,6 +154,26 @@ if (outcome.type === 'value') {
 
 `tryParse(argv)` returns `{ ok: false, type: 'error', error }` for expected CLI
 failures. Unexpected programming errors still throw.
+
+### Argument files
+
+Pass `argumentFiles: true` to `parse()`, `tryParse()`, `run()`, or `invoke()` to
+expand `@path` tokens in place. A CLI that calls
+`await cli.run({ argumentFiles: true })` accepts `tool @args.txt`.
+Each line of the UTF-8 file supplies one argument. Spaces, quotes, and empty
+lines are literal. Use `@@` to pass a literal leading `@`.
+
+Paths on argv are relative to the working directory. Nested references are
+relative to the including file and may be nested up to 32 levels. Expansion
+happens before parsing, including for tokens after `--`. A diagnostic for a
+token from a file identifies its file and line. Its `tokenIndex` points to the
+original `@path` token on argv.
+
+Dynamic shell completion expands file references before the word being
+completed. Pass `argumentFiles: true` to `resolveDynamicCompletion()` for the
+same behavior when calling it directly.
+
+### Running commands
 
 `run()` reads `Bun.argv.slice(2)`, writes displays and parse failures, invokes
 the deepest selected handler, and returns an exit code. Pass an explicit array
@@ -192,6 +217,80 @@ for executable entry points that detect shell completion requests.
 
 Each command path that can be selected by `run()` needs a handler. Set
 `subcommandRequired: true` when only subcommands are runnable.
+
+### Lifecycle hooks
+
+`setup` hooks run from the root to the selected command, then the selected
+handler runs. Cleanup hooks run in reverse order, including after a handler
+failure. If a setup hook fails, the runner cleans up scopes it already entered.
+Hooks run only when executing a successfully parsed command.
+
+Use `hookToken<T>()` with `provide()` and `get()` to share typed values within
+one invocation.
+
+```ts
+import {
+  command,
+  hookToken,
+} from '@konstit/cli';
+
+const started = hookToken<number>('start time');
+const cli = command('tool', {
+  setup: ({ provide }) => provide(started, Date.now()),
+  subcommands: [command('status', {
+    handler: async (_args, { get, stdout }) => {
+      await stdout(`Elapsed: ${Date.now() - get(started)} ms\n`);
+    },
+  })],
+});
+```
+
+### JSON command results
+
+Set `enableJsonFlag: true` on the command that accepts `--json`. When the flag
+is supplied, the runner suppresses writes made through `context.stdout` and
+the stdout methods of `context.output`, then writes the structured object or
+array returned by the handler as one JSON document. Writes to stderr continue.
+A numeric return value remains an exit code, and a handler that returns no
+value exits successfully with no payload.
+
+```ts
+const status = command('status', {
+  enableJsonFlag: true,
+  handler: async (_args, { stdout }) => {
+    await stdout('Ready\n');
+    return { ready: true };
+  },
+});
+```
+
+`status` prints `Ready`, and `status --json` prints `{"ready":true}`. Declare
+the flag on each subcommand that should accept it after the subcommand name.
+
+### Interactive option prompts
+
+Declare `prompt: true` or a prompt message on a scalar option. Enable terminal
+prompts with `run({ interactive: true })`. They use terminal input and stderr.
+For tests and embedded invocations, pass a `prompt` callback to `run()` or
+`invoke()`. The callback receives the argument name, command path, message,
+and sensitivity. Supply this callback for sensitive values so the caller can
+use a private input method.
+
+```ts
+const login = command('login', {
+  args: [
+    option('user', parsers.string, { required: true, prompt: 'Username' }),
+  ],
+  handler: async ({ user }, { stdout }) => stdout(`Signed in as ${user}\n`),
+});
+
+await login.run({ interactive: true });
+```
+
+Prompt answers use the configured parser and validation rules.
+`getValueSource()` returns `'prompt'` for a value supplied by a prompt.
+
+### Handler input and output
 
 Handlers can read `context.stdin` as a `ReadableStream<Uint8Array>`. It uses
 process stdin by default. Pass a byte stream in `stdin` to either `run()` or
@@ -564,6 +663,21 @@ global value is owned by its declaring command. A spread or clone creates a new
 object without source metadata.
 
 ## Subcommands
+
+### Default and external subcommands
+
+Set `defaultSubcommand` to the canonical name of a declared child. Explicit
+subcommand names, aliases, and inferred subcommand prefixes still select their
+matching child. Parent options work before the implicit child starts.
+`tool --help` still shows the parent's help, which marks the default child.
+Use the explicit child name to get its shell completion candidates.
+
+Set `externalSubcommand` to a synchronous `(name, argv)` resolver that returns
+a command created by `command()`. The resolver receives the unrecognized
+name and the remaining argument tokens. Return `undefined` to report the
+normal unknown-command diagnostic. A resolved command can declare its own
+arguments and handler. TypeScript preserves the returned command's argument
+types when the resolver returns concrete command declarations.
 
 ```ts
 const clone = command('clone', {
@@ -1454,6 +1568,11 @@ use the same inputs as a command invocation. The shell completion request
 served by `run()` uses that invocation's `config` and `env`.
 
 ## Command metadata and documentation
+
+Set `helpHeading` on a subcommand to place it under a custom heading in the
+parent's help, Markdown, and man pages. For example, give `clone` and `fetch`
+the heading `Repository` to list them together. Subcommands without a heading
+appear under `Commands`.
 
 Set `examples` on a command or subcommand to include an Examples section in
 `--help`, Markdown, and man pages. Examples appear in declaration order.

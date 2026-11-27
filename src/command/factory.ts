@@ -67,13 +67,14 @@ function emptyCommand<const Name extends string>(
     disableVersionFlag: false,
     hideStandardFlagsInSubcommandHelp: false,
     hidden: false,
+    enableJsonFlag: false,
   }));
 }
 
 /** Starts an immutable command definition. */
 export function command<const Name extends string>(
   name: Name,
-): HandledCommand<Name, EmptyObject, EmptyObject, false, never>;
+): HandledCommand<Name, EmptyObject, EmptyObject, false, never, EmptyObject, never>;
 /** Starts an immutable command definition from tuple-based options. */
 export function command<
   const Name extends string,
@@ -84,13 +85,15 @@ export function command<
     string,
     StringKeyOf<FieldsFromArguments<Arguments>>
   >[] = readonly [],
+  const ExternalSubcommand extends AnyCommand = never,
 >(
   name: Name,
   options: CheckedCommandOptions<
     Arguments,
     Subcommands,
     SubcommandRequired,
-    Groups
+    Groups,
+    ExternalSubcommand
   >,
 ): HandledCommand<
   Name,
@@ -98,7 +101,8 @@ export function command<
   SubcommandsFromTuple<Subcommands>,
   SubcommandRequired,
   GroupNamesFromTuple<Groups>,
-  DirectFieldsFromArguments<Arguments>
+  DirectFieldsFromArguments<Arguments>,
+  ExternalSubcommand
 >;
 export function command(
   name: string,
@@ -106,11 +110,15 @@ export function command(
     readonly AnyArgument[],
     readonly AnyCommand[],
     boolean,
-    readonly CommandGroupOptions<string, string>[]
+    readonly CommandGroupOptions<string, string>[],
+    AnyCommand
   > = {},
 ): HandledCommand {
   validateCommandOptions(options);
   let configured = emptyCommand(name);
+  if (options.helpHeading !== undefined) {
+    configured = configured.helpHeading(options.helpHeading);
+  }
   if (options.deprecated !== undefined || options.deprecatedAliases !== undefined) {
     configured = new Command(copyCommand(getCommandDefinition(configured), {
       ...(options.deprecated === undefined ? {} : { deprecated: options.deprecated }),
@@ -155,6 +163,9 @@ export function command(
   if (options.version !== undefined) {
     configured = configured.version(options.version);
   }
+  if (options.enableJsonFlag !== undefined) {
+    configured = configured.enableJsonFlag(options.enableJsonFlag);
+  }
   for (const alias of options.visibleAliases ?? []) {
     configured = configured.visibleAlias(alias);
   }
@@ -166,6 +177,14 @@ export function command(
   }
   for (const subcommand of options.subcommands ?? []) {
     configured = configured.subcommand(subcommand);
+  }
+  if (options.defaultSubcommand !== undefined) {
+    configured = configured.defaultSubcommand(options.defaultSubcommand);
+  }
+  if (options.externalSubcommand !== undefined) {
+    configured = new Command(copyCommand(getCommandDefinition(configured), {
+      externalSubcommand: options.externalSubcommand,
+    }));
   }
   if (options.inferSubcommands !== undefined) {
     configured = configured.inferSubcommands(options.inferSubcommands);
@@ -303,7 +322,13 @@ export function command(
     configured = new Command(copyCommand(getCommandDefinition(configured), { validate: options.validate }));
   }
   if (options.handler !== undefined) {
-    return terminalCommand(configured.handler(options.handler as never));
+    configured = configured.handler(options.handler as never) as unknown as typeof configured;
+  }
+  if (options.setup !== undefined) {
+    configured = configured.setup(options.setup);
+  }
+  if (options.cleanup !== undefined) {
+    configured = configured.cleanup(options.cleanup);
   }
   return terminalCommand(configured);
 }

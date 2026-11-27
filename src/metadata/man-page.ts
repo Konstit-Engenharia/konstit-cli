@@ -4,6 +4,7 @@ import {
   argumentDescription,
   argumentDisplay,
   metadataArgumentGroups,
+  metadataCommandGroups,
   relationDescriptions,
   usageText,
 } from './documentation.js';
@@ -132,11 +133,13 @@ function appendManCommands(command: CommandMetadata, lines: string[]): void {
   if (command.subcommands.length === 0) {
     return;
   }
-  lines.push('.SH COMMANDS');
-  for (const child of command.subcommands) {
-    const aliases = child.aliases.map(({ name }) => name);
-    const aliasText = aliases.length === 0 ? '' : ` (aliases: ${aliases.join(', ')})`;
-    lines.push('.TP', `.B ${roffText(child.path.join(' '))}`, roffText(`${child.about ?? ''}${aliasText}`));
+  for (const group of metadataCommandGroups(command)) {
+    lines.push(roffSectionHeading(group.heading));
+    for (const child of group.arguments) {
+      const aliases = child.aliases.map(({ name }) => name);
+      const aliasText = aliases.length === 0 ? '' : ` (aliases: ${aliases.join(', ')})`;
+      lines.push('.TP', `.B ${roffText(child.path.join(' '))}`, roffText(`${child.about ?? ''}${aliasText}`));
+    }
   }
 }
 

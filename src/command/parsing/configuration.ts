@@ -43,6 +43,12 @@ function configSubcommand(
   );
 }
 
+function inheritedArgumentDefinitions(
+  inheritedGlobals: readonly GlobalBinding[],
+): readonly ArgumentDefinition[] {
+  return inheritedGlobals.map(({ argument }) => argument);
+}
+
 export function validateConfigForCommand(
   definition: CommandDefinition,
   config: CommandConfig | undefined,
@@ -160,7 +166,7 @@ export function applyConfigValues(
   if (config?.values === undefined) {
     return;
   }
-  const inheritedArguments = inheritedGlobals.map(({ argument }) => argument);
+  const inheritedArguments = inheritedArgumentDefinitions(inheritedGlobals);
   for (const [name, value,] of Object.entries(config.values)) {
     const binding = availableArgumentBindings(definition, state, inheritedGlobals).find(
       ({ argument }) => argument.name === name,
@@ -190,6 +196,45 @@ export function applyConfigValues(
     if (file !== undefined && supplied !== undefined) {
       binding.state.argumentStates.set(name, { ...supplied, configFile: file });
     }
+  }
+}
+
+/** Applies values collected by an interactive runner without changing argv. */
+export function applyPromptValues(
+  definition: CommandDefinition,
+  promptValues: Readonly<Record<string, string>> | undefined,
+  path: readonly string[],
+  state: ParseState,
+  inheritedGlobals: readonly GlobalBinding[],
+): void {
+  if (promptValues === undefined) {
+    return;
+  }
+  const inheritedArguments = inheritedArgumentDefinitions(inheritedGlobals);
+  for (const argument of definition.arguments) {
+    const raw = promptValues[`${path.join('\u0000')}:${argument.name}`];
+    if (raw === undefined) {
+      continue;
+    }
+    const current = state.argumentStates.get(argument.name);
+    if (
+      current !== undefined
+      && (current.kind === 'supplied' || current.kind === 'unparsed' || current.source === 'env')
+    ) {
+      continue;
+    }
+    storeRawValues(
+      argument,
+      [raw],
+      `prompt:${argument.name}`,
+      definition,
+      path,
+      state,
+      'prompt',
+      undefined,
+      undefined,
+      inheritedArguments,
+    );
   }
 }
 

@@ -223,6 +223,8 @@ export interface ConditionalDefaultMetadata {
 export interface CommandMetadata {
   /** The canonical command name. */
   readonly name: string;
+  /** The heading under which this command is rendered in its parent's help and documentation. */
+  readonly helpHeading?: string;
   /** Canonical command names from the root to this command. */
   readonly path: readonly string[];
   /** The warning message emitted when the command is invoked. */
@@ -297,6 +299,8 @@ export interface CommandMetadata {
   readonly disableHelpFlag: boolean;
   /** Whether the generated `-V` and `--version` flags are disabled. */
   readonly disableVersionFlag: boolean;
+  /** Whether the command accepts the built-in `--json` output flag. */
+  readonly enableJsonFlag: boolean;
   /** Whether the command is omitted from parent help and completion. */
   readonly hidden: boolean;
 }

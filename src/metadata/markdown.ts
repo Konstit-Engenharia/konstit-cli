@@ -5,6 +5,7 @@ import {
   argumentDisplay,
   markdownInline,
   metadataArgumentGroups,
+  metadataCommandGroups,
   relationDescriptions,
   usageText,
 } from './documentation.js';
@@ -106,11 +107,13 @@ function appendMarkdownCommands(
   if (command.subcommands.length === 0) {
     return;
   }
-  lines.push('', markdownHeading(headingLevel, 'Commands'));
-  for (const child of command.subcommands) {
-    const aliases = child.aliases.map(({ name }) => markdownInline(name));
-    const aliasText = aliases.length === 0 ? '' : ` (aliases: ${aliases.join(', ')})`;
-    lines.push(`- ${markdownInline(child.path.join(' '))}${aliasText} — ${markdownText(child.about ?? '')}`);
+  for (const group of metadataCommandGroups(command)) {
+    lines.push('', markdownHeading(headingLevel, markdownText(group.heading)));
+    for (const child of group.arguments) {
+      const aliases = child.aliases.map(({ name }) => markdownInline(name));
+      const aliasText = aliases.length === 0 ? '' : ` (aliases: ${aliases.join(', ')})`;
+      lines.push(`- ${markdownInline(child.path.join(' '))}${aliasText} — ${markdownText(child.about ?? '')}`);
+    }
   }
 }
 

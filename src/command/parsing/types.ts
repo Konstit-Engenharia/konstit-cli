@@ -16,7 +16,11 @@ export interface ParseSessionData {
   readonly defaultColor: boolean;
   readonly env: Environment;
   readonly warnings: DeprecationWarning[];
+  externalCommands?: Map<string, CommandDefinition>;
+  readonly promptValues?: Readonly<Record<string, string>>;
   colorMode?: ColorMode;
+  /** Whether the invocation requested JSON output. */
+  jsonRequested?: boolean;
 }
 
 export interface CollectingParseSession extends ParseSessionData {

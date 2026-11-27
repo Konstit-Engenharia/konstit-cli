@@ -74,11 +74,18 @@ export function option(
   options: RuntimeOptionOptions<unknown> = {},
 ): ArgumentType {
   validateArgumentOptionKeys('option', options);
-  const definition = applyNamedArgumentOptions(
+  let definition = applyNamedArgumentOptions(
     baseDefinition(name, 'option', parser),
     options,
   );
-  return configuredArgument(applyValueArgumentOptions(definition, options));
+  definition = applyValueArgumentOptions(definition, options);
+  if (options.prompt !== undefined) {
+    if (options.prompt !== false && (definition.repeatable || definition.maxValues !== 1)) {
+      throw new TypeError('Prompted options must accept one scalar value');
+    }
+    definition = copyDefinition(definition, { prompt: options.prompt });
+  }
+  return configuredArgument(definition);
 }
 
 /** Creates a positional that accepts one string. Positionals are consumed in declaration order. */

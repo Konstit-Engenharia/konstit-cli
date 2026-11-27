@@ -2,6 +2,10 @@ import type { Environment } from '../../command/environment.js';
 import type { CommandType } from '../../command/types.js';
 import type { CommandConfig } from '../../configuration/shape.js';
 import {
+  CliError,
+  ErrorKind,
+} from '../../result/error.js';
+import {
   writeOutput,
   type OutputWriter,
 } from '../../terminal/output.js';
@@ -14,6 +18,7 @@ export interface DynamicCompletionRequestOptions {
   readonly argv?: readonly string[];
   /** Index of the incomplete word. Defaults to the final argv item. */
   readonly cursor?: number;
+  readonly argumentFiles?: boolean;
   readonly env?: Environment;
   /** Configuration values used below CLI and environment values. */
   readonly config?: CommandConfig;
@@ -25,15 +30,24 @@ export async function runDynamicCompletionRequest(
   configuredCommand: CommandType,
   options: DynamicCompletionRequestOptions = {},
 ): Promise<number> {
-  const result: DynamicCompletionResult = await resolveCompletion(
-    configuredCommand,
-    options.argv ?? Bun.argv.slice(2),
-    {
-      ...(options.cursor === undefined ? {} : { cursor: options.cursor }),
-      ...(options.config === undefined ? {} : { config: options.config }),
-    },
-    options.env ?? Bun.env,
-  );
+  let result: DynamicCompletionResult;
+  try {
+    result = await resolveCompletion(
+      configuredCommand,
+      options.argv ?? Bun.argv.slice(2),
+      {
+        ...(options.cursor === undefined ? {} : { cursor: options.cursor }),
+        ...(options.argumentFiles === undefined ? {} : { argumentFiles: options.argumentFiles }),
+        ...(options.config === undefined ? {} : { config: options.config }),
+      },
+      options.env ?? Bun.env,
+    );
+  } catch (error) {
+    if (error instanceof CliError && error.kind === ErrorKind.InvalidArgumentFile) {
+      return 0;
+    }
+    throw error;
+  }
   if (result.candidates.length > 0) {
     const output = `${
       result.candidates.map(({ value, description }) => `${encodeProtocolField(value)}\t${encodeProtocolField(description ?? '')}`).join(

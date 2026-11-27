@@ -29,11 +29,16 @@ import {
 } from '../terminal/output.js';
 import { createStyle } from '../terminal/style.js';
 import { readEnv } from './environment.js';
-import { outputColorModes } from './parse.js';
+import {
+  externalCommandDefinitions,
+  jsonOutputModes,
+  outputColorModes,
+} from './parse.js';
 import type { CommandDefinition } from './schema.js';
 import type {
   HandlerContext,
   HandlerResult,
+  HookToken,
   RunOptions,
 } from './types.js';
 
@@ -42,6 +47,7 @@ interface SelectedCommand {
   readonly args: Record<string, unknown>;
   readonly globals: readonly SelectedGlobal[];
   readonly path: readonly string[];
+  readonly commands: readonly CommandDefinition[];
 }
 
 interface SelectedGlobal {
@@ -53,7 +59,9 @@ function selectDeepestCommand(
   definition: CommandDefinition,
   args: Record<string, unknown>,
   path: readonly string[],
+  externalCommands: ReadonlyMap<string, CommandDefinition> | undefined,
   inheritedGlobals: readonly SelectedGlobal[] = [],
+  commands: readonly CommandDefinition[] = [definition],
 ): SelectedCommand {
   const globals = [
     ...inheritedGlobals,
@@ -71,12 +79,12 @@ function selectDeepestCommand(
     || typeof parsedSubcommand.args !== 'object'
     || parsedSubcommand.args === null
   ) {
-    return { definition, args, globals, path };
+    return { definition, args, globals, path, commands };
   }
 
   const child = definition.subcommands.find(
     ({ name }) => name === parsedSubcommand.name,
-  );
+  ) ?? externalCommands?.get([...path, parsedSubcommand.name].join('\u0000'));
   if (child === undefined) {
     throw new Error(
       `Internal parser result references unknown subcommand '${parsedSubcommand.name}'`,
@@ -86,7 +94,9 @@ function selectDeepestCommand(
     child,
     parsedSubcommand.args as Record<string, unknown>,
     [...path, child.name],
+    externalCommands,
     globals,
+    [...commands, child],
   );
 }
 
@@ -107,6 +117,7 @@ async function writeParseFailure(error: CliError, options: RunOptions): Promise<
       ...(error.argumentName === undefined ? {} : { argumentName: error.argumentName }),
       commandPath: error.commandPath,
       ...(error.tokenIndex === undefined ? {} : { tokenIndex: error.tokenIndex }),
+      ...(error.argumentFile === undefined ? {} : { argumentFile: error.argumentFile }),
       suggestions: error.suggestions,
       relatedArguments: error.relatedArguments,
     }, options);
@@ -240,10 +251,7 @@ async function writeDisplay(
   return 0;
 }
 
-function normalizeHandlerExitCode(value: HandlerResult): number {
-  if (value === undefined) {
-    return 0;
-  }
+function normalizeHandlerExitCode(value: number): number {
   if (!Number.isSafeInteger(value) || value < 0 || value > 255) {
     throw new RangeError('A command handler exit code must be an integer from 0 to 255');
   }
@@ -276,6 +284,7 @@ export async function runConfiguredHandler<Args extends object>(
     definition,
     result.value as Record<string, unknown>,
     [definition.name],
+    externalCommandDefinitions.get(result.value as object),
   );
   if (selected.definition.handler === undefined) {
     throw new TypeError(
@@ -284,12 +293,14 @@ export async function runConfiguredHandler<Args extends object>(
   }
   await writeWarnings(result, options);
   const mode = outputColorModes.get(result);
+  const jsonOutput = jsonOutputModes.get(result) === true;
   const colors = {
     stdout: resolveOutputColor('stdout', mode, options.color, options.stdout, options.env),
     stderr: resolveOutputColor('stderr', mode, options.color, options.stderr, options.env),
   };
   let stdin = options.stdin;
   const signal = options.signal ?? new AbortController().signal;
+  const providedValues = new Map<object, unknown>();
   const context: HandlerContext = Object.freeze({
     commandPath: Object.freeze([...selected.path]),
     signal,
@@ -297,13 +308,28 @@ export async function runConfiguredHandler<Args extends object>(
       stdin ??= Bun.stdin.stream();
       return stdin;
     },
-    stdout: (chunk: string) => writeOutput('stdout', chunk, options.stdout),
+    stdout: (chunk: string) =>
+      jsonOutput
+        ? Promise.resolve()
+        : writeOutput('stdout', chunk, options.stdout),
     stderr: (chunk: string) => writeOutput('stderr', chunk, options.stderr),
     style: createStyle(colors, lsColors),
     output: createConsole(
-      options.output,
+      jsonOutput
+        ? { ...options.output, stdout: () => {} }
+        : options.output,
       resolveOutputColor('stderr', mode, options.color, options.output?.stderr, options.env),
     ),
+    get<Value>(token: HookToken<Value>): Value {
+      if (!providedValues.has(token)) {
+        const label = token.description === undefined ? 'requested hook value' : `hook value '${token.description}'`;
+        throw new TypeError(`No ${label} has been provided for command '${selected.path.join(' ')}'`);
+      }
+      return providedValues.get(token) as Value;
+    },
+    provide<Value>(token: HookToken<Value>, value: Value): void {
+      providedValues.set(token, value);
+    },
     global<ArgumentType extends AnyGlobalArgument>(argument: ArgumentType) {
       const argumentDefinition = getArgumentDefinition(argument);
       if (!argumentDefinition.global) {
@@ -320,13 +346,39 @@ export async function runConfiguredHandler<Args extends object>(
       return binding.value as ArgumentOutput<ArgumentType>;
     },
   });
+  const enteredHooks: CommandDefinition[] = [];
+  let handlerResult: HandlerResult | undefined;
+  let failure: { readonly error: unknown; } | undefined;
   try {
-    return normalizeHandlerExitCode(await selected.definition.handler(selected.args as never, context));
-  } catch (error) {
-    if (!(error instanceof CommandFailure)) {
-      throw error;
+    for (const command of selected.commands) {
+      if (command.setup === undefined) {
+        if (command.cleanup !== undefined) {
+          enteredHooks.push(command);
+        }
+        continue;
+      }
+      await command.setup(context);
+      enteredHooks.push(command);
     }
-    const { message, exitCode } = error;
+    handlerResult = await selected.definition.handler(selected.args as never, context);
+  } catch (error) {
+    failure = { error };
+  }
+  for (const command of enteredHooks.toReversed()) {
+    if (command.cleanup === undefined) {
+      continue;
+    }
+    try {
+      await command.cleanup(context);
+    } catch (error) {
+      failure ??= { error };
+    }
+  }
+  if (failure !== undefined) {
+    if (!(failure.error instanceof CommandFailure)) {
+      throw failure.error;
+    }
+    const { message, exitCode } = failure.error;
     if (options.diagnostics === 'json') {
       await writeJsonDiagnostic({
         type: 'command-failure',
@@ -339,6 +391,23 @@ export async function runConfiguredHandler<Args extends object>(
     await writeMessage('stderr', message.endsWith('\n') ? message : `${message}\n`, options);
     return exitCode;
   }
+  if (handlerResult === undefined) {
+    return 0;
+  }
+  if (typeof handlerResult === 'number') {
+    return normalizeHandlerExitCode(handlerResult);
+  }
+  if (handlerResult === null || typeof handlerResult !== 'object' || !selected.commands.some(({ enableJsonFlag }) => enableJsonFlag)) {
+    throw new RangeError('A command handler exit code must be an integer from 0 to 255');
+  }
+  if (jsonOutput) {
+    const serialized = JSON.stringify(handlerResult);
+    if (serialized === undefined) {
+      throw new TypeError('A command handler JSON result must serialize to a JSON value');
+    }
+    await writeMessage('stdout', `${serialized}\n`, options);
+  }
+  return 0;
 }
 
 async function writeWarnings(result: object, options: RunOptions): Promise<void> {

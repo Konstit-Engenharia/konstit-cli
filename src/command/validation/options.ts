@@ -5,6 +5,7 @@ import {
 } from './shape.js';
 
 const commandOptionKeys = new Set([
+  'helpHeading',
   'deprecated',
   'deprecatedAliases',
   'version',
@@ -20,6 +21,8 @@ const commandOptionKeys = new Set([
   'visibleAliases',
   'args',
   'subcommands',
+  'defaultSubcommand',
+  'externalSubcommand',
   'inferSubcommands',
   'subcommandRequired',
   'argsConflictWithSubcommands',
@@ -47,6 +50,9 @@ const commandOptionKeys = new Set([
   'strictRelations',
   'validate',
   'handler',
+  'setup',
+  'cleanup',
+  'enableJsonFlag',
 ]);
 
 const commandStringOptionKeys = [
@@ -59,7 +65,23 @@ const commandStringOptionKeys = [
   'afterHelp',
   'overrideUsage',
   'overrideHelp',
+  'defaultSubcommand',
 ] as const;
+
+export function validateCommandHelpHeading(value: unknown): void {
+  if (value === undefined) {
+    return;
+  }
+  if (typeof value !== 'string') {
+    throw new TypeError('Command option \'helpHeading\' must be a string');
+  }
+  if (value === '') {
+    throw new TypeError('Command option \'helpHeading\' cannot be empty');
+  }
+  if (/[\r\n]/u.test(value)) {
+    throw new TypeError('Command option \'helpHeading\' cannot contain line breaks');
+  }
+}
 
 const commandBooleanOptionKeys = [
   'inferSubcommands',
@@ -73,6 +95,7 @@ const commandBooleanOptionKeys = [
   'hideStandardFlagsInSubcommandHelp',
   'hide',
   'strictRelations',
+  'enableJsonFlag',
 ] as const;
 
 const conditionalSetKeys = new Set(['conditions', 'target']);
@@ -250,6 +273,7 @@ function validateGroups(value: unknown): void {
 
 export function validateCommandOptions(options: unknown): void {
   validateClosedObject(options, commandOptionKeys, 'Command configuration');
+  validateCommandHelpHeading(options.helpHeading);
   for (const key of commandStringOptionKeys) {
     validateOptionalString(options, key);
   }
@@ -286,6 +310,7 @@ export function validateCommandOptions(options: unknown): void {
   }
   if (
     options.subcommandRequired === true
+    && options.externalSubcommand === undefined
     && (options.subcommands === undefined
       || (options.subcommands as readonly unknown[]).length === 0)
   ) {
@@ -345,7 +370,7 @@ export function validateCommandOptions(options: unknown): void {
   if (options.groups !== undefined) {
     validateGroups(options.groups);
   }
-  for (const key of ['validate', 'handler'] as const) {
+  for (const key of ['validate', 'handler', 'setup', 'cleanup', 'externalSubcommand'] as const) {
     if (options[key] !== undefined && typeof options[key] !== 'function') {
       throw new TypeError(`Command option '${key}' must be a function`);
     }

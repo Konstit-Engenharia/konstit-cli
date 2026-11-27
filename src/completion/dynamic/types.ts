@@ -68,6 +68,8 @@ export interface DynamicCompletionOptions {
    * a new empty word. The default is the final argv word, or zero for [].
    */
   readonly cursor?: number;
+  /** Expands @path tokens before the incomplete word. Defaults to false. */
+  readonly argumentFiles?: boolean;
   /** Applies prefix filtering to provider and static values. The default is true. */
   readonly filter?: boolean;
   /** Environment variables used for argument fallbacks. Defaults to `Bun.env`. */

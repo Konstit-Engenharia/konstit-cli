@@ -18,6 +18,8 @@ export interface CommandConfig extends CommandConfigNode {
 
 /** Options that affect parsing without changing the command definition. */
 export interface ParseOptions {
+  /** Expands @path tokens into arguments before parsing. Defaults to false. */
+  readonly argumentFiles?: boolean;
   /** Caller supplied values used below CLI and environment values. */
   readonly config?: CommandConfig;
   /** Environment variables for this invocation. Defaults to Bun.env. */

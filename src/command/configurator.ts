@@ -17,6 +17,7 @@ import {
   parseConfigured,
   tryParseConfigured,
 } from './parse.js';
+import { promptConfiguredResult } from './prompt.js';
 import { runConfiguredHandler } from './runner.js';
 import type {
   CommandDefinition,
@@ -31,6 +32,7 @@ import {
 } from './store.js';
 import type {
   CommandArguments,
+  CommandHook,
   CommandType,
   commandTypeKey,
   DuplicateArgument,
@@ -54,6 +56,7 @@ import {
   validateCommandAlias,
   validateCommandName,
 } from './validation/definition.js';
+import { validateCommandHelpHeading } from './validation/options.js';
 
 function toValueConditions(
   conditions: readonly (readonly [string, unknown])[],
@@ -124,6 +127,12 @@ export class Command<
     patch: Partial<CommandDefinition>,
   ): Command<Name, NextFields, NextSubcommands, NextRequired, NextGroups> {
     return new Command(copyCommand(getCommandDefinition(this), patch));
+  }
+
+  /** Groups this command under a named heading in its parent's help and documentation. */
+  helpHeading(text: string): Command<Name, Fields, Subcommands, SubcommandRequired, Groups> {
+    validateCommandHelpHeading(text);
+    return this.with({ helpHeading: text });
   }
 
   /** Sets the short command description shown in help and completion. */
@@ -323,6 +332,18 @@ export class Command<
         >
       >
     >({ subcommands: [...definition.subcommands, childDefinition] });
+  }
+
+  /** Selects a child command when the invocation omits a subcommand. */
+  defaultSubcommand(
+    name: string,
+  ): Command<Name, Fields, Subcommands, SubcommandRequired, Groups> {
+    const definition = getCommandDefinition(this);
+    const child = definition.subcommands.find((candidate) => candidate.name === name);
+    if (child === undefined) {
+      throw new TypeError(`Unknown default subcommand: ${name}`);
+    }
+    return this.with({ defaultSubcommand: child.name });
   }
 
   /** Makes result.subcommand non-optional. */
@@ -595,6 +616,21 @@ export class Command<
     return this.with({ handler });
   }
 
+  /** Attaches a lifecycle hook that runs before the selected handler. */
+  setup(hook: CommandHook): Command<Name, Fields, Subcommands, SubcommandRequired, Groups> {
+    return this.with({ setup: hook });
+  }
+
+  /** Attaches a lifecycle hook that runs after the selected handler. */
+  cleanup(hook: CommandHook): Command<Name, Fields, Subcommands, SubcommandRequired, Groups> {
+    return this.with({ cleanup: hook });
+  }
+
+  /** Enables the built-in `--json` output flag. */
+  enableJsonFlag(enabled = true): Command<Name, Fields, Subcommands, SubcommandRequired, Groups> {
+    return this.with({ enableJsonFlag: enabled });
+  }
+
   /** Parses explicit argv. User-facing failures throw CliError. */
   parse(argv: readonly string[], options: ParseOptions = {}): ParseOutcome<Infer<this>> {
     const definition = getCommandDefinition(this);
@@ -632,22 +668,30 @@ export class Command<
           runDynamicCompletionRequest(this, {
             argv,
             env,
+            ...(options.argumentFiles === undefined ? {} : { argumentFiles: options.argumentFiles }),
             ...(options.config === undefined ? {} : { config: options.config }),
             ...(options.stdout === undefined ? {} : { stdout: options.stdout }),
           }),
       );
     }
     const definition = getCommandDefinition(this);
-    return runConfiguredHandler(
+    const defaultColor = handlerColorEnabled(options);
+    const parsed = tryParseConfigured<Infer<this>>(
       definition,
-      tryParseConfigured<Infer<this>>(
-        definition,
-        argv,
-        handlerColorEnabled(options),
-        options,
-      ),
+      argv,
+      defaultColor,
       options,
     );
+    if (options.prompt === undefined && options.interactive !== true) {
+      return runConfiguredHandler(definition, parsed, options);
+    }
+    return promptConfiguredResult(
+      definition,
+      argv,
+      parsed,
+      defaultColor,
+      options,
+    ).then((prompted) => runConfiguredHandler(definition, prompted, options));
   }
 
   /** Executes a result from this command's parse or tryParse without parsing again. */

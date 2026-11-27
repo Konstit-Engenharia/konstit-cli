@@ -31,6 +31,20 @@ import {
   storeSwitch,
 } from './values.js';
 
+function promptValue(
+  state: ParseState,
+  path: readonly string[],
+  argument: ArgumentDefinition,
+): string | undefined {
+  return state.session.promptValues?.[`${path.join('\u0000')}:${argument.name}`];
+}
+
+function inheritedArgumentDefinitions(
+  inheritedGlobals: readonly GlobalBinding[],
+): readonly ArgumentDefinition[] {
+  return inheritedGlobals.map(({ argument }) => argument);
+}
+
 export function parseLongOption(
   definition: CommandDefinition,
   argv: readonly string[],
@@ -49,7 +63,7 @@ export function parseLongOption(
     const suggestions = suggestTokenCandidates(
       `--${name}`,
       definition,
-      inheritedGlobals.map(({ argument }) => argument),
+      inheritedArgumentDefinitions(inheritedGlobals),
     );
     throw commandError(
       ErrorKind.UnknownArgument,
@@ -57,12 +71,12 @@ export function parseLongOption(
         suggestToken(
           `--${name}`,
           definition,
-          inheritedGlobals.map(({ argument }) => argument),
+          inheritedArgumentDefinitions(inheritedGlobals),
         )
       }`,
       definition,
       path,
-      inheritedGlobals.map(({ argument }) => argument),
+      inheritedArgumentDefinitions(inheritedGlobals),
       {
         tokenIndex: argvOffset + index,
         suggestions,
@@ -95,7 +109,7 @@ export function parseLongOption(
         `argument '--${name}' does not accept a value`,
         definition,
         path,
-        inheritedGlobals.map(({ argument }) => argument),
+        inheritedArgumentDefinitions(inheritedGlobals),
         { argumentName: argument.name, tokenIndex: argvOffset + index },
       );
     }
@@ -105,7 +119,7 @@ export function parseLongOption(
       definition,
       path,
       binding.state,
-      inheritedGlobals.map(({ argument: inherited }) => inherited),
+      inheritedArgumentDefinitions(inheritedGlobals),
       argument.negativeLong === name ? false : undefined,
       argvOffset + index,
       argumentDefinition.argsOverrideSelf,
@@ -113,6 +127,23 @@ export function parseLongOption(
     return index + 1;
   }
   if (argument.requireEquals && inlineValue === undefined) {
+    const prompted = promptValue(state, path, argument);
+    if (prompted !== undefined) {
+      storeRawValues(
+        argument,
+        [prompted],
+        `--${name}`,
+        definition,
+        path,
+        binding.state,
+        'prompt',
+        undefined,
+        undefined,
+        inheritedArgumentDefinitions(inheritedGlobals),
+        argumentDefinition.argsOverrideSelf,
+      );
+      return index + 1;
+    }
     if (argument.hasDefaultMissingValue) {
       storeParsedValues(
         argument,
@@ -123,7 +154,7 @@ export function parseLongOption(
         binding.state,
         'cli',
         argvOffset + index,
-        inheritedGlobals.map(({ argument: inherited }) => inherited),
+        inheritedArgumentDefinitions(inheritedGlobals),
         argumentDefinition.argsOverrideSelf,
       );
       return index + 1;
@@ -133,7 +164,7 @@ export function parseLongOption(
       `an equals sign is required for '--${name}=<VALUE>'`,
       definition,
       path,
-      inheritedGlobals.map(({ argument }) => argument),
+      inheritedArgumentDefinitions(inheritedGlobals),
       {
         argumentName: argument.name,
         tokenIndex: argvOffset + index,
@@ -149,8 +180,26 @@ export function parseLongOption(
     definition,
     path,
     `--${name}`,
-    inheritedGlobals.map(({ argument }) => argument),
+    inheritedArgumentDefinitions(inheritedGlobals),
+    promptValue(state, path, argument),
   );
+  const prompted = promptValue(state, path, argument);
+  if (consumed.values.length === 0 && prompted !== undefined) {
+    storeRawValues(
+      argument,
+      [prompted],
+      `--${name}`,
+      definition,
+      path,
+      binding.state,
+      'prompt',
+      undefined,
+      undefined,
+      inheritedArgumentDefinitions(inheritedGlobals),
+      argumentDefinition.argsOverrideSelf,
+    );
+    return consumed.nextIndex;
+  }
   if (consumed.values.length === 0 && argument.hasDefaultMissingValue) {
     storeParsedValues(
       argument,
@@ -161,7 +210,7 @@ export function parseLongOption(
       binding.state,
       'cli',
       argvOffset + index,
-      inheritedGlobals.map(({ argument: inherited }) => inherited),
+      inheritedArgumentDefinitions(inheritedGlobals),
       argumentDefinition.argsOverrideSelf,
     );
   } else {
@@ -175,7 +224,7 @@ export function parseLongOption(
       'cli',
       consumed.valueIndices,
       argvOffset + index,
-      inheritedGlobals.map(({ argument: inherited }) => inherited),
+      inheritedArgumentDefinitions(inheritedGlobals),
       argumentDefinition.argsOverrideSelf,
     );
   }
@@ -201,7 +250,7 @@ export function parseShortOptions(
       const suggestions = suggestTokenCandidates(
         `-${short}`,
         definition,
-        inheritedGlobals.map(({ argument }) => argument),
+        inheritedArgumentDefinitions(inheritedGlobals),
       );
       throw commandError(
         ErrorKind.UnknownArgument,
@@ -209,12 +258,12 @@ export function parseShortOptions(
           suggestToken(
             `-${short}`,
             definition,
-            inheritedGlobals.map(({ argument }) => argument),
+            inheritedArgumentDefinitions(inheritedGlobals),
           )
         }`,
         definition,
         path,
-        inheritedGlobals.map(({ argument }) => argument),
+        inheritedArgumentDefinitions(inheritedGlobals),
         {
           tokenIndex: argvOffset + index,
           suggestions,
@@ -237,7 +286,7 @@ export function parseShortOptions(
         definition,
         path,
         binding.state,
-        inheritedGlobals.map(({ argument: inherited }) => inherited),
+        inheritedArgumentDefinitions(inheritedGlobals),
         undefined,
         argvOffset + index,
         argumentDefinition.argsOverrideSelf,
@@ -250,6 +299,23 @@ export function parseShortOptions(
       ? attachedSource.slice(1)
       : attachedSource;
     if (argument.requireEquals && !hasAttachedValue) {
+      const prompted = promptValue(state, path, argument);
+      if (prompted !== undefined) {
+        storeRawValues(
+          argument,
+          [prompted],
+          `-${short}`,
+          definition,
+          path,
+          binding.state,
+          'prompt',
+          undefined,
+          undefined,
+          inheritedArgumentDefinitions(inheritedGlobals),
+          argumentDefinition.argsOverrideSelf,
+        );
+        return index + 1;
+      }
       if (argument.hasDefaultMissingValue) {
         storeParsedValues(
           argument,
@@ -260,7 +326,7 @@ export function parseShortOptions(
           binding.state,
           'cli',
           argvOffset + index,
-          inheritedGlobals.map(({ argument: inherited }) => inherited),
+          inheritedArgumentDefinitions(inheritedGlobals),
           argumentDefinition.argsOverrideSelf,
         );
         return index + 1;
@@ -270,7 +336,7 @@ export function parseShortOptions(
         `an attached value is required for '-${short}<VALUE>'`,
         definition,
         path,
-        inheritedGlobals.map(({ argument }) => argument),
+        inheritedArgumentDefinitions(inheritedGlobals),
         {
           argumentName: argument.name,
           tokenIndex: argvOffset + index,
@@ -286,8 +352,26 @@ export function parseShortOptions(
       definition,
       path,
       `-${short}`,
-      inheritedGlobals.map(({ argument }) => argument),
+      inheritedArgumentDefinitions(inheritedGlobals),
+      promptValue(state, path, argument),
     );
+    const prompted = promptValue(state, path, argument);
+    if (consumed.values.length === 0 && prompted !== undefined) {
+      storeRawValues(
+        argument,
+        [prompted],
+        `-${short}`,
+        definition,
+        path,
+        binding.state,
+        'prompt',
+        undefined,
+        undefined,
+        inheritedArgumentDefinitions(inheritedGlobals),
+        argumentDefinition.argsOverrideSelf,
+      );
+      return consumed.nextIndex;
+    }
     if (consumed.values.length === 0 && argument.hasDefaultMissingValue) {
       storeParsedValues(
         argument,
@@ -298,7 +382,7 @@ export function parseShortOptions(
         binding.state,
         'cli',
         argvOffset + index,
-        inheritedGlobals.map(({ argument: inherited }) => inherited),
+        inheritedArgumentDefinitions(inheritedGlobals),
         argumentDefinition.argsOverrideSelf,
       );
     } else {
@@ -312,7 +396,7 @@ export function parseShortOptions(
         'cli',
         consumed.valueIndices,
         argvOffset + index,
-        inheritedGlobals.map(({ argument: inherited }) => inherited),
+        inheritedArgumentDefinitions(inheritedGlobals),
         argumentDefinition.argsOverrideSelf,
       );
     }
@@ -337,6 +421,7 @@ function consumeOptionValues(
   path: readonly string[],
   display: string,
   inheritedArguments: readonly ArgumentDefinition[],
+  prompted: string | undefined,
 ): ConsumedOptionValues {
   const values: string[] = [];
   const valueIndices: number[] = [];
@@ -397,7 +482,7 @@ function consumeOptionValues(
     nextIndex += 1;
   }
 
-  if (values.length < argument.minValues) {
+  if (values.length < argument.minValues && prompted === undefined) {
     throw commandError(
       ErrorKind.TooFewValues,
       `argument '${display}' requires at least ${argument.minValues} value(s)`,

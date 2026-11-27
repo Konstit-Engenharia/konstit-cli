@@ -1,7 +1,9 @@
 import type { ArgumentDefinition } from '../argument/index.js';
 import type {
   CommandHandler,
+  CommandHook,
   CommandValidator,
+  ExternalSubcommandResolver,
   RequirementConditionInput,
   RequiresIfValueCount,
 } from './types.js';
@@ -138,6 +140,8 @@ export type CommandExampleDefinition = CommandExample | {
 export interface CommandDefinition {
   /** The canonical command name. */
   readonly name: string;
+  /** The heading under which this command is rendered in its parent's help and documentation. */
+  readonly helpHeading?: string;
   /** The warning message emitted when the command is invoked. */
   readonly deprecated?: string;
   /** Warning messages keyed by deprecated alias. */
@@ -166,10 +170,20 @@ export interface CommandDefinition {
   readonly validate?: CommandValidator<never, string>;
   /** The callback invoked by the runner when this command is selected. */
   readonly handler?: CommandHandler<never>;
+  /** Runs before the selected handler after parsing has completed. */
+  readonly setup?: CommandHook;
+  /** Runs after the selected handler, in reverse command order. */
+  readonly cleanup?: CommandHook;
+  /** Adds an opt-in `--json` flag that serializes a JSON handler result to stdout. */
+  readonly enableJsonFlag: boolean;
   /** Arguments declared directly on this command, in declaration order. */
   readonly arguments: readonly ArgumentDefinition[];
   /** Child commands in declaration order, including hidden commands. */
   readonly subcommands: readonly CommandDefinition[];
+  /** Canonical child selected when no explicit subcommand is supplied. */
+  readonly defaultSubcommand?: string;
+  /** Resolves unknown command names to executable command definitions. */
+  readonly externalSubcommand?: ExternalSubcommandResolver;
   /** Dependencies triggered by the presence of a source argument. */
   readonly requirements: readonly RequirementDefinition[];
   /** Dependencies that require any member of a named group. */

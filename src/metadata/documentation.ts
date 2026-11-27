@@ -28,6 +28,12 @@ export function metadataArgumentGroups(
   );
 }
 
+export function metadataCommandGroups(
+  command: CommandMetadata,
+): readonly HelpArgumentGroup<CommandMetadata>[] {
+  return groupHelpArguments(command.subcommands, 'Commands');
+}
+
 export function relationDescriptions(command: CommandMetadata): readonly string[] {
   const lines: string[] = [];
   if (command.argsOverrideSelf) {

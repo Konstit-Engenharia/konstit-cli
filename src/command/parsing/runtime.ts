@@ -26,6 +26,12 @@ import {
   type TrackedValueSource,
 } from '../../result/value-source.js';
 import type { CommandDefinition } from '../schema.js';
+import { getCommandDefinition } from '../store.js';
+import { validateBuiltInCollisions } from '../validation/definition.js';
+import {
+  expandArgumentFiles,
+  locateArgumentFileError,
+} from './argument-files.js';
 import {
   hasCommandLineInput,
   suppliedArgument,
@@ -33,6 +39,7 @@ import {
 import {
   applyConfigValues,
   applyEnvironmentFallbacks,
+  applyPromptValues,
   validateConfigForCommand,
 } from './configuration.js';
 import {
@@ -40,8 +47,11 @@ import {
   parseShortOptions,
 } from './options.js';
 import {
+  argumentLongNames,
   commandWords,
   literalWords,
+  parseLongOptionToken,
+  parseShortOptionCluster,
   recognizeWord,
   type WordState,
 } from './recognition.js';
@@ -51,6 +61,7 @@ import {
 } from './relations.js';
 import {
   acceptsOptionLookingPositional,
+  availableArgumentBindings,
   currentPositional,
   deprecatedAliasMessage,
   initializeValues,
@@ -81,24 +92,29 @@ import {
 export type { ColorMode } from './types.js';
 
 export const outputColorModes = new WeakMap<object, ColorMode>();
+export const jsonOutputModes = new WeakMap<object, boolean>();
+export const externalCommandDefinitions = new WeakMap<object, ReadonlyMap<string, CommandDefinition>>();
 
 export function parseConfigured<Value>(
   definition: CommandDefinition,
   argv: readonly string[],
   defaultColor: boolean,
   options: ParseOptions = {},
+  promptValues?: Readonly<Record<string, string>>,
 ): ParseOutcome<Value> {
   validateConfigShape(options.config);
+  const expanded = options.argumentFiles === true ? expandArgumentFiles(definition, argv) : undefined;
   const session: CollectingParseSession = {
     defaultColor,
     env: options.env ?? Bun.env,
+    ...(promptValues === undefined ? {} : { promptValues }),
     warnings: [],
     validation: { phase: 'collecting', validators: [] },
   };
   try {
     const value = parseDefinition(
       definition,
-      [...argv],
+      expanded?.tokens ?? [...argv],
       0,
       [definition.name],
       [],
@@ -107,25 +123,37 @@ export function parseConfigured<Value>(
     ) as Value;
     const completed = runDeferredValidators(session);
     const outcome = { ok: true, type: 'value', value } as const;
+    if (session.externalCommands !== undefined) {
+      externalCommandDefinitions.set(value as object, session.externalCommands);
+    }
     if (completed.colorMode !== undefined) {
       outputColorModes.set(outcome, completed.colorMode);
+    }
+    if (session.jsonRequested === true) {
+      jsonOutputModes.set(outcome, true);
     }
     setWarnings(outcome, session.warnings);
     return outcome;
   } catch (error) {
+    const failure = error instanceof CliError && expanded !== undefined
+      ? locateArgumentFileError(error, expanded.origins)
+      : error;
     if (session.colorMode !== undefined) {
-      const target = error instanceof DisplayRequest ? error.outcome : error;
+      const target = failure instanceof DisplayRequest ? failure.outcome : failure;
       if (typeof target === 'object' && target !== null) {
         outputColorModes.set(target, session.colorMode);
       }
     }
-    if (error instanceof DisplayRequest) {
-      return error.outcome;
+    if (failure instanceof DisplayRequest) {
+      return failure.outcome;
     }
-    if (error instanceof CliError) {
-      setWarnings(error, session.warnings);
+    if (failure instanceof CliError) {
+      if (session.externalCommands !== undefined) {
+        externalCommandDefinitions.set(failure, session.externalCommands);
+      }
+      setWarnings(failure, session.warnings);
     }
-    throw error;
+    throw failure;
   }
 }
 
@@ -155,9 +183,10 @@ export function tryParseConfigured<Value>(
   argv: readonly string[],
   defaultColor: boolean,
   options: ParseOptions = {},
+  promptValues?: Readonly<Record<string, string>>,
 ): ParseResult<Value> {
   try {
-    return parseConfigured<Value>(definition, argv, defaultColor, options);
+    return parseConfigured<Value>(definition, argv, defaultColor, options, promptValues);
   } catch (error) {
     if (error instanceof CliError) {
       const result = { ok: false, type: 'error', error } as const;
@@ -201,6 +230,36 @@ function parseDefinition(
     .map((argument) => ({ argument, definition, state }));
   const globals = [...inheritedGlobals, ...localGlobals];
 
+  const defaultChild = definition.defaultSubcommand === undefined
+    ? undefined
+    : definition.subcommands.find(({ name }) => name === definition.defaultSubcommand);
+  function selectChild(child: CommandDefinition, start: number, spelling?: string): void {
+    const childPath = [...path, child.name];
+    collectDeprecation(
+      session.warnings,
+      'command',
+      child.name,
+      child.deprecated,
+      childPath,
+    );
+    if (spelling !== undefined) {
+      collectDeprecation(session.warnings, 'alias', spelling, deprecatedAliasMessage(child.deprecatedAliases, spelling), childPath);
+    }
+    state.subcommand = Object.freeze({
+      name: child.name,
+      args: parseDefinition(
+        child,
+        argv.slice(start),
+        argvOffset + start,
+        childPath,
+        globals,
+        session,
+        config?.subcommands?.[child.name],
+        hideStandardFlags || definition.hideStandardFlagsInSubcommandHelp,
+      ),
+    });
+  }
+
   let index = 0;
   let wordState: WordState = commandWords;
   while (index < argv.length) {
@@ -212,6 +271,15 @@ function parseDefinition(
     const positionalArgument = currentPositional(positionals, state);
     if (positionalArgument?.literal === true) {
       wordState = literalWords;
+    }
+    if (
+      wordState.kind === 'command'
+      && definition.enableJsonFlag
+      && token === '--json'
+    ) {
+      session.jsonRequested = true;
+      index += 1;
+      continue;
     }
     if (
       wordState.kind === 'command'
@@ -249,6 +317,10 @@ function parseDefinition(
       );
     const kind = recognizeWord(wordState, token, consumeAsPositional);
     if (kind === 'end-options') {
+      if (defaultChild !== undefined && positionalArgument === undefined) {
+        selectChild(defaultChild, index);
+        break;
+      }
       wordState = literalWords;
       if (positionalArgument?.valueTerminator !== token) {
         index += 1;
@@ -256,6 +328,10 @@ function parseDefinition(
       }
     }
     if (kind === 'long-option') {
+      if (defaultChild !== undefined && !hasOptionBinding(token, kind, definition, state, inheritedGlobals)) {
+        selectChild(defaultChild, index);
+        break;
+      }
       index = parseLongOption(
         definition,
         argv,
@@ -269,6 +345,10 @@ function parseDefinition(
       continue;
     }
     if (kind === 'short-options') {
+      if (defaultChild !== undefined && !hasOptionBinding(token, kind, definition, state, inheritedGlobals)) {
+        selectChild(defaultChild, index);
+        break;
+      }
       index = parseShortOptions(
         definition,
         argv,
@@ -298,7 +378,7 @@ function parseDefinition(
           hideStandardFlags,
         ));
       }
-      const child = resolveSubcommand(
+      let child = resolveSubcommand(
         definition,
         token,
         path,
@@ -306,36 +386,30 @@ function parseDefinition(
         argvOffset + index,
         positionalArgument?.sensitive === true,
       );
-      if (child !== undefined) {
-        const childPath = [...path, child.name];
-        collectDeprecation(
-          session.warnings,
-          'command',
-          child.name,
-          child.deprecated,
-          childPath,
-        );
-        collectDeprecation(
-          session.warnings,
-          'alias',
-          token,
-          deprecatedAliasMessage(child.deprecatedAliases, token),
-          childPath,
-        );
-        state.subcommand = Object.freeze({
-          name: child.name,
-          args: parseDefinition(
+      if (
+        child === undefined
+        && positionalArgument === undefined
+        && definition.externalSubcommand !== undefined
+      ) {
+        const external = definition.externalSubcommand(token, argv.slice(index + 1));
+        if (external !== undefined) {
+          const externalDefinition = getCommandDefinition(external);
+          if (definition.subcommands.some(({ name }) => name === externalDefinition.name)) {
+            throw new TypeError(
+              `External subcommand '${token}' resolved to declared subcommand '${externalDefinition.name}'`,
+            );
+          }
+          validateBuiltInCollisions(externalDefinition, globals.map(({ argument }) => argument));
+          child = externalDefinition;
+          session.externalCommands ??= new Map();
+          session.externalCommands.set(
+            [...path, child.name].join('\u0000'),
             child,
-            argv.slice(index + 1),
-            argvOffset + index + 1,
-            [...path, child.name],
-            globals,
-            session,
-            config?.subcommands?.[child.name],
-            hideStandardFlags || definition.hideStandardFlagsInSubcommandHelp,
-          ),
-        });
-        index = argv.length;
+          );
+        }
+      }
+      if (child !== undefined) {
+        selectChild(child, index + 1, token);
         break;
       }
     }
@@ -346,6 +420,14 @@ function parseDefinition(
         definition,
         inheritedGlobals.map(({ argument }) => argument),
       );
+      if (
+        defaultChild?.arguments.some(({ kind: argumentKind }) => argumentKind === 'positional') === true
+        && wordState.kind === 'command'
+        && !suggestions.some((candidate) => hasExactSubcommand(definition, candidate))
+      ) {
+        selectChild(defaultChild, index);
+        break;
+      }
       const suggestion = suggestToken(
         token,
         definition,
@@ -405,6 +487,9 @@ function parseDefinition(
     }
     index += 1;
   }
+  if (state.subcommand === undefined && defaultChild !== undefined) {
+    selectChild(defaultChild, argv.length);
+  }
 
   // Capture CLI presence before environment fallbacks and overrides can change it.
   const conflictingArgument = definition.argsConflictWithSubcommands && state.subcommand !== undefined
@@ -424,6 +509,7 @@ function parseDefinition(
     overriddenTargets,
   );
   applyConfigValues(definition, config, path, state, inheritedGlobals);
+  applyPromptValues(definition, session.promptValues, path, state, inheritedGlobals);
   applyValueRelations(definition, state, session.env, overriddenTargets);
   refreshInheritedSources(state.subcommand, localGlobals);
   validateParsedValues(
@@ -433,7 +519,10 @@ function parseDefinition(
     inheritedArguments,
     subcommandConflict,
   );
-  if (definition.subcommands.length > 0) {
+  if (
+    definition.subcommands.length > 0
+    || definition.externalSubcommand !== undefined
+  ) {
     state.values.subcommand = state.subcommand;
   }
   for (const value of Object.values(state.values)) {
@@ -467,4 +556,28 @@ function parseDefinition(
     });
   }
   return result;
+}
+
+function hasOptionBinding(
+  token: string,
+  kind: 'long-option' | 'short-options',
+  definition: CommandDefinition,
+  state: ParseState,
+  inheritedGlobals: readonly GlobalBinding[],
+): boolean {
+  const bindings = availableArgumentBindings(definition, state, inheritedGlobals);
+  if (kind === 'long-option') {
+    const { name } = parseLongOptionToken(token);
+    return bindings.some(({ argument }) => argumentLongNames(argument).includes(name));
+  }
+  for (const short of parseShortOptionCluster(token)) {
+    const binding = bindings.find(({ argument }) => argument.short === short);
+    if (binding === undefined) {
+      return false;
+    }
+    if (binding.argument.kind === 'option') {
+      return true;
+    }
+  }
+  return true;
 }

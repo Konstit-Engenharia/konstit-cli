@@ -156,6 +156,43 @@ test('lists subcommand help in Commands when disableVersionFlag is off', () => {
     .not.toContain('<command> --help');
 });
 
+test('groups subcommands under custom headings in help and documentation', () => {
+  const cli = command('tool', {
+    subcommands: [
+      command('clone', { helpHeading: 'Repository', about: 'Clone a repository.' }),
+      command('commit', { helpHeading: 'Repository', about: 'Create a commit.' }),
+      command('status', { about: 'Show the status.' }),
+      command('internal', { helpHeading: 'Repository', hide: true }),
+    ],
+  });
+
+  expect(cli.renderHelp()).toContain(
+    'Repository:\n  clone   Clone a repository.\n  commit  Create a commit.\n\nCommands:\n  status            Show the status.\n  help              Print help for a subcommand\n  <command> --help  Print help text for command.\n',
+  );
+  expect(cli.renderHelp()).not.toContain('internal');
+  expect(renderMarkdown(cli)).toContain(
+    '## Repository\n- `tool clone` — Clone a repository\\.\n- `tool commit` — Create a commit\\.\n\n## Commands\n- `tool status` — Show the status\\.\n',
+  );
+  expect(renderManPage(cli)).toContain(
+    '.SH REPOSITORY\n.TP\n.B tool clone\nClone a repository.\n.TP\n.B tool commit\nCreate a commit.\n.SH COMMANDS\n',
+  );
+  expect(describeCommand(cli).subcommands.map(({ name, helpHeading }) => [name, helpHeading])).toEqual([
+    ['clone', 'Repository'],
+    ['commit', 'Repository'],
+    ['status', undefined],
+  ]);
+  const groupedOnly = command('tool', {
+    subcommands: [command('run', { helpHeading: 'Operations' })],
+  });
+  expect(groupedOnly.renderHelp()).toContain('Commands:\n  help              Print help for a subcommand\n');
+  const noBuiltIns = command('tool', {
+    disableHelpSubcommand: true,
+    disableVersionFlag: true,
+    subcommands: [command('run', { helpHeading: 'Operations' })],
+  });
+  expect(noBuiltIns.renderHelp()).not.toContain('Commands:');
+});
+
 test('can hide standard flags from descendant help while keeping them available', () => {
   const leaf = command('leaf', { version: '1.2.3', defaultToHelp: true });
   const cli = command('tool', {
@@ -213,5 +250,14 @@ test('rejects empty or multiline custom headings', () => {
   );
   expect(() => option('output', parsers.string, { helpHeading: 1 as never })).toThrow(
     'helpHeading\' must be a string',
+  );
+  expect(() => command('tool', { helpHeading: '' })).toThrow(
+    'Command option \'helpHeading\' cannot be empty',
+  );
+  expect(() => command('tool', { helpHeading: 'Output\nfiles' })).toThrow(
+    'Command option \'helpHeading\' cannot contain line breaks',
+  );
+  expect(() => command('tool', { helpHeading: 1 as never })).toThrow(
+    'Command option \'helpHeading\' must be a string',
   );
 });

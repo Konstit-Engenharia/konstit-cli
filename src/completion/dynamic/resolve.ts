@@ -1,4 +1,5 @@
 import type { Environment } from '../../command/environment.js';
+import { expandArgumentFiles } from '../../command/parsing/argument-files.js';
 import { getCommandDefinition } from '../../command/store.js';
 import type { CommandType } from '../../command/types.js';
 import { validateConfigShape } from '../../configuration/shape.js';
@@ -49,8 +50,10 @@ export async function resolveCompletion(
   const input = Object.freeze([...argv]);
   const currentWord = input[cursor] ?? '';
   const filter = options.filter ?? true;
-  const state = createScanState(getCommandDefinition(configuredCommand), env, options.config);
-  scanWords(state, input.slice(0, cursor));
+  const definition = getCommandDefinition(configuredCommand);
+  const precedingWords = input.slice(0, cursor);
+  const state = createScanState(definition, env, options.config);
+  scanWords(state, options.argumentFiles === true ? expandArgumentFiles(definition, precedingWords).tokens : precedingWords);
   resolvePendingWordBoundary(state, currentWord);
   finalizeRelations(state);
 

@@ -65,6 +65,7 @@ export function validateArgument(
     ...(commandDefinition.version === undefined || commandDefinition.disableVersionFlag
       ? []
       : ['version']),
+    ...(commandDefinition.enableJsonFlag ? ['json'] : []),
   ]);
   const reservedShorts = new Set([
     ...(commandDefinition.disableHelpFlag ? [] : ['h']),
@@ -118,6 +119,12 @@ export function validateBuiltInCollisions(
     )
   ) {
     throw new TypeError('Version flags conflict with an existing argument');
+  }
+  if (
+    definition.enableJsonFlag
+    && available.some((argument) => argumentLongNames(argument).includes('json'))
+  ) {
+    throw new TypeError('JSON flag conflicts with an existing argument');
   }
 
   const globals = [

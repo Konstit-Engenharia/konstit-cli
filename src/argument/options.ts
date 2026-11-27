@@ -87,6 +87,8 @@ export type OptionOptions<Value> =
   & NamedArgumentOptions
   & ValueMetadataOptions<Value>
   & {
+    /** Prompts for a missing scalar value during an opted-in interactive run. */
+    readonly prompt?: string | boolean;
     /** Supplies a value when the option is present without one. */
     readonly defaultMissing?: NoInfer<Value>;
     /** Requires the --option=value form. */
@@ -224,11 +226,17 @@ type CheckedUniqueOptions<Options> = Options extends { readonly unique: true; }
   : ConfigurationError<'unique requires a repeatable option'>
   : unknown;
 
+type CheckedPromptOptions<Options> = Options extends { readonly prompt: true | string; }
+  ? true extends Field<Options, 'repeatable'> ? ConfigurationError<'Prompted options cannot be repeatable'>
+  : NumArgsAllowsScalarDefault<Options> extends true ? unknown
+  : ConfigurationError<'Prompted options must accept one scalar value'>
+  : unknown;
+
 export type CheckedOptionOptions<Value, Options> = 'trailingVarArg' extends keyof Options
   ? ConfigurationError<'Options cannot be trailing positional arguments'>
   : Options extends { readonly required: 'without-subcommand'; readonly global: true; }
     ? ConfigurationError<'An argument required without a subcommand cannot be global'>
-  : CheckedDefaultMissingOptions<Value, Options> & CheckedUniqueOptions<Options>;
+  : CheckedDefaultMissingOptions<Value, Options> & CheckedUniqueOptions<Options> & CheckedPromptOptions<Options>;
 
 export type CheckedPositionalOptions<Options> = 'global' extends keyof Options ? ConfigurationError<'Positional arguments cannot be global'>
   : 'defaultMissing' extends keyof Options ? ConfigurationError<'Positional arguments cannot configure defaultMissing'>
@@ -341,7 +349,9 @@ export interface RuntimeValueOptions<Value> extends ValueMetadataOptions<Value> 
   readonly output?: 'scalar';
 }
 
-export interface RuntimeOptionOptions<Value> extends NamedArgumentOptions, RuntimeValueOptions<Value> {}
+export interface RuntimeOptionOptions<Value> extends NamedArgumentOptions, RuntimeValueOptions<Value> {
+  readonly prompt?: string | boolean;
+}
 
 export type PreserveUndefined<Current, Present> = undefined extends Current ? Present | undefined : Present;
 

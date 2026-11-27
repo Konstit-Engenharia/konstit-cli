@@ -81,6 +81,11 @@ export function generateFish(
         `${commandPrefix} -n ${condition} -s V -l version -d ${fishQuote('Print version')}`,
       );
     }
+    if (node.definition.enableJsonFlag) {
+      registrations.push(
+        `${commandPrefix} -n ${condition} -l json -d ${fishQuote('Print handler result as JSON')}`,
+      );
+    }
     const childList = childEntries(node, nodes);
     const disableFiles = !hasVisiblePositionals(node) ? ' -f' : '';
     for (const [token, child,] of childList) {
